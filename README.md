@@ -1,6 +1,7 @@
 # MIDIVJ
 
 Aplicación local de visuales en vivo controlada por MIDI. El runtime vive en `src/`, las sesiones `.vjp` en `Sessions/` y los medios locales en `videos/Visuales 2026/`.
+![Sesión de Bake-Neko!](docs/images/midivj-preview-1.png)
 
 ## Ejecutar
 
