@@ -1,0 +1,13 @@
+{
+  "name": "midivj",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Herramienta local de visuales en vivo controlada por MIDI.",
+  "scripts": {
+    "start": "node \"src/midivj-relay.js\"",
+    "check": "node --check \"src/midivj-relay.js\""
+  },
+  "dependencies": {
+    "ws": "8.21.0"
+  }
+}

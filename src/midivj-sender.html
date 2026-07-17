@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MIDIVJ · Sender MIDI en Red</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Barlow+Condensed:wght@300;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#060610;--surface:#0c0c1e;--panel:#101022;--panel2:#141430;
+  --border:#1c1c3a;--border2:#282850;
+  --text:#b8b8d8;--text2:#7878a0;--text3:#404060;--bright:#e8e8ff;
+  --acc:#ff9944;--hot:#ff2d78;--green:#00ff88;
+  --mono:'Space Mono',monospace;--ui:'Barlow Condensed',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{min-height:100%;background:var(--bg);color:var(--text);font-family:var(--ui);display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;}
+
+#card{width:min(540px,100%);background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;}
+
+/* header */
+#hdr{padding:16px 20px 14px;border-bottom:1px solid var(--border);}
+#logo{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--acc);letter-spacing:3px;}
+#sub{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:3px;letter-spacing:1px;}
+
+/* sections */
+.sec{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:10px;}
+.sec-title{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--text3);text-transform:uppercase;}
+
+/* rows */
+.row{display:flex;flex-direction:column;gap:4px;}
+.row-h{display:flex;gap:10px;}
+.row-h>.row{flex:1;}
+.lbl{font-family:var(--mono);font-size:8px;letter-spacing:1px;color:var(--text3);text-transform:uppercase;}
+
+/* inputs */
+.inp{background:var(--panel2);border:1px solid var(--border2);color:var(--bright);font-family:var(--mono);font-size:10px;padding:7px 9px;outline:none;width:100%;}
+.inp:focus{border-color:var(--acc);}
+.inp::placeholder{color:var(--text3);}
+select.inp{cursor:pointer;}
+select.inp:disabled{opacity:.35;cursor:default;}
+
+/* status pill */
+.pill-row{display:flex;align-items:center;gap:7px;}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0;transition:all .3s;}
+.dot.ok{background:var(--green);box-shadow:0 0 6px var(--green);}
+.dot.acc{background:var(--acc);box-shadow:0 0 6px var(--acc);}
+.dot.err{background:var(--hot);}
+.pill-txt{font-family:var(--mono);font-size:9px;color:var(--text2);flex:1;}
+
+/* buttons */
+.btn{background:var(--panel2);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1.5px;padding:9px 14px;cursor:pointer;text-transform:uppercase;transition:all .15s;white-space:nowrap;}
+.btn:hover{border-color:var(--acc);color:var(--acc);}
+.btn.on{background:rgba(255,153,68,.1);border-color:var(--acc);color:var(--acc);}
+.btn.sm{padding:5px 10px;font-size:9px;letter-spacing:1px;}
+.btn-row{display:flex;gap:8px;}
+
+/* pads */
+#pads{display:grid;grid-template-columns:repeat(16,1fr);gap:2px;}
+.pad{height:18px;background:var(--panel2);border:1px solid var(--border);border-radius:1px;transition:background .06s,box-shadow .06s;}
+
+/* log */
+#log{max-height:170px;overflow-y:auto;display:flex;flex-direction:column;gap:0;padding:8px 20px 12px;background:var(--panel);}
+#log::-webkit-scrollbar{width:3px;}
+#log::-webkit-scrollbar-thumb{background:var(--border2);}
+.ll{font-family:var(--mono);font-size:9px;color:var(--text3);display:flex;gap:8px;line-height:1.9;}
+.lt{color:var(--border2);flex-shrink:0;}
+.lm{color:var(--text2);}
+.lm.tx{color:var(--acc);}
+.lm.ok{color:var(--green);}
+.lm.er{color:var(--hot);}
+
+/* hint */
+#hint{padding:12px 20px;font-family:var(--mono);font-size:8px;color:var(--text3);line-height:2;border-top:1px solid var(--border);}
+#hint b{color:var(--text2);}
+code{background:var(--panel2);padding:1px 5px;color:var(--acc);}
+</style>
+</head>
+<body>
+<div id="card">
+
+  <div id="hdr">
+    <div id="logo">◼ MIDIVJ SENDER</div>
+    <div id="sub">MIDI EN RED — EMISOR · v3</div>
+  </div>
+
+  <!-- ① MIDI device -->
+  <div class="sec">
+    <div class="sec-title">① Dispositivo MIDI</div>
+    <div class="pill-row">
+      <div class="dot" id="midi-dot"></div>
+      <span class="pill-txt" id="midi-st">Solicitando acceso…</span>
+      <button class="btn sm" onclick="loadMIDI()">↺ RECARGAR</button>
+    </div>
+    <div class="row">
+      <span class="lbl">Dispositivo de entrada</span>
+      <select class="inp" id="midi-sel" disabled onchange="attachMIDI()">
+        <option value="">— cargando… —</option>
+      </select>
+    </div>
+    <div class="row">
+      <span class="lbl">Filtrar canal MIDI (0 = todos los canales)</span>
+      <input class="inp" id="ch-inp" type="number" value="0" min="0" max="16" style="width:90px;">
+    </div>
+  </div>
+
+  <!-- ② Relay -->
+  <div class="sec">
+    <div class="sec-title">② Relay WebSocket</div>
+    <div class="row-h">
+      <div class="row" style="flex:2;">
+        <span class="lbl">URL del Relay</span>
+        <input class="inp" id="url-inp" type="text" value="ws://localhost:9191" spellcheck="false" placeholder="ws://192.168.1.x:9191">
+      </div>
+      <div class="row" style="flex:1;">
+        <span class="lbl">Sala (room)</span>
+        <input class="inp" id="room-inp" type="text" value="midivj" spellcheck="false" placeholder="midivj">
+      </div>
+    </div>
+    <div class="pill-row">
+      <div class="dot" id="ws-dot"></div>
+      <span class="pill-txt" id="ws-st">Desconectado</span>
+      <span id="sent-cnt" style="font-family:var(--mono);font-size:8px;color:var(--text3);"></span>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="con-btn" onclick="wsToggle()" style="flex:1;">CONECTAR AL RELAY</button>
+    </div>
+  </div>
+
+  <!-- ③ Activity -->
+  <div class="sec" style="border-bottom:none;">
+    <div class="sec-title">③ Actividad MIDI en tiempo real</div>
+    <div id="pads"></div>
+  </div>
+
+  <!-- Log -->
+  <div id="log"></div>
+
+  <!-- Hint -->
+  <div id="hint">
+    <b>Flujo:</b><br>
+    1. Conecta tu pad/controlador USB → el navegador lo detecta solo al abrir.<br>
+    2. Ejecuta <code>node src/midivj-relay.js</code> desde la raíz en una compu de la red.<br>
+    3. Pon la IP del relay en la URL (la imprime al arrancar) + misma sala que MIDIVJ.<br>
+    4. Pulsa <b>CONECTAR AL RELAY</b>. Cada nota/CC llega a MIDIVJ en tiempo real.
+  </div>
+
+</div>
+
+<script>
+const NNAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const noteN  = n => NNAMES[n%12]+(Math.floor(n/12)-1);
+const ts     = () => new Date().toLocaleTimeString();
+
+let midiAcc   = null;
+let midiReady = false;
+let ws        = null;
+let sent      = 0;
+
+/* ── PADS ── */
+const padsEl = document.getElementById('pads');
+const pads   = Array.from({length:32}, () => {
+  const p = document.createElement('div'); p.className='pad'; padsEl.appendChild(p); return p;
+});
+let padIdx = 0;
+
+function flashPad(note, vel) {
+  const p   = pads[padIdx % 32];
+  const hue = (note * 7) % 360;
+  const lit = 35 + Math.round((vel / 127) * 35);
+  p.style.cssText = `background:hsl(${hue},75%,${lit}%);box-shadow:0 0 5px hsl(${hue},75%,${lit}%);border-color:hsl(${hue},75%,${lit}%)`;
+  setTimeout(() => p.style.cssText = '', 280);
+  padIdx++;
+}
+
+/* ── LOG ── */
+const logEl = document.getElementById('log');
+function addLog(msg, cls='') {
+  const el = document.createElement('div');
+  el.className = 'll';
+  el.innerHTML = `<span class="lt">${ts()}</span><span class="lm ${cls}">${msg}</span>`;
+  logEl.appendChild(el);
+  if (logEl.children.length > 80) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ═══════════════════════════════════════
+   MIDI — load & attach
+═══════════════════════════════════════ */
+async function loadMIDI() {
+  const dot = document.getElementById('midi-dot');
+  const st  = document.getElementById('midi-st');
+  const sel = document.getElementById('midi-sel');
+
+  dot.className = 'dot';
+  st.textContent = 'Solicitando acceso MIDI…';
+
+  if (!navigator.requestMIDIAccess) {
+    dot.className = 'dot err';
+    st.textContent = 'Web MIDI API no disponible — usa Chrome o Edge.';
+    addLog('✘ Web MIDI no disponible en este navegador','er');
+    return;
+  }
+
+  try {
+    midiAcc = await navigator.requestMIDIAccess({ sysex: false });
+  } catch(e) {
+    dot.className = 'dot err';
+    st.textContent = 'Acceso MIDI denegado: ' + e.message;
+    addLog('✘ MIDI denegado: ' + e.message, 'er');
+    return;
+  }
+
+  /* Listen for device plug/unplug */
+  midiAcc.onstatechange = ev => {
+    addLog('⟳ MIDI: ' + ev.port.name + ' → ' + ev.port.state);
+    populateMIDI();
+  };
+
+  populateMIDI();
+}
+
+function populateMIDI() {
+  const dot = document.getElementById('midi-dot');
+  const st  = document.getElementById('midi-st');
+  const sel = document.getElementById('midi-sel');
+
+  /* Detach all before repopulating */
+  for (const inp of midiAcc.inputs.values()) inp.onmidimessage = null;
+
+  const devs = [...midiAcc.inputs.values()];
+
+  if (!devs.length) {
+    sel.innerHTML = '<option value="">— ningún dispositivo detectado —</option>';
+    sel.disabled  = true;
+    dot.className = 'dot err';
+    st.textContent = 'Sin dispositivos. Conecta tu MIDI y pulsa ↺ RECARGAR.';
+    addLog('⚠ sin dispositivos MIDI detectados', 'er');
+    midiReady = false;
+    return;
+  }
+
+  const prevVal = sel.value;
+  sel.innerHTML = '';
+  devs.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id; o.textContent = d.name; sel.appendChild(o);
+  });
+  /* Try to restore previous selection */
+  if (prevVal && sel.querySelector(`option[value="${prevVal}"]`)) sel.value = prevVal;
+
+  sel.disabled  = false;
+  dot.className = 'dot ok';
+  st.textContent = devs.length + ' dispositivo' + (devs.length > 1 ? 's' : '') + ' detectado' + (devs.length > 1 ? 's' : '');
+  addLog('🎹 ' + devs.map(d => d.name).join(' · '), 'ok');
+  midiReady = true;
+
+  attachMIDI();
+}
+
+function attachMIDI() {
+  if (!midiAcc || !midiReady) return;
+  /* Detach all */
+  for (const inp of midiAcc.inputs.values()) inp.onmidimessage = null;
+
+  const selId = document.getElementById('midi-sel').value;
+  if (selId) {
+    const inp = midiAcc.inputs.get(selId);
+    if (inp) {
+      inp.onmidimessage = onMIDIMsg;
+      addLog('✔ escuchando: ' + inp.name, 'ok');
+    }
+  } else {
+    /* Attach all */
+    for (const inp of midiAcc.inputs.values()) inp.onmidimessage = onMIDIMsg;
+    addLog('✔ escuchando todos los dispositivos', 'ok');
+  }
+}
+
+/* ═══════════════════════════════════════
+   WEBSOCKET
+═══════════════════════════════════════ */
+function wsToggle() {
+  if (ws && ws.readyState < 2) wsDisconnect();
+  else wsConnect();
+}
+
+function wsConnect() {
+  const url  = document.getElementById('url-inp').value.trim();
+  const room = document.getElementById('room-inp').value.trim() || 'midivj';
+  const dot  = document.getElementById('ws-dot');
+  const st   = document.getElementById('ws-st');
+  const btn  = document.getElementById('con-btn');
+
+  try { ws = new WebSocket(url); }
+  catch(e) {
+    dot.className='dot err'; st.textContent='URL inválida';
+    addLog('✘ URL inválida: ' + url, 'er'); return;
+  }
+
+  dot.className = 'dot'; st.textContent = 'Conectando…'; btn.textContent = 'CONECTANDO…';
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type:'join', room }));
+    dot.className = 'dot acc';
+    st.textContent = url.replace(/^ws:\/\//,'') + ' · "' + room + '"';
+    btn.textContent = 'DESCONECTAR'; btn.classList.add('on');
+    addLog('✔ relay conectado — sala "' + room + '"', 'ok');
+    sent = 0; updateSent();
+  };
+
+  ws.onmessage = ev => {
+    try {
+      const m = JSON.parse(ev.data);
+      if (m.type === 'joined')
+        addLog('◉ sala "' + m.room + '" — ' + m.clients + ' cliente' + (m.clients !== 1 ? 's' : ''), 'ok');
+    } catch(_) {}
+  };
+
+  ws.onclose = () => {
+    dot.className = 'dot'; st.textContent = 'Desconectado';
+    btn.textContent = 'CONECTAR AL RELAY'; btn.classList.remove('on');
+    addLog('✘ relay desconectado', 'er');
+  };
+
+  ws.onerror = () => {
+    dot.className = 'dot err';
+    st.textContent = 'Error — ¿está corriendo el relay?';
+    addLog('⚠ error — verifica que src/midivj-relay.js esté corriendo y la URL sea correcta', 'er');
+  };
+}
+
+function wsDisconnect() {
+  if (ws) { ws.close(); ws = null; }
+}
+
+function updateSent() {
+  document.getElementById('sent-cnt').textContent = sent ? sent + ' enviados' : '';
+}
+
+/* ═══════════════════════════════════════
+   MIDI → WebSocket
+═══════════════════════════════════════ */
+function onMIDIMsg(ev) {
+  if (ev.data.length < 2) return;
+  const [st, num, vel = 0] = ev.data;
+  const typ = st & 0xF0, ch = (st & 0x0F) + 1;
+  const filterCh = parseInt(document.getElementById('ch-inp').value) || 0;
+  if (filterCh && ch !== filterCh) return;
+
+  /* Send to relay */
+  const relay = ws && ws.readyState === 1;
+  if (relay) {
+    ws.send(JSON.stringify({ type:'midi', data:[st, num, vel] }));
+    sent++; updateSent();
+  }
+
+  /* Visuals */
+  const isNoteOn  = typ === 0x90 && vel > 0;
+  const isNoteOff = typ === 0x80 || (typ === 0x90 && vel === 0);
+  const isCC      = typ === 0xB0;
+
+  if (isNoteOn) {
+    flashPad(num, vel);
+    addLog('↑ ch' + ch + '  ' + noteN(num) + '  vel:' + vel + (relay ? ' ✓' : '  ⚠ sin relay'), 'tx');
+  } else if (isCC) {
+    addLog('CC' + num + ' val:' + vel + ' ch' + ch + (relay ? ' ✓' : '  ⚠ sin relay'), 'tx');
+  }
+  /* NoteOff is intentionally quiet in the log to reduce noise */
+}
+
+/* ── AUTO-INIT ON PAGE LOAD ── */
+window.addEventListener('DOMContentLoaded', () => {
+  addLog('Página lista. Solicitando acceso MIDI…', '');
+  loadMIDI();
+});
+</script>
+</body>
+</html>
