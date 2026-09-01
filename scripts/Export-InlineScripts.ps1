@@ -9,7 +9,9 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 $inputs = @(
     @{ Source = 'src/Midivj ZYX.html'; Target = 'Midivj-ZYX.inline.js' },
-    @{ Source = 'src/midivj-sender.html'; Target = 'midivj-sender.inline.js' }
+    @{ Source = 'src/midivj-sender.html'; Target = 'midivj-sender.inline.js' },
+    @{ Source = 'src/midivj-mando.html'; Target = 'midivj-mando.inline.js' },
+    @{ Source = 'src/midivj-control.html'; Target = 'midivj-control.inline.js' }
 )
 
 foreach ($item in $inputs) {
@@ -47,10 +49,13 @@ foreach ($item in $inputs) {
     Write-Host "Generado $($item.Target) desde $index bloque(s)."
 }
 
-$relaySource = Join-Path $root 'src/midivj-relay.js'
-$relayTarget = Join-Path $outputDirectory 'midivj-relay.js'
-if (-not (Test-Path -LiteralPath $relaySource)) {
-    throw "No se encontró la fuente: $relaySource"
+$copias = @('src/midivj-relay.js', 'src/midivj-qr.js')
+foreach ($relativa in $copias) {
+    $origen = Join-Path $root $relativa
+    if (-not (Test-Path -LiteralPath $origen)) {
+        throw "No se encontró la fuente: $origen"
+    }
+    $destino = Join-Path $outputDirectory (Split-Path -Leaf $relativa)
+    [System.IO.File]::Copy($origen, $destino, $true)
+    Write-Host "Copiado $(Split-Path -Leaf $relativa) al corpus derivado."
 }
-[System.IO.File]::Copy($relaySource, $relayTarget, $true)
-Write-Host 'Copiado midivj-relay.js al corpus derivado.'

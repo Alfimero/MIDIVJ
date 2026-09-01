@@ -36,7 +36,7 @@ La aplicación principal está concentrada en `src/Midivj ZYX.html`. `src/midivj
 
 # Alcance
 
-Incluye compositor Canvas 2D, reproducción de archivos, captura en vivo, mapeo MIDI local, relay MIDI por WebSocket, persistencia `.vjp`, caché de reversa en IndexedDB y salida secundaria. La biblioteca de video no forma parte del grafo.
+Incluye compositor Canvas 2D, reproducción de archivos, captura en vivo, mapeo MIDI local, relay MIDI por WebSocket, control remoto desde hasta cuatro teléfonos con QR y cuadrícula configurable, persistencia `.vjp`, caché de reversa en IndexedDB y salida secundaria. La biblioteca de video no forma parte del grafo.
 
 # Arquitectura
 
@@ -45,14 +45,18 @@ El estado global `S` y la biblioteca `MEDIA` coordinan ocho pistas. `loop()` com
 # Componentes principales
 
 - `src/Midivj ZYX.html`: interfaz, estado, reproducción, composición, efectos, persistencia y MIDI.
-- `src/midivj-relay.js`: servidor HTTP local, guardado confinado en `Sessions/`, salas WebSocket y reenvío de mensajes.
+- `src/midivj-relay.js`: servidor HTTP local, guardado confinado en `Sessions/`, salas WebSocket con roles y slots, layout del mando e información de red.
 - `src/midivj-sender.html`: entrada Web MIDI y envío al relay.
+- `src/midivj-mando.html`: mando móvil (cuadrícula editable, grupos, imágenes, submenús por clip).
+- `src/midivj-control.html`: página de cabina con los QR de Wi-Fi y de cada mando.
+- `src/midivj-qr.js`: generador de QR local, compartido por Node y el navegador.
 - `Sessions/*.vjp`: ejemplos de sesiones operativas.
+- `data/mando-layout.json`: layout del mando; configuración local fuera de Git.
 - `graphify-src/`: JavaScript derivado de los HTML para análisis AST; no es fuente oficial.
 
 # Flujos de datos
 
-Entrada MIDI local o remota → `onMIDIMsg()` → estado y acciones de pista → `loop()` → canvas principal → ventana de salida. El emisor envía `{type:'midi', data:[...]}` al relay; el relay reenvía sólo dentro de la misma sala.
+Entrada MIDI local o remota → `onMIDIMsg()` → estado y acciones de pista → `loop()` → canvas principal → ventana de salida. El emisor y el mando móvil envían `{type:'midi', data:[...]}` al relay; el relay reenvía sólo dentro de la misma sala. De vuelta, la aplicación publica su inventario (clips, efectos y bancos con su MIDI) y los eventos `clip-inicio` / `clip-fin` que usan los mandos para volver de un submenú de efectos.
 
 # Dependencias
 
@@ -93,6 +97,8 @@ La aplicación se sirve localmente en `http://localhost:9191/`. El relay se ejec
 
 Corregir el launcher, fijar la dependencia `ws` y realizar una prueba operativa con un controlador MIDI y salida secundaria autorizados. Estos puntos no se ejecutaron porque exceden la integración estructural y requieren una sesión de hardware.
 
+Para el mando móvil queda pendiente la prueba de función con teléfonos reales sobre una red creada por la computadora: el protocolo, el layout y el retorno de submenú se validaron con clientes simulados y en navegador, no con dispositivos ni con un punto de acceso activo.
+
 # Fuentes verificadas
 
-`src/Midivj ZYX.html`, `src/midivj-relay.js`, `src/midivj-sender.html`, `src/INICIAR_RELAY.bat`, `PROJECT_CONTEXT.md` y los tres archivos `Sessions/*.vjp`, revalidados tras la reorganización del 2026-07-16.
+`src/Midivj ZYX.html`, `src/midivj-relay.js`, `src/midivj-sender.html`, `src/INICIAR_RELAY.bat`, `PROJECT_CONTEXT.md` y los tres archivos `Sessions/*.vjp`, revalidados tras la reorganización del 2026-07-16. El mando móvil (`src/midivj-mando.html`, `src/midivj-control.html`, `src/midivj-qr.js` y los cambios del relay y de la aplicación) se agregó el 2026-08-20; ver `docs/decisions/ADR-003-mando-movil-por-websocket.md`.

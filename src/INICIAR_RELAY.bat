@@ -37,8 +37,12 @@ echo  Relay corriendo. No cierres esta ventana.
 echo  -----------------------------------------------
 echo.
 
-echo  Aplicacion: http://localhost:9191/
-echo  Emisor MIDI: http://localhost:9191/sender
+echo  El navegador se abre solo con la aplicacion.
+echo  Abajo aparecen las direcciones reales (el puerto puede cambiar
+echo  si el 9191 esta ocupado).
+echo.
+echo  Para usar telefonos como mando, pulsa RELAY en la aplicacion
+echo  y escanea el QR de cada uno (hasta 4 dispositivos).
 echo.
 
 node src\midivj-relay.js

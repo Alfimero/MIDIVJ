@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIDIVJ · Control remoto</title>
+<style>
+:root{
+  --bg:#0a0c10;--bg2:#12151c;--bg3:#181c25;--border:#232936;--border2:#2f3644;
+  --text:#e8ecf2;--text2:#98a2b3;--text3:#5c6675;
+  --accent:#00ff88;--accent2:#00c2ff;--warn:#ffcc00;--danger:#ff3366;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+  padding:20px;line-height:1.5;
+}
+header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px;}
+h1{font-family:var(--mono);font-size:17px;letter-spacing:.14em;margin:0;color:var(--accent);}
+.sub{font-family:var(--mono);font-size:11px;color:var(--text3);}
+#estado-linea{
+  font-family:var(--mono);font-size:11px;color:var(--text2);
+  border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin:14px 0 20px;
+  display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:var(--bg2);
+}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--danger);display:inline-block;margin-right:5px;}
+.dot.on{background:var(--accent);box-shadow:0 0 8px var(--accent);}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;}
+.card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;
+  display:flex;flex-direction:column;align-items:center;gap:10px;position:relative;
+}
+.card h2{font-family:var(--mono);font-size:12px;margin:0;letter-spacing:.1em;color:var(--accent2);}
+.card.ocupado{border-color:var(--accent);}
+.card .qr{background:#fff;border-radius:8px;padding:8px;line-height:0;}
+.card .qr svg{display:block;width:100%;height:auto;max-width:210px;}
+.card code{
+  font-family:var(--mono);font-size:9.5px;color:var(--text2);word-break:break-all;
+  text-align:center;background:var(--bg3);border-radius:6px;padding:6px 8px;width:100%;
+}
+.badge{
+  position:absolute;top:10px;right:10px;font-family:var(--mono);font-size:9px;font-weight:700;
+  padding:3px 7px;border-radius:999px;border:1px solid var(--border2);color:var(--text3);
+}
+.badge.on{color:#000;background:var(--accent);border-color:var(--accent);}
+
+section{margin:26px 0 0;}
+section > h3{
+  font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--text2);
+  border-bottom:1px solid var(--border);padding-bottom:6px;margin:0 0 14px;
+}
+.wifi{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;}
+.wifi .qr{background:#fff;border-radius:10px;padding:10px;line-height:0;}
+.wifi .qr svg{display:block;width:200px;height:200px;}
+.wifi-datos{font-family:var(--mono);font-size:12px;color:var(--text2);display:flex;flex-direction:column;gap:6px;}
+.wifi-datos b{color:var(--text);}
+form.red{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;}
+form.red label{display:flex;flex-direction:column;gap:3px;font-family:var(--mono);font-size:9px;color:var(--text3);}
+input,select,button{
+  background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:6px;
+  padding:7px 9px;font-family:var(--mono);font-size:11px;
+}
+button{cursor:pointer;font-weight:700;}
+button.ok{background:var(--accent);color:#000;border-color:var(--accent);}
+p.nota{font-family:var(--mono);font-size:10.5px;color:var(--text3);line-height:1.7;max-width:92ch;}
+p.nota b{color:var(--text2);}
+code.inline{background:var(--bg3);border-radius:4px;padding:1px 5px;color:var(--accent2);}
+.aviso{border-left:2px solid var(--warn);padding-left:12px;color:var(--warn);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MIDIVJ · CONTROL REMOTO</h1>
+  <span class="sub" id="sub-sala"></span>
+</header>
+
+<div id="estado-linea">
+  <span><span class="dot" id="dot-relay"></span>relay</span>
+  <span><span class="dot" id="dot-app"></span>MIDIVJ</span>
+  <span id="txt-mandos">— mandos</span>
+  <span id="txt-dir">—</span>
+  <label style="margin-left:auto;font-size:10px;color:var(--text3);">
+    dirección:
+    <select id="sel-dir"></select>
+  </label>
+</div>
+
+<section>
+  <h3>PASO 1 · UNIRSE A LA RED</h3>
+  <div class="wifi">
+    <div class="qr" id="wifi-qr"></div>
+    <div>
+      <div class="wifi-datos" id="wifi-datos"></div>
+      <form class="red" id="form-red">
+        <label>SSID <input type="text" id="in-ssid" placeholder="nombre de la red"></label>
+        <label>CONTRASEÑA <input type="text" id="in-pass" placeholder="—"></label>
+        <label>SEGURIDAD
+          <select id="in-auth"><option>WPA</option><option>WEP</option><option>NOPASS</option></select>
+        </label>
+        <button class="ok" type="submit">GUARDAR</button>
+        <button type="button" id="btn-limpiar">USAR AUTODETECCIÓN</button>
+      </form>
+      <p class="nota" id="nota-wifi"></p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h3>PASO 2 · ABRIR EL MANDO EN CADA TELÉFONO</h3>
+  <div class="grid" id="tarjetas"></div>
+</section>
+
+<section>
+  <h3>NOTAS</h3>
+  <p class="nota">
+    Los mandos envían mensajes MIDI normales: MIDIVJ los recibe por su bloque de red y los trata
+    igual que los de un controlador físico. Para mapear un botón, pulsa <b>MAP</b> en el clip o
+    efecto dentro de MIDIVJ y toca el botón del teléfono.
+    En la app, el bloque <b>RED</b> debe estar conectado a <code class="inline" id="cod-ws">ws://…</code>
+    con la misma sala.
+  </p>
+  <p class="nota">
+    <b>Red creada por esta computadora.</b> Si no hay router, comparte Internet desde Windows
+    (Configuración → Red e Internet → Zona con cobertura inalámbrica móvil) o usa
+    <code class="inline">netsh wlan start hostednetwork</code> con una consola de administrador.
+    El adaptador virtual toma <code class="inline">192.168.137.1</code>: esa dirección aparece
+    arriba marcada como <b>hotspot</b> y es la que deben usar los teléfonos. Los QR se generan
+    aquí mismo, así que funcionan sin Internet.
+  </p>
+  <p class="nota aviso">
+    Si el teléfono no abre la página, revisa que el enlace no diga <code class="inline">localhost</code>
+    y que el firewall de Windows permita el puerto en redes privadas:
+    <code class="inline" id="cod-firewall">…</code>
+    (consola de administrador). No la agregues en redes públicas.
+  </p>
+</section>
+
+<script src="midivj-qr.js"></script>
+<script>
+const PARAMS = new URLSearchParams(location.search);
+const SALA = (PARAMS.get('sala') || 'midivj').slice(0, 40);
+const $ = id => document.getElementById(id);
+$('sub-sala').textContent = 'sala "' + SALA + '"';
+
+let red = null;
+let dirElegida = null;
+let presencia = { app: false, mandos: [], maxMandos: 4 };
+
+function qrEn(contenedor, texto, escala) {
+  contenedor.innerHTML = texto ? QRLite.svg(texto, { escala: escala || 4, margen: 2, ecl: 'M' }) : '';
+}
+
+async function cargarRed() {
+  try {
+    red = await (await fetch('/api/red?sala=' + encodeURIComponent(SALA))).json();
+  } catch (_) {
+    $('dot-relay').className = 'dot';
+    return;
+  }
+  $('dot-relay').className = 'dot on';
+
+  const sel = $('sel-dir');
+  const previa = dirElegida;
+  sel.innerHTML = '';
+  if (!red.direcciones.length) {
+    const o = document.createElement('option');
+    o.value = 'localhost';
+    o.textContent = 'sólo esta computadora';
+    sel.appendChild(o);
+  }
+  red.direcciones.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.ip;
+    o.textContent = d.ip + (d.tipo === 'hotspot' ? '  · hotspot' : '') + '  (' + d.interfaz + ')';
+    sel.appendChild(o);
+  });
+  dirElegida = previa && [...sel.options].some(o => o.value === previa)
+    ? previa : (red.direcciones[0]?.ip || 'localhost');
+  sel.value = dirElegida;
+
+  pintarWifi();
+  pintarTarjetas();
+}
+
+$('sel-dir').addEventListener('change', ev => { dirElegida = ev.target.value; pintarTarjetas(); });
+
+const ORIGEN_WIFI = {
+  hotspot: 'punto de acceso de esta PC (encendido)',
+  'hotspot-apagado': 'punto de acceso de esta PC (APAGADO)',
+  hostednetwork: 'red creada por esta PC',
+  wifi: 'red a la que está conectada esta PC',
+  manual: 'escrita a mano'
+};
+
+function pintarWifi() {
+  const w = red.wifi;
+  qrEn($('wifi-qr'), w.qr, 5);
+  $('wifi-datos').innerHTML = w.ssid
+    ? `<div><b>SSID:</b> ${escapar(w.ssid)}</div>
+       <div><b>Contraseña:</b> ${w.pass ? escapar(w.pass) : '— red abierta —'}</div>
+       <div><b>Seguridad:</b> ${escapar(w.auth)}</div>
+       <div style="color:var(--text3)">origen: ${ORIGEN_WIFI[w.fuente] || 'sin detectar'}</div>`
+    : '<div style="color:var(--warn)">Sin red Wi-Fi detectada.</div>';
+  $('nota-wifi').innerHTML = !w.ssid
+    ? 'Conecta esta computadora a una Wi-Fi o enciende el punto de acceso móvil: el SSID y la contraseña se detectan solos. Si aun así no aparece, escríbelos aquí.'
+    : w.hotspotApagado
+      ? '<b style="color:var(--warn)">El punto de acceso móvil está apagado.</b> Enciéndelo en Configuración → Red e Internet → Zona con cobertura inalámbrica móvil; el QR ya tiene sus datos.'
+      : 'Apunta la cámara del teléfono a este QR para unirse a la red.';
+  if (!$('in-ssid').matches(':focus')) {
+    $('in-ssid').value = w.fuente === 'manual' ? w.ssid : '';
+    $('in-pass').value = w.fuente === 'manual' ? w.pass : '';
+    $('in-auth').value = w.auth || 'WPA';
+  }
+}
+
+function baseURL() {
+  return 'http://' + (dirElegida || location.hostname) + ':' + red.puerto;
+}
+
+function pintarTarjetas() {
+  const cont = $('tarjetas');
+  cont.innerHTML = '';
+  const total = red.maxMandos || 4;
+  for (let s = 1; s <= total; s++) {
+    const url = baseURL() + '/mando?sala=' + encodeURIComponent(SALA) + '&slot=' + s;
+    const ocupado = presencia.mandos.some(m => m.slot === s);
+    const card = document.createElement('div');
+    card.className = 'card' + (ocupado ? ' ocupado' : '');
+    card.innerHTML = `
+      <span class="badge${ocupado ? ' on' : ''}">${ocupado ? 'CONECTADO' : 'LIBRE'}</span>
+      <h2>MANDO ${s}</h2>
+      <div class="qr"></div>
+      <code>${escapar(url)}</code>`;
+    qrEn(card.querySelector('.qr'), url, 4);
+    cont.appendChild(card);
+  }
+  $('txt-dir').textContent = baseURL();
+  $('cod-ws').textContent = 'ws://' + (dirElegida || location.hostname) + ':' + red.puerto;
+  $('cod-firewall').textContent =
+    `netsh advfirewall firewall add rule name="MIDIVJ ${red.puerto}" dir=in action=allow ` +
+    `protocol=TCP localport=${red.puerto} profile=private`;
+}
+
+function escapar(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+/* Guardar la red escrita a mano (se persiste junto al layout del mando) */
+$('form-red').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  await guardarRed({
+    ssid: $('in-ssid').value.trim(),
+    pass: $('in-pass').value,
+    auth: $('in-auth').value
+  });
+});
+$('btn-limpiar').onclick = () => guardarRed({ ssid: '', pass: '', auth: 'WPA' });
+
+async function guardarRed(valores) {
+  try {
+    const layout = await (await fetch('/api/mando-layout')).json();
+    layout.red = valores;
+    await fetch('/api/mando-layout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(layout)
+    });
+    await cargarRed();
+  } catch (_) {
+    alert('No se pudo guardar la red.');
+  }
+}
+
+/* Presencia en vivo: quién ocupa cada mando y si MIDIVJ está conectado */
+function conectarWS() {
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'join', room: SALA, rol: 'emisor', nombre: 'control' }));
+  ws.onmessage = ev => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    if (msg.type !== 'presencia') return;
+    presencia = { app: msg.app, mandos: msg.mandos || [], maxMandos: msg.maxMandos || 4 };
+    $('dot-app').className = 'dot' + (msg.app ? ' on' : '');
+    $('txt-mandos').textContent = presencia.mandos.length + '/' + presencia.maxMandos + ' mandos';
+    if (red) pintarTarjetas();
+  };
+  ws.onclose = () => setTimeout(conectarWS, 1500);
+}
+
+cargarRed();
+conectarWS();
+setInterval(cargarRed, 15000);   // la IP y la Wi-Fi cambian al mover la laptop
+</script>
+</body>
+</html>

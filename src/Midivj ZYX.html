@@ -110,6 +110,7 @@ input[type=range].opasl{flex:1;height:3px;accent-color:var(--accent);cursor:poin
 .mbadge.learning{color:var(--yellow);border-color:var(--yellow);animation:blk .4s infinite;}
 .mbadge.m-note{color:var(--accent);border-color:var(--accent);}
 .mbadge.m-cc{color:var(--blue);border-color:var(--blue);}
+.mbadge.m-mando{color:var(--yellow);border-color:var(--yellow);}
 @keyframes blk{0%,100%{opacity:1}50%{opacity:.15}}
 .pill{display:inline-flex;border:1px solid var(--border2);flex-shrink:0;}
 .po{padding:1px 4px;font-family:var(--mono);font-size:7px;cursor:pointer;color:var(--text3);transition:all .1s;line-height:1.7;user-select:none;}
@@ -150,6 +151,7 @@ input[type=color].epcol{width:28px;height:18px;border:1px solid var(--border2);b
 .bmidi{font-family:var(--mono);font-size:6px;color:var(--text3);text-align:center;}
 .bmidi.m-note{color:var(--accent);}
 .bmidi.m-cc{color:var(--blue);}
+.bmidi.m-mando{color:var(--yellow);}
 .bmidi.learning{color:var(--yellow);animation:blk .4s infinite;}
 #bank-actions{display:flex;gap:3px;}
 .bbtn{flex:1;background:var(--panel2);border:1px solid var(--border2);color:var(--text3);font-family:var(--mono);font-size:8px;padding:3px 4px;cursor:pointer;text-align:center;transition:all .12s;white-space:nowrap;}
@@ -212,7 +214,9 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 #vid-url::placeholder{color:var(--text3);}
 #cv-btns{position:absolute;top:8px;right:8px;display:flex;gap:4px;}
 #vid-area.fs-clean #cv-btns,
-#vid-area.fs-clean #res-lbl{display:none;}
+#vid-area.fs-clean #res-lbl,
+#vid-area.fs-clean #now-lbl,
+#vid-area.fs-clean #efx-lbl{display:none;}
 #res-lbl{position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:9px;color:var(--text2);background:rgba(0,0,0,.65);padding:2px 6px;pointer-events:none;}
 #now-lbl{position:absolute;bottom:8px;left:8px;font-family:var(--mono);font-size:9px;color:var(--accent);background:rgba(0,0,0,.72);padding:3px 8px;pointer-events:none;white-space:pre;line-height:1.6;opacity:0;transition:opacity .3s;}
 #efx-lbl{position:absolute;bottom:8px;right:8px;font-family:var(--mono);font-size:9px;color:var(--hot);background:rgba(0,0,0,.72);padding:3px 8px;pointer-events:none;text-align:right;opacity:0;transition:opacity .3s;}
@@ -224,6 +228,48 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 .ztxt{font-family:var(--mono);font-size:9px;color:var(--text3);min-width:42px;text-align:center;}
 #tl-pos{font-family:var(--mono);font-size:9px;color:var(--text2);margin-left:auto;}
 #tl-canvas{width:100%;height:194px;flex-shrink:0;display:block;cursor:crosshair;}
+
+/* ── PANEL DE RELAY Y MANDOS ── */
+#relay-fondo{position:fixed;inset:0;background:rgba(3,3,10,.78);z-index:900;display:none;align-items:center;justify-content:center;padding:20px;}
+#relay-fondo.vis{display:flex;}
+#relay-panel{background:var(--panel);border:1px solid var(--border2);border-radius:6px;width:min(620px,96vw);max-height:92vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.6);}
+#relay-panel header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);}
+#relay-panel h2{margin:0;font-family:var(--mono);font-size:12px;letter-spacing:2px;color:var(--accent);flex:1;}
+#relay-cerrar{background:none;border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:12px;line-height:1;padding:4px 9px;cursor:pointer;}
+#ses-fondo{position:fixed;inset:0;background:rgba(3,3,10,.78);z-index:900;display:none;align-items:center;justify-content:center;padding:20px;}
+#ses-fondo.vis{display:flex;}
+#ses-panel{background:var(--panel);border:1px solid var(--border2);border-radius:6px;width:min(560px,96vw);max-height:92vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.6);}
+#ses-panel header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);}
+#ses-panel h2{margin:0;font-family:var(--mono);font-size:12px;letter-spacing:2px;color:var(--accent);flex:1;}
+#ses-cerrar{background:none;border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:12px;line-height:1;padding:4px 9px;cursor:pointer;}
+.rp-cuerpo{padding:14px 16px 18px;}
+.rp-estado{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;padding:10px 12px;border:1px solid var(--border2);background:var(--panel2);margin-bottom:14px;}
+.rp-estado .pt{width:9px;height:9px;border-radius:50%;background:var(--hot);flex-shrink:0;}
+.rp-estado.ok .pt{background:var(--accent);box-shadow:0 0 8px var(--accent);}
+.rp-estado.ok{border-color:var(--accent);}
+.rp-paso{border:1px solid var(--border);margin-bottom:12px;}
+.rp-paso > h3{margin:0;font-family:var(--mono);font-size:9px;letter-spacing:1.6px;color:var(--text3);padding:8px 12px;background:var(--panel2);border-bottom:1px solid var(--border);}
+.rp-paso > div{padding:12px;}
+.rp-linea{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;}
+.rp-linea:last-child{margin-bottom:0;}
+.rp-linea label{font-family:var(--mono);font-size:9px;color:var(--text3);}
+.rp-cmd{flex:1;min-width:200px;background:#060614;border:1px solid var(--border2);color:var(--accent);font-family:var(--mono);font-size:10px;padding:6px 8px;outline:none;}
+.rp-inp{background:var(--panel2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:10px;padding:5px 7px;outline:none;}
+.rp-inp.ancha{flex:1;min-width:170px;}
+.rp-btn{background:var(--panel2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:10px;font-weight:700;padding:6px 11px;cursor:pointer;white-space:nowrap;}
+.rp-btn:hover{border-color:var(--accent);color:var(--accent);}
+.rp-btn.pri{background:rgba(0,255,136,.1);border-color:var(--accent);color:var(--accent);}
+.rp-ayuda{font-family:var(--mono);font-size:9px;color:var(--text3);line-height:1.7;margin:8px 0 0;}
+.rp-ayuda b{color:var(--text2);}
+.rp-hallazgo{font-family:var(--mono);font-size:10px;margin-top:8px;color:var(--yellow);}
+.rp-mandos{font-family:var(--mono);font-size:10px;color:var(--text2);}
+
+.ses-list{display:flex;flex-direction:column;gap:6px;margin-top:10px;max-height:260px;overflow-y:auto;}
+.ses-row{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--panel2);border:1px solid var(--border2);cursor:pointer;text-align:left;font-family:var(--mono);}
+.ses-row:hover{border-color:var(--accent);}
+.ses-row .ses-nm{flex:1;color:var(--text);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ses-row .ses-meta{color:var(--text3);font-size:9px;flex-shrink:0;}
+.ses-empty{font-family:var(--mono);font-size:10px;color:var(--text3);padding:10px 2px;}
 
 /* ── STATUS BAR ── */
 #sbar{height:26px;background:var(--surface);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:14px;flex-shrink:0;}
@@ -242,12 +288,122 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <input id="proj-name" type="text" value="untitled" spellcheck="false">
   <div id="learn-banner">● MIDI LEARN — toca nota o mueve CC</div>
   <div class="spacer"></div>
-  <button class="hbtn" onclick="pickMediaFolder()">MEDIA</button>
   <button class="hbtn out" onclick="openOutputWindow()">⊡ HDMI</button>
+  <button class="hbtn" id="mando-btn" onclick="abrirPanelRelay()" title="Relay, conexión y códigos QR de los mandos">📡 RELAY <span id="mando-count">—</span></button>
   <button id="excl-btn" class="hbtn" onclick="toggleExcl()" title="Exclusivo: disparar un clip detiene los clips de otros tracks" style="border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.08);">EXCL ●</button>
   <button class="hbtn danger" onclick="resetAll()">RESET</button>
-  <button class="hbtn" onclick="document.getElementById('pinput').click()">ABRIR</button>
+  <button class="hbtn" onclick="abrirPanelSesiones()" title="Lista las sesiones guardadas en Sessions/ y permite elegir la carpeta de MEDIA">ABRIR</button>
   <button class="hbtn save" onclick="saveProject()">GUARDAR</button>
+</div>
+
+<!-- ── PANEL DE RELAY Y MANDOS ── -->
+<div id="relay-fondo" onclick="if(event.target===this) cerrarPanelRelay()">
+  <div id="relay-panel">
+    <header>
+      <h2>RELAY Y MANDOS</h2>
+      <button id="relay-cerrar" onclick="cerrarPanelRelay()">✕</button>
+    </header>
+    <div class="rp-cuerpo">
+
+      <div class="rp-estado" id="rp-estado"><span class="pt"></span><span id="rp-estado-txt">—</span></div>
+
+      <div class="rp-paso" id="rp-paso-iniciar">
+        <h3>1 · INICIAR EL RELAY</h3>
+        <div>
+          <p class="rp-ayuda" style="margin-top:0">
+            El relay es el servidor local que enciende esta ventana y conecta los teléfonos.
+            Se inicia <b>fuera</b> del navegador: doble clic al archivo, o el comando en una consola.
+          </p>
+          <div class="rp-linea">
+            <label>ARCHIVO</label>
+            <input class="rp-cmd" id="rp-bat" readonly value="src\INICIAR_RELAY.bat">
+            <button class="rp-btn" onclick="copiarDeCampo('rp-bat', this)">COPIAR</button>
+          </div>
+          <div class="rp-linea">
+            <label>COMANDO</label>
+            <input class="rp-cmd" id="rp-cmd" readonly value='node "src/midivj-relay.js"'>
+            <button class="rp-btn" onclick="copiarDeCampo('rp-cmd', this)">COPIAR</button>
+          </div>
+          <div class="rp-linea">
+            <button class="rp-btn pri" onclick="buscarRelay()">🔍 BUSCAR RELAY</button>
+            <span class="rp-ayuda" style="margin:0">revisa los puertos 9191 a 9200</span>
+          </div>
+          <div class="rp-hallazgo" id="rp-hallazgo"></div>
+        </div>
+      </div>
+
+      <div class="rp-paso">
+        <h3>2 · CONEXIÓN</h3>
+        <div>
+          <div class="rp-linea">
+            <label>RELAY</label>
+            <input class="rp-inp ancha" id="rp-url" spellcheck="false" placeholder="ws://localhost:9191">
+            <label>SALA</label>
+            <input class="rp-inp" id="rp-room" spellcheck="false" style="width:88px" placeholder="midivj">
+          </div>
+          <div class="rp-linea">
+            <button class="rp-btn pri" id="rp-conectar" onclick="conectarDesdePanel()">CONECTAR</button>
+            <button class="rp-btn" onclick="netManualOff=true; netDisconnect();">DESCONECTAR</button>
+          </div>
+          <p class="rp-ayuda">
+            Si abriste MIDIVJ desde el relay, esto ya está resuelto: la aplicación se conecta sola.
+            Cambia la dirección sólo para usar el relay de <b>otra</b> computadora.
+          </p>
+        </div>
+      </div>
+
+      <div class="rp-paso">
+        <h3>3 · TELÉFONOS COMO MANDO</h3>
+        <div>
+          <div class="rp-linea">
+            <button class="rp-btn pri" onclick="abrirControlRemoto()">📱 ABRIR QR DE MANDOS</button>
+            <span class="rp-mandos" id="rp-mandos">—</span>
+          </div>
+          <p class="rp-ayuda">
+            Cada teléfono escanea el QR de su número (hasta 4). Para mapear un botón, pulsa
+            <b>MAP</b> en el clip o efecto y tócalo en el teléfono.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ── PANEL DE SESIONES (.vjp) ── -->
+<div id="ses-fondo" onclick="if(event.target===this) cerrarPanelSesiones()">
+  <div id="ses-panel">
+    <header>
+      <h2>ABRIR SESIÓN</h2>
+      <button id="ses-cerrar" onclick="cerrarPanelSesiones()">✕</button>
+    </header>
+    <div class="rp-cuerpo">
+
+      <div class="rp-paso">
+        <h3>MEDIA</h3>
+        <div>
+          <div class="rp-linea">
+            <button class="rp-btn" onclick="pickProjectFolder()">📁 ELEGIR CARPETA DE MEDIA</button>
+            <span class="rp-ayuda" id="ses-media-lbl" style="margin:0">Sin carpeta seleccionada</span>
+          </div>
+          <p class="rp-ayuda">Elige la carpeta con tus videos antes de abrir una sesión, así se verifica que estén completos.</p>
+        </div>
+      </div>
+
+      <div class="rp-paso">
+        <h3>SESIONES GUARDADAS — /Sessions</h3>
+        <div>
+          <div class="rp-linea">
+            <button class="rp-btn" onclick="refrescarPanelSesiones()">↻ ACTUALIZAR</button>
+            <button class="rp-btn" onclick="document.getElementById('pfileinput').click()">📄 ELEGIR ARCHIVO DEL DISCO…</button>
+          </div>
+          <div id="ses-list" class="ses-list"><div class="ses-empty">Cargando…</div></div>
+          <p class="rp-ayuda">Las sesiones se guardan automáticamente en <b>Sessions/</b> — esta lista se lee de ahí. Requiere el relay local activo (src/INICIAR_RELAY.bat).</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
 </div>
 
 <!-- ── MIDI BAR (4 devices) ── -->
@@ -373,8 +529,9 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 <!-- HIDDEN -->
 <input type="file" id="finput"  accept="video/*" style="display:none" onchange="loadT1(event)">
 <input type="file" id="tfinput" accept="video/*" style="display:none" onchange="loadActiveTrack(event)">
-<input type="file" id="pinput"  accept=".vjp,.json" style="display:none" onchange="openProject(event)">
-<input type="file" id="mdirinput" accept="video/*" webkitdirectory multiple style="display:none" onchange="loadMediaFolder(event)">
+<input type="file" id="tplinput" accept="video/*" multiple style="display:none" onchange="onPlaylistFilesChosen(event)">
+<input type="file" id="mdirinput" webkitdirectory multiple style="display:none" onchange="openProjectFolder(event)">
+<input type="file" id="pfileinput" accept=".vjp,.json" style="display:none" onchange="openProjectFile(event)">
 
 <script>
 /* ═══════════════════════════════════════════════════════
@@ -409,6 +566,33 @@ const EFX_DEFS = [
 const dispMidi = v => v===null||v===undefined ? null
   : v >= 128 ? 'CC'+(v-128) : NNAMES[v%12]+(Math.floor(v/12)-1);
 const midiKind = v => v===null||v===undefined ? null : v>=128?'cc':'note';
+
+/* Procedencia del último mensaje recibido por red (null = MIDI de hardware).
+   Lo llena netWS.onmessage justo antes de meterlo al pipeline. */
+let _origenMando = null;
+
+/* Texto y clase de la pastilla de mapeo. Un mapeo aprendido de un teléfono
+   se muestra como "M1·INTRO" para distinguirlo de una nota o un CC. */
+function midiEtiqueta(obj) {
+  if (!obj || obj.midi===null || obj.midi===undefined) return 'MAP';
+  const o = obj.midiOrigen;
+  if (o) return 'M'+(o.mando||'?')+'·'+((o.etiqueta||'').trim() || ('B'+o.fila+','+o.col));
+  return dispMidi(obj.midi);
+}
+function midiClase(obj) {
+  if (!obj || obj.midi===null || obj.midi===undefined) return '';
+  return obj.midiOrigen ? 'mando' : midiKind(obj.midi);
+}
+/* Detalle completo para el tooltip: siempre dice el mensaje real */
+function midiTitulo(obj) {
+  if (!obj || obj.midi===null || obj.midi===undefined) return 'Clic=MIDI Learn · Clic-der=limpiar';
+  const o = obj.midiOrigen;
+  const msg = (obj.midi>=128 ? 'CC '+(obj.midi-128) : 'Nota '+dispMidi(obj.midi)+' ('+obj.midi+')');
+  const fuente = o
+    ? 'Mando '+(o.mando||'?')+' · botón '+((o.etiqueta||'').trim() || 'fila '+o.fila+' col '+o.col)
+    : 'Controlador MIDI';
+  return fuente+' — '+msg+'\nClic=MIDI Learn · Clic-der=limpiar';
+}
 const ft = t => isNaN(t)||t<0 ? '0:00.0' : Math.floor(t/60)+':'+(t%60).toFixed(1).padStart(4,'0');
 
 /* ── TIMELINE STATE ── */
@@ -448,7 +632,6 @@ const S = {
 let clipSeq = 1;
 const MEDIA = {
   library: null,
-  pendingProject: null,
 };
 const HDMI_STREAM_FPS = 30;
 const HDMI_STREAM_WAIT_MS = 900;
@@ -598,6 +781,12 @@ function makeTrack(i) {
     loaded:false, dur:0, loadedName:'—', _url:'',
     clips:[], groups:[], activeClip:null,
     mediaRef:null, _objectURL:null,
+    /* Playlist: ordered list of extra video files that can join to a single
+       video already loaded via the normal 🎬 VIDEO flow, one auto-clip each. */
+    playlist:[], playlistLoop:false,
+    _srcKey:'',                                   // normalized key of the source currently in vidA/vidB
+    _plBufKey:null, _plBufUrl:null, _plBufMediaRef:null, // cross-source prebuffer bookkeeping
+    _plPrebuffered:false, _pendingClip:null,
     opacity:1, visible:true,
     videoOffset:0,         // seconds offset of video start in timeline
     sourceType:'file',     // 'file' | 'display' | 'capture'
@@ -667,6 +856,25 @@ function makeTrack(i) {
       buf.currentTime = c.in;
     }
 
+    /* ── Playlist prebuffer: preload the next chained clip's source ahead of
+       the boundary when it points to a different file, for a near-seamless
+       swap (falls back to a small load gap via triggerClipWithLoad if this
+       doesn't land in time — see trigClip). ── */
+    if (!t._plPrebuffered && c.playMode==='once' && c.nextClipId && ct >= c.out - 1.2 && ct < c.out) {
+      t._plPrebuffered = true;
+      const nr = findClip(c.nextClipId);
+      const needKey = nr ? clipSourceKey(nr.clip) : null;
+      if (needKey && needKey !== t._srcKey) {
+        const entry = resolvePlaylistEntryFile(t, nr.clip.srcRef);
+        if (entry) {
+          if (!entry.objectURL) entry.objectURL = URL.createObjectURL(entry.file);
+          t.vidBuf.src = entry.objectURL;
+          t.vidBuf.currentTime = nr.clip.in || 0;
+          t._plBufKey = needKey; t._plBufUrl = entry.objectURL; t._plBufMediaRef = entry.mediaRef;
+        }
+      }
+    }
+
     /* ── Loop / chain point ── */
     if (ct >= c.out - 0.07) {
       if (c.playMode === 'loop') {
@@ -722,7 +930,14 @@ function makeTrack(i) {
       document.getElementById('res-lbl').textContent = cvs.width+'×'+cvs.height;
       document.getElementById('load-ov').classList.add('hide');
     }
-    t.clips.forEach(c => { if (!c.out||c.out>vidA.duration) c.out=vidA.duration; });
+    t.clips.forEach(c => {
+      /* Only clamp clips bound to whatever source just finished loading —
+         a playlist clip pinned to a different file (srcRef) must not have
+         its out-point rewritten by an unrelated video's duration. */
+      const csk = clipSourceKey(c);
+      if (csk && csk !== t._srcKey) return;
+      if (!c.out||c.out>vidA.duration) c.out=vidA.duration;
+    });
     if (t.activeClip) t.vid.play().catch(()=>{});
     else syncTracksToMaster();
     renderAll();
@@ -950,15 +1165,40 @@ function serializeMediaRef(ref) {
   if (ref.url && !/^blob:/i.test(ref.url)) out.url = ref.url;
   return out;
 }
-function pickMediaFolder() {
+function pickProjectFolder() {
   const inp = document.getElementById('mdirinput');
   if (inp) inp.click();
 }
-function loadMediaFolder(ev) {
-  const files = Array.from(ev.target.files || []);
-  ev.target.value = '';
-  if (!files.length) return;
-
+/* ── Playlist media-source keys ──
+   A clip with no srcRef (the vast majority — everything before this
+   feature existed) always matches "whatever is loaded on the track" —
+   clipSourceKey() returns null for those, so callers skip the whole
+   source-switch path and behavior is unchanged. */
+function mediaRefKey(ref) {
+  if (!ref) return '';
+  return normalizeMediaKey(ref.relativePath || ref.fileName || ref.name || ref.url || '');
+}
+function clipSourceKey(clip) {
+  return clip && clip.srcRef ? mediaRefKey(clip.srcRef) : null;
+}
+function resolvePlaylistEntryFile(track, srcRef) {
+  if (!srcRef) return null;
+  const key = mediaRefKey(srcRef);
+  const entry = (track.playlist||[]).find(e => mediaRefKey(e.mediaRef) === key);
+  if (!entry) return null;
+  if (!entry.file) {
+    const lib = resolveMediaLibraryEntry(srcRef);
+    if (lib) entry.file = lib.file;
+  }
+  return entry.file ? entry : null;
+}
+function onceEvent(el, name) {
+  return new Promise(resolve => {
+    const h = () => { el.removeEventListener(name, h); resolve(); };
+    el.addEventListener(name, h, { once:true });
+  });
+}
+function buildMediaLibrary(files) {
   const byName = new Map();
   const byRel  = new Map();
   let rootName = '';
@@ -978,13 +1218,109 @@ function loadMediaFolder(ev) {
     byRel.set(entry.keyRel, entry);
   });
 
-  MEDIA.library = { byName, byRel, rootName, count: files.length };
-  setSt('st-media', `${rootName} (${files.length})`, 'ok');
+  return { byName, byRel, rootName, count: files.length };
+}
+function openProjectFolder(ev) {
+  const files = Array.from(ev.target.files || []);
+  ev.target.value = '';
+  if (!files.length) return;
 
-  if (MEDIA.pendingProject) {
-    const pending = MEDIA.pendingProject;
-    MEDIA.pendingProject = null;
-    restoreProjectMedia(pending, true);
+  const isProjectFile = f => /\.(vjp|json)$/i.test(f.name);
+  const projectFiles = files.filter(isProjectFile);
+  const mediaFiles   = files.filter(f => !isProjectFile(f));
+
+  MEDIA.library = buildMediaLibrary(mediaFiles);
+  setSt('st-media', MEDIA.library.count ? `${MEDIA.library.rootName} (${MEDIA.library.count})` : '—', MEDIA.library.count ? 'ok' : '');
+  updateSesMediaLabel();
+
+  if (MEDIA.pendingProjectData) {
+    const pending = MEDIA.pendingProjectData;
+    MEDIA.pendingProjectData = null;
+    applyProjectData(pending);
+    return;
+  }
+
+  /* Bonus: if the chosen folder happens to also hold a .vjp/.json, use it —
+     the normal path is still the ABRIR SESIÓN panel, which lists Sessions/. */
+  if (!projectFiles.length) return;
+
+  let chosen = projectFiles[0];
+  if (projectFiles.length > 1) {
+    const list = projectFiles.map((f,i) => `${i+1}. ${f.webkitRelativePath || f.name}`).join('\n');
+    const answer = prompt(`Se encontraron ${projectFiles.length} archivos de proyecto en la carpeta:\n${list}\n\nEscribe el número del que quieres abrir (o cancela):`, '');
+    const idx = parseInt(answer, 10);
+    if (!answer || isNaN(idx) || idx < 1 || idx > projectFiles.length) return;
+    chosen = projectFiles[idx - 1];
+  }
+  /* Un único candidato: sin ambigüedad, se abre directo sin pedir confirmación. */
+  loadProjectFromFile(chosen);
+}
+function openProjectFile(ev) {
+  const f = ev.target.files[0];
+  ev.target.value = '';
+  if (f) loadProjectFromFile(f);
+}
+function loadProjectFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    let d;
+    try { d = JSON.parse(e.target.result); }
+    catch (err) { alert('Error al leer el proyecto: ' + err.message); return; }
+    applyProjectData(d);
+  };
+  reader.readAsText(file);
+}
+async function applyProjectData(d) {
+  const refs = (d.tracks || []).flatMap(td => [
+    td.media || td.mediaRef || null,
+    ...(td.playlist || []).map(pe => pe.media || null),
+  ]).filter(r => r && r.sourceType === 'file');
+  const missing = refs.filter(r => !resolveMediaLibraryEntry(r));
+  if (missing.length) {
+    const names = missing.map(r => r.relativePath || r.fileName || r.name).join('\n');
+    const hint = missing.map(r => r.folderHint).find(Boolean);
+    const askFolder = !MEDIA.library
+      ? '\n\n¿Seleccionar primero la carpeta de medios?'
+      : (hint ? `\n\nCarpeta esperada: "${hint}". ¿Seleccionar otra carpeta de medios?` : '\n\n¿Seleccionar otra carpeta de medios?');
+    const proceed = confirm(`Faltan ${missing.length} de ${refs.length} video(s)${MEDIA.library ? ' en "'+MEDIA.library.rootName+'"' : ''}:\n${names}${askFolder}\n\n(Cancelar = elegir carpeta de medios · Aceptar = abrir sin esos videos)`);
+    if (!proceed) { MEDIA.pendingProjectData = d; document.getElementById('mdirinput').click(); return; }
+  }
+
+  S.tracks.forEach(t=>t.clips=[]);
+  if (d.tracks) {
+    d.tracks.forEach((td,i)=>{ if(i<S.tracks.length){
+      S.tracks[i].clips=(td.clips||[]).map(migrateClip);
+      S.tracks[i].groups=(td.groups||[]);
+      if(td.opacity!==undefined) S.tracks[i].opacity=td.opacity;
+      if(td.videoOffset!==undefined) S.tracks[i].videoOffset=td.videoOffset;
+      S.tracks[i].mediaRef = td.media || td.mediaRef || null;
+      (S.tracks[i].playlist||[]).forEach(e => { if (e.objectURL) URL.revokeObjectURL(e.objectURL); });
+      S.tracks[i].playlist = (td.playlist||[]).map(pe => ({
+        id: pe.id, name: pe.name, dur: pe.dur||0,
+        mediaRef: pe.media || null, file:null, relativePath:pe.media?.relativePath||'', objectURL:null,
+      }));
+      S.tracks[i].playlistLoop = !!td.playlistLoop;
+    }});
+  } else if (d.clips) {
+    S.tracks[0].clips = d.clips.map(migrateClip);
+  }
+  if (d.efxs) d.efxs.forEach(de=>{ const e=S.efxs.find(x=>x.id===de.id); if(e) Object.assign(e,de,{on:false,midi:de.midi!==undefined?de.midi:(de.note!==undefined?de.note:null)}); });
+  if (d.banks) d.banks.forEach((db,i)=>{ if(i<S.banks.length) Object.assign(S.banks[i],db); });
+  if (d.name) document.getElementById('proj-name').value=d.name;
+  clipSeq=allClips().length+1; S.selClipId=null;
+  /* Sesiones sin mando propio (nuevas o guardadas antes de esta función)
+     dejan el mando limpio en vez de arrastrar el de la sesión anterior. */
+  aplicarMandoLayoutSesion(d.mando || null);
+
+  const mediaRes = await restoreProjectMedia(d);
+  renderAll(); renderBanks();
+  cerrarPanelSesiones();
+  if (mediaRes.totalRefs && !mediaRes.unresolved.length) {
+    alert('"'+(d.name||'proyecto')+'" cargado.\nSe restauraron '+mediaRes.restored+' video(s) del proyecto.');
+  } else if (mediaRes.totalRefs && mediaRes.unresolved.length) {
+    alert('"'+(d.name||'proyecto')+'" cargado.\nSe restauraron '+mediaRes.restored+'/'+mediaRes.totalRefs+' video(s).');
+  } else {
+    alert('"'+(d.name||'proyecto')+'" cargado.');
   }
 }
 function resolveMediaLibraryEntry(ref) {
@@ -1007,7 +1343,7 @@ function loadTrackFileObject(track, file, relativePath='') {
   track._objectURL = url;
   startLoad(track, file.name, url, buildFileMediaRef(file, relativePath));
 }
-async function restoreProjectMedia(projectData, fromFolderSelection=false) {
+async function restoreProjectMedia(projectData) {
   const pTracks = projectData?.tracks || [];
   let totalRefs = 0, restored = 0;
   const unresolved = [];
@@ -1046,20 +1382,33 @@ async function restoreProjectMedia(projectData, fromFolderSelection=false) {
     unresolved.push({ track, ref:track.mediaRef });
   }
 
+  /* Playlist entries: resolve File handles against the media library, but
+     don't load anything — they're only used lazily when their auto-clip
+     is actually triggered (see resolvePlaylistEntryFile/triggerClipWithLoad). */
+  for (let i = 0; i < Math.min(pTracks.length, S.tracks.length); i++) {
+    const track = S.tracks[i];
+    for (const entry of track.playlist) {
+      if (!entry.mediaRef) continue;
+      totalRefs++;
+      const libEntry = resolveMediaLibraryEntry(entry.mediaRef);
+      if (libEntry) {
+        entry.file = libEntry.file;
+        entry.relativePath = libEntry.relativePath;
+        restored++;
+      } else {
+        unresolved.push({ track, ref: entry.mediaRef });
+      }
+    }
+  }
+
   if (!totalRefs) {
     setSt('st-media', MEDIA.library ? `${MEDIA.library.rootName} (${MEDIA.library.count})` : '—', MEDIA.library ? 'ok' : '');
     return { totalRefs, restored, unresolved };
   }
 
   if (unresolved.length) {
-    MEDIA.pendingProject = projectData;
-    const hint = unresolved.map(x => x.ref.folderHint).find(Boolean) || (MEDIA.library?.rootName || 'carpeta');
     setSt('st-media', `faltan ${unresolved.length}`, 'act');
-    if (fromFolderSelection) {
-      alert(`Se restauraron ${restored}/${totalRefs} videos.\nNo encontré ${unresolved.length} archivo(s) en "${hint}".`);
-    }
   } else {
-    MEDIA.pendingProject = null;
     setSt('st-media', MEDIA.library ? `${MEDIA.library.rootName} (${MEDIA.library.count})` : 'autoload', 'ok');
   }
   return { totalRefs, restored, unresolved };
@@ -1095,8 +1444,11 @@ function startLoad(track, name, url, mediaRef=null) {
   track._pendingName = name;
   track._url = url;
   track.mediaRef = serializeMediaRef(mediaRef || buildURLMediaRef(name, url));
+  track._srcKey = mediaRefKey(track.mediaRef);
   track._activeVid = 'A';
   track.prebuffering = false;
+  track._plBufKey = track._plBufUrl = track._plBufMediaRef = null;
+  track._plPrebuffered = false;
   track.vidA.src = url;
   track.vidA.load();
   track.vidB.src = '';
@@ -1508,16 +1860,18 @@ function triggerOff(midiId) {
 
 function doAssign(target, midiId) {
   /* Clear same ID from everything first */
-  S.tracks.forEach(t => t.clips.forEach(c => { if(c.midi===midiId) c.midi=null; }));
-  S.efxs.forEach(e => { if(e.midi===midiId) e.midi=null; });
-  if (target.t==='clip') { const r=findClip(target.id); if(r) r.clip.midi=midiId; }
-  else { const e=S.efxs.find(x=>x.id===target.id); if(e) e.midi=midiId; }
+  S.tracks.forEach(t => t.clips.forEach(c => { if(c.midi===midiId) { c.midi=null; c.midiOrigen=null; } }));
+  S.efxs.forEach(e => { if(e.midi===midiId) { e.midi=null; e.midiOrigen=null; } });
+  /* midiOrigen recuerda si el mapeo se aprendió de un botón del celular */
+  const origen = _origenMando ? {..._origenMando} : null;
+  if (target.t==='clip') { const r=findClip(target.id); if(r) { r.clip.midi=midiId; r.clip.midiOrigen=origen; } }
+  else { const e=S.efxs.find(x=>x.id===target.id); if(e) { e.midi=midiId; e.midiOrigen=origen; } }
   renderClips(); renderEfxs();
 }
 function clearMidi(t, id, ev) {
   ev.stopPropagation();
-  if (t==='clip') { const r=findClip(id); if(r) r.clip.midi=null; }
-  else { const e=S.efxs.find(x=>x.id===id); if(e) e.midi=null; }
+  if (t==='clip') { const r=findClip(id); if(r) { r.clip.midi=null; r.clip.midiOrigen=null; } }
+  else { const e=S.efxs.find(x=>x.id===id); if(e) { e.midi=null; e.midiOrigen=null; } }
   renderClips(); renderEfxs();
 }
 function startLearn(t, id, ev) {
@@ -1549,6 +1903,7 @@ function migrateClip(raw) {
     in:         raw.in   || 0,
     out:        raw.out  || 10,
     midi:       raw.midi !== undefined ? raw.midi : (raw.note !== undefined ? raw.note : null),
+    midiOrigen: raw.midiOrigen || null,
     color:      raw.color    || CLIP_COLS[0],
     playMode:   raw.playMode || 'loop',
     trigMode:   raw.trigMode || raw.mode || 'hold',
@@ -1561,6 +1916,8 @@ function migrateClip(raw) {
     transDur:   raw.transDur  !== undefined ? raw.transDur : 0.5,
     onEnd:      raw.onEnd     || 'stop',
     blackoutDur:raw.blackoutDur !== undefined ? raw.blackoutDur : 0,
+    srcRef:         raw.srcRef         || null, // playlist media override, null = track's loaded video
+    playlistEntryId:raw.playlistEntryId|| null, // links an auto-generated clip back to its playlist entry
   };
 }
 
@@ -1570,7 +1927,7 @@ function addClip() {
   const c = { id:'c'+Date.now(), name:'CLIP '+clipSeq++, in:0, out:t.dur||10,
     midi:null, color, playMode:'loop', trigMode:'hold', nextClipId:null, isLock:false,
     groupId:null, loopMode:'normal', transIn:'none', transOut:'none', transDur:0.5,
-    onEnd:'stop', blackoutDur:0 };
+    onEnd:'stop', blackoutDur:0, srcRef:null, playlistEntryId:null };
   t.clips.push(c);
   S.selClipId = c.id;
   renderClips(); renderTL();
@@ -1602,7 +1959,53 @@ function toggleExcl() {
 }
 
 /* Trigger a clip on its track */
+/* Trigger a clip on its track. Thin dispatcher: most clips have no srcRef
+   (clipSourceKey returns null) and go straight through unchanged; a
+   playlist clip whose file isn't currently loaded on the track routes
+   through the async load-then-activate path instead. */
 function trigClip(track, clip) {
+  const needKey = clipSourceKey(clip);
+  if (needKey && needKey !== track._srcKey) { triggerClipWithLoad(track, clip); return; }
+  trigClipLoaded(track, clip);
+}
+
+async function triggerClipWithLoad(track, clip) {
+  const needKey = clipSourceKey(clip);
+
+  /* Fast path: the cross-source prebuffer (onTU) already has this source
+     ready in vidBuf — promote it and activate with near-zero gap. */
+  if (track._plBufKey === needKey && track.vidBuf.readyState >= 2) {
+    promoteBufferToActive(track);
+    trigClipLoaded(track, clip);
+    return;
+  }
+
+  const entry = resolvePlaylistEntryFile(track, clip.srcRef);
+  if (!entry) { alert('No se encontró el archivo "'+(clip.srcRef?.name||clip.name)+'" de la playlist.'); return; }
+  if (!entry.objectURL) entry.objectURL = URL.createObjectURL(entry.file);
+
+  track._pendingClip = clip;
+  const expectSrcKey = needKey;
+  startLoad(track, entry.name, entry.objectURL, entry.mediaRef);
+  await onceEvent(track.vidA, 'loadedmetadata');
+
+  /* Race guard: user triggered something else while this was loading. */
+  if (track._srcKey !== expectSrcKey || track._pendingClip !== clip) return;
+  track._pendingClip = null;
+  trigClipLoaded(track, clip);
+}
+
+function promoteBufferToActive(track) {
+  track._sourceKey++;
+  resetTrackCaches(track);
+  track._url = track._plBufUrl;
+  track.mediaRef = track._plBufMediaRef;
+  track._srcKey = track._plBufKey;
+  track._activeVid = track._activeVid==='A' ? 'B' : 'A';
+  track._plBufKey = track._plBufUrl = track._plBufMediaRef = null;
+}
+
+function trigClipLoaded(track, clip) {
   if (!track.loaded) return;
   if (clip.trigMode==='toggle' && track.activeClip===clip) { deactivateClip(track); return; }
 
@@ -1620,6 +2023,7 @@ function trigClip(track, clip) {
     track.activeClip = clip;
     track._onceEnded = false;
     track.prebuffering = false;
+    track._plPrebuffered = false;
     track.pingDir = 1;
     track._transOutStarted = false;
     if (track._revTimer) { clearTimeout(track._revTimer); track._revTimer=null; }
@@ -1712,6 +2116,7 @@ function updateActiveLbl() {
   if (lines.length) { lbl.textContent=lines.join('\n'); lbl.style.opacity=1; }
   else { lbl.textContent=''; lbl.style.opacity=0; }
   setSt('st-active', lines.length ? lines.map(s=>s.replace('● ','')).join(' · ') : '—', lines.length?'act':'');
+  if (typeof notificarClipsAMandos === 'function') notificarClipsAMandos();
 }
 
 function toggleLock(id, ev) {
@@ -1837,7 +2242,176 @@ function renderTrackInfo() {
   <span class="opa-lbl" id="off-v">${ft(t.videoOffset||0)}</span>
   <button class="hbtn" style="font-size:8px;padding:1px 6px;" onclick="S.tracks[S.ati].videoOffset=0;renderTrackInfo();renderTL();">0</button>
 </div>
-${capLbl ? `<div style="padding:1px 0;">${capLbl}</div>` : ''}`;
+${capLbl ? `<div style="padding:1px 0;">${capLbl}</div>` : ''}
+${renderPlaylistPanel(t)}`;
+}
+
+/* ── Playlist panel: ordered list of extra videos for this track,
+   joined consecutively via auto-generated once-mode clips. ── */
+function renderPlaylistPanel(t) {
+  const idx = S.ati;
+  const rows = t.playlist.map((e,i) => `
+    <div class="ti-row" style="gap:4px;">
+      <span class="ti-dur" style="width:14px;">${i+1}</span>
+      <span class="ti-name" title="${e.relativePath||e.name}">${e.name}</span>
+      <span class="ti-dur">${e.dur?ft(e.dur):'—'}</span>
+      <button class="hbtn" style="font-size:8px;padding:1px 5px;" ${i===0?'disabled':''} onclick="movePlaylistEntry(${idx},'${e.id}',-1)" title="Subir">↑</button>
+      <button class="hbtn" style="font-size:8px;padding:1px 5px;" ${i===t.playlist.length-1?'disabled':''} onclick="movePlaylistEntry(${idx},'${e.id}',1)" title="Bajar">↓</button>
+      <button class="hbtn" style="font-size:8px;padding:1px 5px;border-color:var(--hot);color:var(--hot);" onclick="removePlaylistEntry(${idx},'${e.id}')" title="Quitar">✕</button>
+    </div>`).join('');
+
+  return `
+<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border2);">
+  <div class="ti-row" style="gap:3px;flex-wrap:wrap;">
+    <span class="ti-name" style="flex:none;font-weight:700;color:var(--text2);">🎞 PLAYLIST</span>
+    <button class="hbtn" style="font-size:9px;padding:3px 7px;margin-left:auto;" onclick="document.getElementById('tplinput').click()" title="Agregar varios videos a la playlist de este track">+ VIDEOS</button>
+    <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="clearPlaylist(${idx})" title="Vaciar la playlist">🗑 VACIAR</button>
+  </div>
+  ${t.playlist.length ? rows : '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">Sin videos en la lista.</div>'}
+  <div class="ti-row" style="gap:6px;margin-top:4px;">
+    <label style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:8px;color:var(--text3);cursor:pointer;">
+      <input type="checkbox" ${t.playlistLoop?'checked':''} onchange="S.tracks[${idx}].playlistLoop=this.checked">
+      🔁 LOOP PLAYLIST
+    </label>
+    <button class="hbtn save" style="font-size:9px;padding:3px 7px;margin-left:auto;" onclick="generatePlaylistClips(${idx})" title="Crea/actualiza un clip por cada video de la lista, encadenados en orden" ${t.playlist.length?'':'disabled'}>⚡ GENERAR CLIPS</button>
+  </div>
+</div>`;
+}
+
+function onPlaylistFilesChosen(ev) {
+  const files = Array.from(ev.target.files || []);
+  ev.target.value = '';
+  if (!files.length) return;
+  const t = S.tracks[S.ati];
+  files.forEach(file => {
+    t.playlist.push({
+      id: 'pe'+Date.now()+Math.random().toString(36).slice(2,7),
+      name: file.name,
+      file,
+      relativePath: file.webkitRelativePath || '',
+      mediaRef: buildFileMediaRef(file),
+      dur: 0,
+      objectURL: null,
+    });
+  });
+  renderTrackInfo();
+  probePlaylistDurations(t);
+}
+
+/* Sequentially reads duration metadata for playlist entries that don't
+   have it yet, via a single shared hidden &lt;video&gt;. */
+async function probePlaylistDurations(track) {
+  let probe = document.getElementById('pl-probe');
+  if (!probe) {
+    probe = document.createElement('video');
+    probe.id = 'pl-probe'; probe.muted = true; probe.preload = 'metadata';
+    probe.style.display = 'none';
+    document.body.appendChild(probe);
+  }
+  for (const entry of track.playlist) {
+    if (entry.dur || !entry.file) continue;
+    if (!entry.objectURL) entry.objectURL = URL.createObjectURL(entry.file);
+    probe.src = entry.objectURL;
+    try { await onceEvent(probe, 'loadedmetadata'); entry.dur = probe.duration || 0; }
+    catch(_) {}
+    if (S.tracks[S.ati] === track) renderTrackInfo();
+  }
+}
+
+function movePlaylistEntry(trackIdx, id, dir) {
+  const t = S.tracks[trackIdx];
+  const idx = t.playlist.findIndex(e=>e.id===id);
+  if (idx < 0) return;
+  const j = idx + dir;
+  if (j < 0 || j >= t.playlist.length) return;
+  [t.playlist[idx], t.playlist[j]] = [t.playlist[j], t.playlist[idx]];
+  renderTrackInfo();
+}
+
+/* Remove the auto-generated clips tied to the given playlist entry ids
+   (playlistEntryId), unhook any dangling nextClipId pointing at them, and
+   stop playback if one of them was the active clip — otherwise the track
+   keeps playing a video whose playlist entry (and possibly whole playlist)
+   no longer exists. */
+function unlinkPlaylistClips(track, entryIds) {
+  const idSet = new Set(entryIds);
+  const removedIds = new Set(track.clips.filter(c => c.playlistEntryId && idSet.has(c.playlistEntryId)).map(c=>c.id));
+  if (!removedIds.size) return;
+  const wasActive = track.activeClip && removedIds.has(track.activeClip.id);
+  track.clips = track.clips.filter(c => !removedIds.has(c.id));
+  allClips().forEach(c => { if (removedIds.has(c.nextClipId)) c.nextClipId = null; });
+  if (S.selClipId && removedIds.has(S.selClipId)) S.selClipId = null;
+  if (wasActive) deactivateClip(track);
+}
+
+function removePlaylistEntry(trackIdx, id) {
+  const t = S.tracks[trackIdx];
+  const idx = t.playlist.findIndex(e=>e.id===id);
+  if (idx < 0) return;
+  const [entry] = t.playlist.splice(idx, 1);
+  if (entry.objectURL) URL.revokeObjectURL(entry.objectURL);
+  unlinkPlaylistClips(t, [id]);
+  renderClips(); renderTL(); renderTrackInfo();
+}
+
+function clearPlaylist(trackIdx) {
+  const t = S.tracks[trackIdx];
+  if (!t.playlist.length) return;
+  if (!confirm('¿Vaciar la playlist de '+t.name+'? También se borrarán los clips generados desde ella.')) return;
+  const entryIds = t.playlist.map(e=>e.id);
+  t.playlist.forEach(e => { if (e.objectURL) URL.revokeObjectURL(e.objectURL); });
+  t.playlist = [];
+  unlinkPlaylistClips(t, entryIds);
+  renderClips(); renderTL(); renderTrackInfo();
+}
+
+/* Generate/regenerate one 'once' clip per playlist entry, chained via
+   nextClipId in list order — reuses the existing chain/trigger engine
+   (trigClip/chainClip), no separate playlist player needed. Regeneration
+   is authoritative: it rebuilds structure/order/timing from the current
+   playlist, only preserving each entry's learned MIDI note. */
+async function generatePlaylistClips(trackIdx) {
+  const t = S.tracks[trackIdx];
+  if (!t.playlist.length) { alert('La playlist está vacía.'); return; }
+
+  await probePlaylistDurations(t);
+  if (t.playlist.some(e => !e.dur)) {
+    alert('No se pudo leer la duración de algún video de la playlist. Revisa los archivos.');
+  }
+
+  const plGroupId = 'pl-'+t.id;
+  let group = t.groups.find(g => g.id === plGroupId);
+  if (!group) {
+    group = { id: plGroupId, name: 'PLAYLIST', color: GRP_COLORS[t.groups.length % GRP_COLORS.length], collapsed:false };
+    t.groups.push(group);
+    grpOpen.add(group.id);
+  }
+
+  const midiByEntry = new Map();
+  t.clips.forEach(c => { if (c.groupId === plGroupId && c.playlistEntryId) midiByEntry.set(c.playlistEntryId, {midi:c.midi, midiOrigen:c.midiOrigen}); });
+
+  const removedIds = new Set(t.clips.filter(c => c.groupId === plGroupId).map(c => c.id));
+  t.clips = t.clips.filter(c => c.groupId !== plGroupId);
+  allClips().forEach(c => { if (removedIds.has(c.nextClipId)) c.nextClipId = null; });
+
+  const newClips = t.playlist.map((entry, i) => {
+    const saved = midiByEntry.get(entry.id);
+    return {
+      id:'c'+Date.now()+i, name: entry.name, in:0, out: entry.dur || 10,
+      midi: saved ? saved.midi : null, midiOrigen: saved ? saved.midiOrigen : null,
+      color: CLIP_COLS[i % CLIP_COLS.length],
+      playMode:'once', trigMode:'hold', nextClipId:null, isLock:false,
+      groupId: plGroupId, loopMode:'normal', transIn:'none', transOut:'none', transDur:0.5,
+      onEnd:'stop', blackoutDur:0,
+      srcRef: entry.mediaRef, playlistEntryId: entry.id,
+    };
+  });
+  for (let i = 0; i < newClips.length - 1; i++) newClips[i].nextClipId = newClips[i+1].id;
+  if (t.playlistLoop && newClips.length > 1) newClips[newClips.length-1].nextClipId = newClips[0].id;
+
+  t.clips.push(...newClips);
+  clipSeq = allClips().length + 1;
+  renderClips(); renderTL(); renderTrackInfo();
 }
 
 function buildNextOpts(excludeId) {
@@ -1997,9 +2571,9 @@ function buildClipEl(c, track) {
   const isPlay = track.activeClip?.id === c.id;
   const isLk   = c.isLock || isLockTarget(c.id);
   const isLrn  = S.learning?.t==='clip' && S.learning?.id===c.id;
-  const mk     = midiKind(c.midi);
+  const mk     = midiClase(c);
   const bCls   = 'mbadge'+(isLrn?' learning':c.midi!==null?' m-'+mk:'');
-  const bTxt   = isLrn ? '???' : c.midi!==null ? dispMidi(c.midi) : 'MAP';
+  const bTxt   = isLrn ? '???' : midiEtiqueta(c);
 
   const el = document.createElement('div');
   el.dataset.id = c.id;
@@ -2066,7 +2640,7 @@ function buildClipEl(c, track) {
   r2.className = 'clip-r2';
   r2.innerHTML = `
 <span class="trange">${ft(c.in)}→${ft(c.out)}</span>
-<span class="${bCls}" onclick="startLearn('clip','${c.id}',event)"
+<span class="${bCls}" onclick="startLearn('clip','${c.id}',event)" title="${midiTitulo(c)}"
   oncontextmenu="clearMidi('clip','${c.id}',event);return false;">${bTxt}</span>
 <div class="pill">
   <span class="po${c.playMode==='loop'?' on':''}" onclick="event.stopPropagation();setPlayMode('${c.id}','loop')">LOOP</span>
@@ -2259,6 +2833,8 @@ function renderClips() {
 
   /* ── Render ungrouped clips after groups ── */
   track.clips.filter(c=>!c.groupId).forEach(c => list.appendChild(buildClipEl(c, track)));
+
+  if (typeof publicarInventarioPronto === 'function') publicarInventarioPronto();
 }
 
 /* ── EFFECTS PANEL ── */
@@ -2354,9 +2930,9 @@ function renderEfxs() {
   S.efxs.forEach(e => {
     let el = list.querySelector(`[data-eid="${e.id}"]`);
     const isLrn  = S.learning?.t==='effect' && S.learning?.id===e.id;
-    const mk     = midiKind(e.midi);
+    const mk     = midiClase(e);
     const bCls   = 'mbadge'+(isLrn?' learning':e.midi!==null?' m-'+mk:'');
-    const bTxt   = isLrn ? '???' : e.midi!==null ? dispMidi(e.midi) : 'MAP';
+    const bTxt   = isLrn ? '???' : midiEtiqueta(e);
     const isOpen = efxOpen.has(e.id);
     const hasP   = efxParams(e).length > 0;
 
@@ -2369,7 +2945,7 @@ function renderEfxs() {
   <button class="eplay${e.on?' on':''}" onclick="manualEfx('${e.id}')">${e.on?'■':'▶'}</button>
   <div class="eico">${EFX_ICO[e.type]||'◆'}</div>
   <span class="enm">${e.name}</span>
-  <span class="${bCls}" onclick="startLearn('effect','${e.id}',event)"
+  <span class="${bCls}" onclick="startLearn('effect','${e.id}',event)" title="${midiTitulo(e)}"
     oncontextmenu="clearMidi('effect','${e.id}',event);return false;">${bTxt}</span>
   <div class="pill">
     <span class="po${e.mode==='hold'?' on':''}" onclick="setEfxMode('${e.id}','hold')">H</span>
@@ -2387,12 +2963,13 @@ function renderEfxs() {
       const playBtn = el.querySelector('.eplay');
       if (playBtn) { playBtn.className='eplay'+(e.on?' on':''); playBtn.textContent=e.on?'■':'▶'; }
       const badge = el.querySelector('.mbadge');
-      if (badge) { badge.className=bCls; badge.textContent=bTxt; }
+      if (badge) { badge.className=bCls; badge.textContent=bTxt; badge.title=midiTitulo(e); }
       const hPill = el.querySelectorAll('.pill .po');
       if (hPill[0]) { hPill[0].classList.toggle('on', e.mode==='hold'); }
       if (hPill[1]) { hPill[1].classList.toggle('on', e.mode==='toggle'); }
     }
   });
+  if (typeof publicarInventarioPronto === 'function') publicarInventarioPronto();
 }
 function setEfxMode(id,m){ const e=S.efxs.find(x=>x.id===id); if(e){e.mode=m;renderEfxs();} }
 function manualEfx(id) {
@@ -2487,36 +3064,53 @@ function renderTL() {
     /* Center line */
     tlCtx.fillStyle='#181835'; tlCtx.fillRect(TL_PAD, rowY+TL_TH/2-1, W-TL_PAD-TL_RP, 2);
 
-    if (!track.loaded) continue;
-
-    /* ── Video block (shows where the video sits in the timeline) ── */
-    const vo  = track.videoOffset || 0;
-    const vx1 = Math.max(TL_PAD, toPx(vo));
-    const vx2 = Math.min(W-TL_RP, toPx(vo + track.dur));
-    if (vx2 > vx1) {
-      tlCtx.globalAlpha = .08;
-      tlCtx.fillStyle = track.acc;
-      tlCtx.fillRect(vx1, rowY+1, vx2-vx1, TL_TH-2);
-      tlCtx.globalAlpha = .25;
-      tlCtx.strokeStyle = track.acc;
-      tlCtx.lineWidth = 1;
-      tlCtx.strokeRect(vx1, rowY+1, vx2-vx1, TL_TH-2);
-      tlCtx.globalAlpha = 1;
-      /* Shift label */
-      if (vo > 0.1) {
-        tlCtx.font='7px Space Mono,monospace'; tlCtx.textAlign='left';
-        tlCtx.fillStyle = track.acc+'99';
-        tlCtx.fillText('+'+ft(vo), vx1+2, rowY+TL_TH-3);
+    /* Clips (esp. playlist-generated ones) must still be visible before the
+       track has ever actually loaded a video — a playlist's clips exist and
+       are fully defined (in/out/srcRef) the moment they're generated, they
+       don't need vidA to have loaded anything yet. Only the "video block"
+       below genuinely needs track.dur, which is unknown until loaded. */
+    const vo = track.videoOffset || 0;
+    if (track.loaded) {
+      /* ── Video block (shows where the video sits in the timeline) ── */
+      const vx1 = Math.max(TL_PAD, toPx(vo));
+      const vx2 = Math.min(W-TL_RP, toPx(vo + track.dur));
+      if (vx2 > vx1) {
+        tlCtx.globalAlpha = .08;
+        tlCtx.fillStyle = track.acc;
+        tlCtx.fillRect(vx1, rowY+1, vx2-vx1, TL_TH-2);
+        tlCtx.globalAlpha = .25;
+        tlCtx.strokeStyle = track.acc;
+        tlCtx.lineWidth = 1;
+        tlCtx.strokeRect(vx1, rowY+1, vx2-vx1, TL_TH-2);
+        tlCtx.globalAlpha = 1;
+        /* Shift label */
+        if (vo > 0.1) {
+          tlCtx.font='7px Space Mono,monospace'; tlCtx.textAlign='left';
+          tlCtx.fillStyle = track.acc+'99';
+          tlCtx.fillText('+'+ft(vo), vx1+2, rowY+TL_TH-3);
+        }
       }
     }
+
+    /* Playlist clips each sit at `in:0` on their OWN separate video file —
+       drawing them at videoOffset+in like normal same-video clips would
+       stack them all on top of each other. Lay them out sequentially
+       instead, back-to-back in playlist order, purely for display —
+       playback itself only follows the nextClipId chain, never this. */
+    let plCursor = 0;
+    const plDispIn = new Map();
+    track.clips.filter(c=>c.playlistEntryId).forEach(c => {
+      plDispIn.set(c.id, plCursor);
+      plCursor += Math.max(0, c.out - c.in);
+    });
 
     /* Clips — shown at videoOffset + clip.in (or preview position during move drag) */
     track.clips.forEach(c => {
       const isDragging = tlDrag?.type==='move' && tlDrag.clipId===c.id;
       const cIn  = isDragging ? tlDrag.previewIn  : c.in;
       const cOut = isDragging ? tlDrag.previewOut : c.out;
-      const tlIn  = vo + cIn;
-      const tlOut = vo + cOut;
+      const tlIn  = c.playlistEntryId!=null && !isDragging ? vo + plDispIn.get(c.id) : vo + cIn;
+      const tlOut = tlIn + (cOut - cIn);
       if (!inView(tlIn, tlOut)) return;
       const x1 = Math.max(TL_PAD, toPx(tlIn));
       const x2 = Math.min(W-TL_RP, toPx(tlOut));
@@ -3678,6 +4272,33 @@ function sessionApiUrl() {
   return 'http://127.0.0.1:9191/api/sessions';
 }
 
+/* ── Layout del mando: viaja dentro del .vjp ──
+   El relay guarda un único layout activo (data/mando-layout.json), que es
+   lo que ven los teléfonos conectados en ese momento. Para que cada sesión
+   tenga su propio mando (y no arrastre el de la sesión anterior), la app
+   lo lee al guardar y lo empuja al relay al cargar. */
+function mandoLayoutApiUrl() {
+  if (location.protocol === 'http:' || location.protocol === 'https:') {
+    return new URL('/api/mando-layout', location.origin).toString();
+  }
+  return 'http://127.0.0.1:9191/api/mando-layout';
+}
+async function obtenerMandoLayoutActual() {
+  try {
+    const res = await fetch(mandoLayoutApiUrl(), { cache:'no-store' });
+    return res.ok ? await res.json() : null;
+  } catch { return null; }
+}
+async function aplicarMandoLayoutSesion(layout) {
+  try {
+    await fetch(mandoLayoutApiUrl(), layout
+      ? { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(layout) }
+      : { method:'DELETE' });
+  } catch (error) {
+    console.warn('No se pudo sincronizar el mando con el relay:', error.message);
+  }
+}
+
 async function saveProject() {
   const name = document.getElementById('proj-name').value||'untitled';
   const data = {
@@ -3685,10 +4306,13 @@ async function saveProject() {
     media: { folderHint: MEDIA.library?.rootName || '' },
     tracks: S.tracks.map(t=>({id:t.id,name:t.name,opacity:t.opacity,videoOffset:t.videoOffset||0,
       media:t.sourceType==='file' ? serializeMediaRef(t.mediaRef) : null,
-      clips:t.clips.map(c=>({...c})),
-      groups:t.groups.map(g=>({...g}))})),
+      clips:t.clips.map(c=>({...c, srcRef:c.srcRef ? serializeMediaRef(c.srcRef) : null})),
+      groups:t.groups.map(g=>({...g})),
+      playlist:t.playlist.map(e=>({id:e.id, name:e.name, dur:e.dur||0, media:serializeMediaRef(e.mediaRef)})),
+      playlistLoop:!!t.playlistLoop})),
     efxs:   S.efxs.map(e=>({...e,on:false})),
     banks:  S.banks.map(b=>({...b})),
+    mando:  await obtenerMandoLayoutActual(),
   };
   try {
     const response = await fetch(sessionApiUrl(), {
@@ -3703,43 +4327,71 @@ async function saveProject() {
     alert(`No se pudo guardar la sesión en Sessions.\n${error.message}\n\nInicia el relay local desde src/INICIAR_RELAY.bat. No se descargó ningún archivo fuera del proyecto.`);
   }
 }
-function openProject(ev) {
-  const f=ev.target.files[0]; if(!f) return;
-  const reader=new FileReader();
-  reader.onload=async e=>{
-    try {
-      const d=JSON.parse(e.target.result);
-      S.tracks.forEach(t=>t.clips=[]);
-      if (d.tracks) {
-        d.tracks.forEach((td,i)=>{ if(i<S.tracks.length){
-          S.tracks[i].clips=(td.clips||[]).map(migrateClip);
-          S.tracks[i].groups=(td.groups||[]);
-          if(td.opacity!==undefined) S.tracks[i].opacity=td.opacity;
-          if(td.videoOffset!==undefined) S.tracks[i].videoOffset=td.videoOffset;
-          S.tracks[i].mediaRef = td.media || td.mediaRef || null;
-        }});
-      } else if (d.clips) {
-        S.tracks[0].clips = d.clips.map(migrateClip);
-      }
-      if (d.efxs) d.efxs.forEach(de=>{ const e=S.efxs.find(x=>x.id===de.id); if(e) Object.assign(e,de,{on:false,midi:de.midi!==undefined?de.midi:(de.note!==undefined?de.note:null)}); });
-      if (d.banks) d.banks.forEach((db,i)=>{ if(i<S.banks.length) Object.assign(S.banks[i],db); });
-      if (d.name) document.getElementById('proj-name').value=d.name;
-      clipSeq=allClips().length+1; S.selClipId=null;
-      const mediaRes = await restoreProjectMedia(d);
-      renderAll(); renderBanks();
-      if (mediaRes.totalRefs && !mediaRes.unresolved.length) {
-        alert('"'+(d.name||'proyecto')+'" cargado.\nSe restauraron '+mediaRes.restored+' video(s) del proyecto.');
-      } else if (mediaRes.totalRefs && mediaRes.unresolved.length) {
-        const hint = d.media?.folderHint || MEDIA.library?.rootName || 'tu carpeta de videos';
-        alert('"'+(d.name||'proyecto')+'" cargado.\nSe restauraron '+mediaRes.restored+'/'+mediaRes.totalRefs+' video(s).\nHaz clic en MEDIA y selecciona "'+hint+'" para cargar los faltantes.');
-      } else {
-        alert('"'+(d.name||'proyecto')+'" cargado.\nRecuerda cargar los videos de cada track.');
-      }
-    } catch(err){ alert('Error: '+err.message); }
-  };
-  reader.readAsText(f); ev.target.value='';
-}
 
+/* ── Panel de sesiones (.vjp) ──
+   Lista lo que hay guardado en Sessions/ vía el relay local, para abrir sin
+   tener que navegar el sistema de archivos a mano. */
+function sessionFileUrl(name) {
+  return sessionApiUrl() + '/' + encodeURIComponent(name);
+}
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function updateSesMediaLabel() {
+  const lbl = document.getElementById('ses-media-lbl');
+  if (!lbl) return;
+  lbl.textContent = MEDIA.library ? `${MEDIA.library.rootName} (${MEDIA.library.count} archivo(s))` : 'Sin carpeta seleccionada';
+}
+function abrirPanelSesiones() {
+  updateSesMediaLabel();
+  document.getElementById('ses-fondo').classList.add('vis');
+  refrescarPanelSesiones();
+}
+function cerrarPanelSesiones() {
+  document.getElementById('ses-fondo').classList.remove('vis');
+}
+function panelSesionesVisible() {
+  return document.getElementById('ses-fondo').classList.contains('vis');
+}
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return Math.round(n/1024) + ' KB';
+  return (n/(1024*1024)).toFixed(1) + ' MB';
+}
+async function refrescarPanelSesiones() {
+  const box = document.getElementById('ses-list');
+  box.innerHTML = '<div class="ses-empty">Cargando…</div>';
+  try {
+    const res = await fetch(sessionApiUrl(), { cache:'no-store' });
+    const result = await res.json().catch(()=>({}));
+    if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    const sessions = result.sessions || [];
+    if (!sessions.length) {
+      box.innerHTML = '<div class="ses-empty">No hay sesiones guardadas todavía en Sessions/.</div>';
+      return;
+    }
+    box.innerHTML = sessions.map(s => `
+      <button class="ses-row" onclick="cargarSesionDesdeLista('${escHtml(s.name)}')">
+        <span class="ses-nm">${escHtml(s.name)}</span>
+        <span class="ses-meta">${fmtBytes(s.size)} · ${new Date(s.modified).toLocaleString()}</span>
+      </button>`).join('');
+  } catch (error) {
+    box.innerHTML = `<div class="ses-empty">No se pudo listar Sessions/.\n${escHtml(error.message)}\n\nInicia el relay local desde src/INICIAR_RELAY.bat.</div>`;
+  }
+}
+async function cargarSesionDesdeLista(name) {
+  try {
+    const res = await fetch(sessionFileUrl(name), { cache:'no-store' });
+    if (!res.ok) {
+      const result = await res.json().catch(()=>({}));
+      throw new Error(result.error || `HTTP ${res.status}`);
+    }
+    const d = await res.json();
+    await applyProjectData(d);
+  } catch (error) {
+    alert('No se pudo cargar la sesión.\n' + error.message);
+  }
+}
 /* ═══════════════════════════════════════════════════════
    NETWORK MIDI — WebSocket relay client
    Protocol JSON: { type:'join'|'midi', room:str, data:[st,num,vel] }
@@ -3749,13 +4401,58 @@ function openProject(ev) {
    exactamente igual que los mensajes de hardware MIDI.
 ═══════════════════════════════════════════════════════ */
 let netWS = null;
+let netManualOff = false;   // el usuario pulsó DESCONECTAR: no reconectar solo
+let netReintentos = 0;
+let netTimer = 0;
 
 function netToggle() {
-  if (netWS && netWS.readyState < 2) { netDisconnect(); return; }
+  if (netWS && netWS.readyState < 2) { netManualOff = true; netDisconnect(); return; }
+  netManualOff = false;
+  netReintentos = 0;
   netConnect();
 }
 
+/* Si esta página la sirvió el relay, ya sabemos a qué host y puerto ir:
+   es el mismo. Evita el caso de que el relay arranque en otro puerto y la
+   aplicación siga apuntando al anterior. */
+function relayURLAutomatica() {
+  if (!location.protocol.startsWith('http')) return null;
+  return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+}
+
+function conectarRelayAlIniciar() {
+  const auto = relayURLAutomatica();
+  if (auto) {
+    document.getElementById('n-url').value = auto;
+    netManualOff = false;
+    netReintentos = 0;
+    netConnect();
+  } else {
+    /* Abierta con doble clic: no hay relay del que deducir nada. */
+    setSt('st-net', 'abre http://localhost:9191/', 'act');
+    appendNetLog('⚠ página abierta como archivo — inicia INICIAR_RELAY.bat y abre http://localhost:9191/');
+  }
+  /* Si a los dos segundos y medio no hay relay, abrimos el panel: es lo que
+     hay que hacer y no tiene por qué buscarse en un texto de la barra. */
+  setTimeout(() => {
+    if (!(netWS && netWS.readyState === 1) && !panelRelayVisible()) {
+      abrirPanelRelay();
+      if (!auto) buscarRelay();
+    }
+  }, 2500);
+}
+
+function programarReconexionRelay() {
+  if (netManualOff) return;
+  const espera = Math.min(8000, 700 * Math.pow(1.6, Math.min(netReintentos, 5)));
+  netReintentos++;
+  clearTimeout(netTimer);
+  netTimer = setTimeout(netConnect, espera);
+  setSt('st-net', 'reconectando…', '');
+}
+
 function netConnect() {
+  clearTimeout(netTimer);
   const url  = document.getElementById('n-url').value.trim();
   const room = document.getElementById('n-room').value.trim() || 'midivj';
   const dot  = document.getElementById('ndot');
@@ -3768,11 +4465,17 @@ function netConnect() {
   btn.classList.remove('con');
 
   netWS.onopen = () => {
-    netWS.send(JSON.stringify({ type:'join', room }));
+    /* rol:'app' → el relay sabe que esta pestaña es MIDIVJ y le manda la
+       presencia de los mandos; los emisores MIDI antiguos siguen igual. */
+    netWS.send(JSON.stringify({ type:'join', room, rol:'app', disp:'midivj-app', nombre:'MIDIVJ' }));
     dot.classList.add('on');
     btn.textContent = 'DESCONECTAR'; btn.classList.add('con');
     setSt('st-net', url.replace(/^ws:\/\//,'')+' · '+room, 'ok');
     appendNetLog('✔ conectado a '+url+' sala "'+room+'"');
+    netReintentos = 0;
+    _mandoInvPrev = '';           // fuerza republicar el inventario al reconectar
+    publicarInventario();
+    refrescarPanelRelay();
   };
 
   netWS.onmessage = ev => {
@@ -3780,8 +4483,21 @@ function netConnect() {
       const msg = JSON.parse(ev.data);
       if (msg.type === 'midi' && Array.isArray(msg.data)) {
         appendNetLog('↙ '+msg.data.map(b=>'0x'+b.toString(16).toUpperCase().padStart(2,'0')).join(' '));
+        /* Si el mensaje viene de un mando, recordamos de cuál y de qué botón:
+           doAssign() lo guarda junto al mapeo para que la pastilla diga
+           "M1·INTRO" en vez de un nombre de nota suelto. */
+        _origenMando = msg.origen || null;
         onMIDIMsg({ data: msg.data }); // identical pipeline to hardware MIDI
+        _origenMando = null;
+        return;
       }
+      if (msg.type === 'presencia') { pintarPresenciaMandos(msg); return; }
+      if (msg.type === 'reemplazado') {
+        appendNetLog('⚠ otra pestaña de MIDIVJ tomó la sala');
+        setSt('st-net','otra instancia tomó la sala','act');
+        return;
+      }
+      if (msg.type === 'toast') { appendNetLog('↙ '+msg.texto); return; }
     } catch(_) {}
   };
 
@@ -3789,7 +4505,12 @@ function netConnect() {
     dot.className = 'ndot';
     btn.textContent = 'CONECTAR'; btn.classList.remove('con');
     setSt('st-net','—','');
+    pintarPresenciaMandos({ mandos: [], maxMandos: 4 });
     appendNetLog('✘ desconectado');
+    refrescarPanelRelay();
+    /* Caída inesperada (relay reiniciado, red que parpadea): volvemos solos,
+       que en pleno show nadie está mirando este botón. */
+    programarReconexionRelay();
   };
 
   netWS.onerror = () => {
@@ -3800,6 +4521,218 @@ function netConnect() {
 }
 
 function netDisconnect() { if (netWS) { netWS.close(); netWS = null; } }
+
+/* ═══════════════════════════════════════════════════════
+   MANDOS — teléfonos como control remoto
+
+   El teléfono abre http://<ip>:9191/mando y manda MIDI por el mismo
+   relay: llega a onMIDIMsg() como cualquier controlador, así que el
+   MIDI LEARN y todos los mapeos existentes funcionan sin cambios.
+
+   Lo único que la app aporta de más es:
+     - el inventario (clips, efectos y bancos con su MIDI) para que el
+       mando pueda mostrar nombres y sugerir etiquetas;
+     - los eventos de inicio y fin de clip, que son los que permiten al
+       mando volver del submenú de efectos al terminar el clip.
+═══════════════════════════════════════════════════════ */
+
+/* ── Panel de relay ──
+   El relay se inicia fuera del navegador (una página no puede arrancar un
+   proceso), así que este panel hace lo único que puede hacerse desde aquí:
+   decir en qué estado está, dar el comando exacto, buscarlo en los puertos
+   habituales y dejar configurar la conexión. */
+
+function abrirPanelRelay() {
+  document.getElementById('rp-url').value  = document.getElementById('n-url').value;
+  document.getElementById('rp-room').value = document.getElementById('n-room').value;
+  document.getElementById('rp-hallazgo').textContent = '';
+  document.getElementById('relay-fondo').classList.add('vis');
+  refrescarPanelRelay();
+}
+
+function cerrarPanelRelay() {
+  document.getElementById('relay-fondo').classList.remove('vis');
+}
+
+function panelRelayVisible() {
+  return document.getElementById('relay-fondo').classList.contains('vis');
+}
+
+function refrescarPanelRelay() {
+  const caja = document.getElementById('rp-estado');
+  const txt  = document.getElementById('rp-estado-txt');
+  const paso = document.getElementById('rp-paso-iniciar');
+  if (!caja) return;
+  const conectado = netWS && netWS.readyState === 1;
+  caja.classList.toggle('ok', conectado);
+  if (conectado) {
+    txt.textContent = 'Relay conectado · ' + document.getElementById('n-url').value.replace(/^wss?:\/\//,'')
+                    + ' · sala ' + (document.getElementById('n-room').value.trim() || 'midivj');
+    paso.style.display = 'none';
+  } else {
+    txt.textContent = netReintentos
+      ? 'Sin relay — reintentando (' + netReintentos + ')'
+      : 'Sin relay: los teléfonos no pueden controlar MIDIVJ';
+    paso.style.display = '';
+  }
+  const btn = document.getElementById('rp-conectar');
+  if (btn) btn.textContent = conectado ? 'RECONECTAR' : 'CONECTAR';
+}
+
+function conectarDesdePanel() {
+  const url = document.getElementById('rp-url').value.trim();
+  const room = document.getElementById('rp-room').value.trim() || 'midivj';
+  if (url) document.getElementById('n-url').value = url;
+  document.getElementById('n-room').value = room;
+  netManualOff = false;
+  netReintentos = 0;
+  if (netWS && netWS.readyState < 2) netWS.close();
+  netConnect();
+  setTimeout(refrescarPanelRelay, 900);
+}
+
+function copiarDeCampo(id, boton) {
+  const campo = document.getElementById(id);
+  campo.select();
+  const listo = () => {
+    const antes = boton.textContent;
+    boton.textContent = 'COPIADO';
+    setTimeout(() => { boton.textContent = antes; }, 1200);
+  };
+  if (navigator.clipboard) navigator.clipboard.writeText(campo.value).then(listo, () => { try { document.execCommand('copy'); listo(); } catch(_) {} });
+  else { try { document.execCommand('copy'); listo(); } catch(_) {} }
+}
+
+/* Busca un relay vivo en el rango de puertos que usa el launcher. */
+async function buscarRelay() {
+  const salida = document.getElementById('rp-hallazgo');
+  salida.style.color = 'var(--yellow)';
+  salida.textContent = 'buscando…';
+  const host = location.protocol.startsWith('http') ? location.hostname : 'localhost';
+
+  for (let puerto = 9191; puerto <= 9200; puerto++) {
+    try {
+      const ctl = new AbortController();
+      const corte = setTimeout(() => ctl.abort(), 700);
+      const res = await fetch('http://'+host+':'+puerto+'/health', { signal: ctl.signal, cache:'no-store' });
+      clearTimeout(corte);
+      if (!res.ok) continue;
+      const salud = await res.json();
+      if (!salud || !salud.ok) continue;
+
+      salida.style.color = 'var(--accent)';
+      if (!location.protocol.startsWith('http')) {
+        /* Página abierta como archivo: lo correcto es abrirla desde el relay,
+           así el guardado de sesiones y los mandos funcionan igual que siempre. */
+        salida.innerHTML = 'Relay encontrado en el puerto '+puerto+'. '
+          + '<a href="http://'+host+':'+puerto+'/" style="color:var(--accent)">Abrir MIDIVJ desde el relay ▸</a>';
+      } else {
+        document.getElementById('rp-url').value = 'ws://'+host+':'+puerto;
+        salida.textContent = 'Relay encontrado en el puerto '+puerto+' — conectando…';
+        conectarDesdePanel();
+      }
+      return;
+    } catch(_) { /* puerto sin respuesta: seguimos */ }
+  }
+
+  salida.style.color = 'var(--hot)';
+  salida.textContent = 'No hay ningún relay corriendo: inicia src\\INICIAR_RELAY.bat y vuelve a buscar.';
+}
+
+function abrirControlRemoto() {
+  const room = document.getElementById('n-room').value.trim() || 'midivj';
+  const conectado = netWS && netWS.readyState === 1;
+
+  /* La página de QR la sirve el mismo relay al que llegan los mandos:
+       - conectado  → el relay del bloque RED (puede ser otra computadora);
+       - si no      → el que sirvió esta página, y como último recurso el
+                      campo RED (caso de abrir el HTML con doble clic). */
+  const delCampo = document.getElementById('n-url').value.trim()
+    .replace(/^wss?:\/\//,'').replace(/\/.*$/,'');
+  const delOrigen = location.protocol.startsWith('http') ? location.host : '';
+  const host = (conectado ? delCampo : (delOrigen || delCampo)) || 'localhost:9191';
+
+  if (!conectado) {
+    alert(delOrigen
+      ? 'La aplicación aún no está conectada al relay: se está reintentando solo.\n\n'
+        + 'Si no conecta, revisa que la ventana del relay siga abierta.\n'
+        + 'Se abrirá igual la página de QR: http://' + host + '/control'
+      : 'Esta página se abrió como archivo, así que no hay relay del que deducir la dirección.\n\n'
+        + 'Inicia src/INICIAR_RELAY.bat y abre MIDIVJ desde http://localhost:9191/\n'
+        + 'Se intentará abrir: http://' + host + '/control');
+  }
+  window.open('http://'+host+'/control?sala='+encodeURIComponent(room), '_blank', 'noopener');
+}
+
+function pintarPresenciaMandos(msg) {
+  const el  = document.getElementById('mando-count');
+  const btn = document.getElementById('mando-btn');
+  if (!el) return;
+  const n = (msg.mandos||[]).length;
+  const max = msg.maxMandos || 4;
+  el.textContent = n + '/' + max;
+  el.style.color = n ? 'var(--accent)' : 'var(--text3)';
+  if (btn) {
+    btn.style.borderColor = n ? 'var(--accent)' : '';
+    btn.style.background  = n ? 'rgba(0,255,136,.08)' : '';
+  }
+  const lista = document.getElementById('rp-mandos');
+  if (lista) {
+    lista.textContent = n
+      ? n+'/'+max+' conectados: '+msg.mandos.map(m => 'M'+m.slot).join(' · ')
+      : 'ningún teléfono conectado todavía';
+    lista.style.color = n ? 'var(--accent)' : 'var(--text3)';
+  }
+  refrescarPanelRelay();
+}
+
+let _mandoInvPrev = '';
+let _mandoInvTimer = 0;
+
+function publicarInventario() {
+  if (!netWS || netWS.readyState !== 1) return;
+  const payload = {
+    type: 'inventario',
+    clips: S.tracks.flatMap(t => t.clips.map(c => ({
+      id: c.id, nombre: 'T'+(t.i+1)+' · '+c.name, midi: c.midi
+    }))),
+    efectos: S.efxs.map(e => ({ id: e.id, nombre: e.name, midi: e.midi })),
+    bancos: S.banks.map((b,i) => ({ id: 'banco'+i, nombre: b.name, midi: b.midi }))
+  };
+  const firma = JSON.stringify(payload);
+  if (firma === _mandoInvPrev) return;   // nada cambió: no saturamos la red
+  _mandoInvPrev = firma;
+  netWS.send(firma);
+}
+
+/* renderClips() y renderEfxs() corren seguido; la firma de arriba evita
+   mandar nada cuando sólo cambió el estado visual. */
+function publicarInventarioPronto() {
+  clearTimeout(_mandoInvTimer);
+  _mandoInvTimer = setTimeout(publicarInventario, 300);
+}
+
+function netEvento(ev, datos) {
+  if (!netWS || netWS.readyState !== 1) return;
+  netWS.send(JSON.stringify({ type:'evento', ev, datos }));
+}
+
+/* Diff de clips activos por pista: de aquí salen 'clip-inicio' y
+   'clip-fin'. Se calcula en updateActiveLbl(), que es el único punto por
+   el que pasan trigClip, deactivateClip y chainClip. */
+let _mandoActivos = new Map();
+
+function notificarClipsAMandos() {
+  const ahora = new Map();
+  S.tracks.forEach(t => { if (t.activeClip) ahora.set(t.i, t.activeClip); });
+  for (const [i, c] of _mandoActivos) {
+    if (ahora.get(i) !== c) netEvento('clip-fin', { track:i+1, clip:c.id, nombre:c.name, midi:c.midi });
+  }
+  for (const [i, c] of ahora) {
+    if (_mandoActivos.get(i) !== c) netEvento('clip-inicio', { track:i+1, clip:c.id, nombre:c.name, midi:c.midi });
+  }
+  _mandoActivos = ahora;
+}
 
 /* Optional in-UI log (appended to status bar tooltip, not shown by default) */
 const _netLog = []; 
@@ -3916,8 +4849,9 @@ function bankStartLearn(idx, ev) {
 
 function bankDoAssign(midiId) {
   /* Clear same ID from other banks */
-  S.banks.forEach(b => { if(b.midi === midiId) b.midi = null; });
+  S.banks.forEach(b => { if(b.midi === midiId) { b.midi = null; b.midiOrigen = null; } });
   S.banks[S.bankLearning].midi = midiId;
+  S.banks[S.bankLearning].midiOrigen = _origenMando ? {..._origenMando} : null;
   S.bankLearning = null;
   document.getElementById('learn-banner').classList.remove('vis');
   renderBanks();
@@ -3926,6 +4860,7 @@ function bankDoAssign(midiId) {
 function bankClearMidi(idx, ev) {
   ev.stopPropagation();
   S.banks[idx].midi = null;
+  S.banks[idx].midiOrigen = null;
   renderBanks();
 }
 
@@ -3937,9 +4872,9 @@ function renderBanks() {
   S.banks.forEach((b, i) => {
     const isActive = i === S.activeBank;
     const isLrn    = S.bankLearning === i;
-    const mk       = midiKind(b.midi);
+    const mk       = midiClase(b);
     const mCls     = isLrn ? 'bmidi learning' : b.midi!==null ? 'bmidi m-'+mk : 'bmidi';
-    const mTxt     = isLrn ? '???' : b.midi!==null ? dispMidi(b.midi) : '—';
+    const mTxt     = isLrn ? '???' : b.midi!==null ? midiEtiqueta(b) : '—';
     const hasData  = !!b.data;
 
     const el = document.createElement('div');
@@ -3951,7 +4886,7 @@ function renderBanks() {
       <span class="${mCls}" style="cursor:pointer;"
         onclick="bankStartLearn(${i},event)"
         oncontextmenu="bankClearMidi(${i},event);return false;"
-        title="Clic=MIDI Learn · Clic-der=limpiar">${mTxt}</span>
+        title="${midiTitulo(b)}">${mTxt}</span>
       ${hasData ? '<span style="color:var(--accent);font-size:6px;">●</span>' : '<span style="font-size:6px;color:var(--border2);">○</span>'}
     `;
     el.onclick = () => bankSelect(i);
@@ -3960,6 +4895,7 @@ function renderBanks() {
   /* Update label */
   const b = S.banks[S.activeBank];
   setBankLbl(`${b.name}${b.data?' — guardado':' — vacío'}`);
+  if (typeof publicarInventarioPronto === 'function') publicarInventarioPronto();
 }
 
 /* ── HELPERS ── */
@@ -3967,6 +4903,7 @@ function setSt(id,txt,cls){const el=document.getElementById(id);if(el){el.textCo
 
 /* Keyboard */
 document.addEventListener('keydown',e=>{
+  if (e.key==='Escape' && panelRelayVisible()) { cerrarPanelRelay(); return; }
   if (e.target.tagName==='INPUT') return;
   if (e.key==='Escape') endLearn();
   if (e.key===' ') { e.preventDefault(); masterPlayPause(); }
@@ -3985,6 +4922,7 @@ renderEfxs();
 renderBanks();
 renderTL();
 initMIDI();
+conectarRelayAlIniciar();
 requestAnimationFrame(loop);
 </script>
 </body>
