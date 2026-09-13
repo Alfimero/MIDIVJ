@@ -11,7 +11,9 @@ $inputs = @(
     @{ Source = 'src/Midivj ZYX.html'; Target = 'Midivj-ZYX.inline.js' },
     @{ Source = 'src/midivj-sender.html'; Target = 'midivj-sender.inline.js' },
     @{ Source = 'src/midivj-mando.html'; Target = 'midivj-mando.inline.js' },
-    @{ Source = 'src/midivj-control.html'; Target = 'midivj-control.inline.js' }
+    @{ Source = 'src/midivj-control.html'; Target = 'midivj-control.inline.js' },
+    @{ Source = 'src/midivj-camara.html'; Target = 'midivj-camara.inline.js' },
+    @{ Source = 'src/midivj-salida.html'; Target = 'midivj-salida.inline.js' }
 )
 
 foreach ($item in $inputs) {
