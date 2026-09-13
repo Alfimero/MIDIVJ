@@ -7,13 +7,14 @@ Aplicación local de visuales en vivo controlada por MIDI. El runtime vive en `s
 
 ## Ejecutar
 
-En Windows, inicia `src/INICIAR_RELAY.bat`. En macOS, `src/INICIAR_RELAY.command` (doble clic; la primera vez puede pedir `chmod +x`). Los dos launchers usan la raíz real del proyecto e instalan la versión fijada de `ws` si falta. El relay **abre solo el navegador** con la aplicación, así que no hay que copiar ninguna dirección:
+En Windows, inicia `src/INICIAR_RELAY.bat`. En macOS, `src/INICIAR_RELAY.command` (doble clic; la primera vez puede pedir `chmod +x`). Los dos launchers usan la raíz real del proyecto e instalan las dependencias fijadas (`ws`, `selfsigned`) si faltan. El relay **abre solo el navegador** con la aplicación, así que no hay que copiar ninguna dirección:
 
 - Aplicación principal: `http://localhost:9191/`
 - Emisor MIDI: `http://localhost:9191/sender`
 - Control remoto (QR de conexión): `http://localhost:9191/control`
 - Mando móvil: `http://localhost:9191/mando`
 - Cámara móvil: `http://localhost:9191/camara` desde esta computadora; desde un teléfono necesita HTTPS — usa el QR de `/control` (ver más abajo)
+- Salida a OBS: `http://localhost:9191/salida` (fuente de navegador; ver más abajo)
 
 > **Macs viejos.** En un Mac anterior a macOS 11 (por ejemplo una MacBook Pro de 2012, que llega hasta Catalina 10.15) instala **Node 16**: [node-v16.20.2.pkg](https://nodejs.org/dist/v16.20.2/node-v16.20.2.pkg). Las versiones nuevas de Node se instalan sin avisar y al arrancar mueren con `dyld: Symbol not found`. El launcher `.command` detecta ese caso y lo dice.
 
@@ -170,9 +171,34 @@ Un teléfono también puede ser una fuente de video más para una pista: `VIDEO`
 - Si el teléfono cierra la pestaña a media transmisión, el relay detecta la desconexión y avisa a MIDIVJ solo — no depende de que el teléfono alcance a despedirse.
 - Si en la consola del relay aparece "Cámara de teléfono no disponible esta sesión", el HTTPS no pudo levantarse (raro); todo lo demás — video, pantalla, capturadora, mando — sigue funcionando igual.
 
+## Salida a OBS: MIDIVJ como cámara virtual
+
+Además de la ventana HDMI, el lienzo de salida se puede entregar a OBS (en esta misma PC o en otra de la red) como **Fuente de navegador**. El video viaja directo por WebRTC entre la pestaña de MIDIVJ y OBS; el relay sólo negocia la conexión y nunca lo retransmite. Con la fuente agregada, **Iniciar cámara virtual** de OBS expone la escena a Zoom/Meet/Discord como si fuera una webcam.
+
+1. Pulsa **🎥 OBS** en el encabezado (o **📡 RELAY → 5 · SALIDA A OBS**) para ver la URL de `/salida`.
+2. En OBS: **+ Fuente → Fuente de navegador**, pega la URL y pon ancho/alto iguales a la resolución de salida de MIDIVJ para que llene el cuadro sin recortar.
+3. No hay botón de iniciar: en cuanto OBS abre la página, MIDIVJ empieza a transmitir. Hasta 4 fuentes simultáneas.
+
+Notas: sólo video, sin audio (igual que HDMI/PANTALLA/CAPTURA/cámara). `/salida` va por HTTP normal — no necesita el certificado de `/camara` porque no pide permisos. Si recargas la fuente en OBS, se reconecta sola. Detalles en `docs/decisions/ADR-005-salida-a-obs-por-webrtc.md`.
+
+## Audio: mover visuales con sonido
+
+El botón **🔊 AUDIO** abre el primer módulo desacoplado de MIDIVJ (`src/modules/audio/`). Analiza una entrada de audio (interfaz, micrófono, loopback) dentro de un `AudioWorklet` y convierte lo que oye en dos cosas:
+
+- **Valores continuos** (RMS, pico, envolvente, bandas low/mid/high) → cualquier parámetro registrado: opacidad de cada pista, intensidad de FLASH, escala de ZOOM, los siete de TRANSFORM, etc.
+- **Eventos** (`gate.open`, `gate.close`, `peak.detected`, silencio) → disparar un clip, un banco o un efecto.
+
+Analizar **no** es escuchar: el monitor arranca en 0 y el sonido de la sala sigue yendo por la consola. Las entradas se abren sin cancelación de eco, supresión de ruido ni AGC. En Windows la captura es WASAPI compartido (ASIO y modo exclusivo no existen desde un navegador). La configuración se guarda en la sesión `.vjp`; al reabrirla las entradas quedan **pendiente** hasta pulsar RECONECTAR, porque el navegador exige un gesto.
+
+Si el módulo no carga (por ejemplo al abrir el HTML como `file://`), el botón se esconde y MIDIVJ funciona igual que antes. Guía completa en `docs/audio-module.md`; fases futuras en `docs/audio-module-roadmap.md`; decisión en `docs/decisions/ADR-006-modulo-de-audio.md`.
+
+## Hacia dónde va el código
+
+`docs/architecture/auditoria-modular-y-lite.md` mide el estado de la modularización y `docs/decisions/ADR-007-extraccion-del-nucleo-y-perfil-lite.md` fija el plan: extraer el núcleo de `Midivj ZYX.html` por pasos sin reescribirlo, para poder trabajar cada módulo por separado y derivar una versión LITE para iOS/Android como recorte de módulos.
+
 ## Graphify
 
-Graphify 0.9.16 se usa como índice técnico local. Como la lógica principal está embebida en HTML y el modo `--code-only` no analiza HTML como código, el flujo genera copias JavaScript en `graphify-src/` antes de construir el grafo.
+Graphify 0.9.16 se usa como índice técnico local. Como la lógica principal está embebida en HTML y el modo `--code-only` no analiza HTML como código, el flujo genera copias JavaScript en `graphify-src/` (más una copia de `src/modules/`) antes de construir el grafo.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\Update-Graphify.ps1 -CodeOnly
