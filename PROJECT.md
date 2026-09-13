@@ -12,6 +12,8 @@ stack:
   - WebSocket
   - Canvas 2D
   - Node.js
+  - WebRTC
+  - Web Audio / AudioWorklet
 repositories:
   - repository:midivj-local
 databases:
@@ -22,8 +24,9 @@ devices:
 integrations:
   - integration:web-midi
   - integration:websocket-relay
+  - integration:obs-browser-source
 related_projects: []
-last_verified: 2026-07-14
+last_verified: 2026-09-13
 ---
 
 # Propósito
@@ -32,11 +35,11 @@ Herramienta local de ejecución visual para superponer hasta ocho pistas de vide
 
 # Estado actual verificado
 
-La aplicación principal está concentrada en `src/Midivj ZYX.html`. `src/midivj-relay.js` sirve las interfaces, guarda sesiones y mantiene el relay de red; el emisor está en `src/midivj-sender.html`. `package.json` fija la dependencia `ws`. Los tres archivos `Sessions/*.vjp` inspeccionados contienen 8 pistas, 15 efectos y 8 bancos; dos usan formato 6 y `Sessions/Bk-Nk!.vjp` conserva formato 5.
+La aplicación principal está concentrada en `src/Midivj ZYX.html`. `src/midivj-relay.js` sirve las interfaces (HTTP, y HTTPS sólo para `/camara`), guarda sesiones y mantiene el relay de red con cinco roles; el emisor está en `src/midivj-sender.html`. `package.json` fija `ws` y `selfsigned`. Desde 2026-09-03 existe `src/modules/` con el contrato de módulos y el módulo de audio. Los tres archivos `Sessions/*.vjp` inspeccionados contienen 8 pistas, 15 efectos y 8 bancos; dos usan formato 6 y `Sessions/Bk-Nk!.vjp` conserva formato 5.
 
 # Alcance
 
-Incluye compositor Canvas 2D, reproducción de archivos, captura en vivo, mapeo MIDI local, relay MIDI por WebSocket, control remoto desde hasta cuatro teléfonos con QR y cuadrícula configurable, persistencia `.vjp`, caché de reversa en IndexedDB y salida secundaria. La biblioteca de video no forma parte del grafo.
+Incluye compositor Canvas 2D, reproducción de archivos, captura en vivo, cámara de teléfono por WebRTC (hasta cuatro), mapeo MIDI local, relay MIDI por WebSocket, control remoto desde hasta cuatro teléfonos con QR y cuadrícula configurable, persistencia `.vjp`, caché de reversa en IndexedDB, salida secundaria (ventana HDMI) y salida a OBS por WebRTC (hasta cuatro fuentes), y análisis de audio en `AudioWorklet` que mueve parámetros y dispara acciones. La biblioteca de video no forma parte del grafo.
 
 # Arquitectura
 
@@ -48,7 +51,12 @@ El estado global `S` y la biblioteca `MEDIA` coordinan ocho pistas. `loop()` com
 - `src/midivj-relay.js`: servidor HTTP local, guardado confinado en `Sessions/`, salas WebSocket con roles y slots, layout del mando e información de red.
 - `src/midivj-sender.html`: entrada Web MIDI y envío al relay.
 - `src/midivj-mando.html`: mando móvil (cuadrícula editable, grupos, imágenes, submenús por clip).
-- `src/midivj-control.html`: página de cabina con los QR de Wi-Fi y de cada mando.
+- `src/midivj-control.html`: página de cabina con los QR de Wi-Fi, de cada mando y de cada cámara, más la URL de salida a OBS.
+- `src/midivj-camara.html`: cámara móvil; enciende `getUserMedia` sólo cuando la app pide ese slot y ofrece por WebRTC (ADR-004).
+- `src/midivj-salida.html`: fuente de navegador para OBS; recibe el lienzo por WebRTC, la app es la offerer (ADR-005).
+- `src/modules/midivj-module.js`: contrato `init/start/stop/dispose/getStatus` y registros `MIDIVJ.targets` / `MIDIVJ.acciones`.
+- `src/modules/audio/`: motor, `AudioWorkletProcessor` de análisis y panel AUDIO (ADR-006).
+- `data/certs/`: certificado autofirmado de `/camara`; fuera de Git.
 - `src/midivj-qr.js`: generador de QR local, compartido por Node y el navegador.
 - `Sessions/*.vjp`: ejemplos de sesiones operativas.
 - `data/mando-layout.json`: layout del mando; configuración local fuera de Git.
@@ -60,22 +68,23 @@ Entrada MIDI local o remota → `onMIDIMsg()` → estado y acciones de pista →
 
 # Dependencias
 
-Navegador con Web MIDI y APIs de captura, Node.js y paquete `ws` para el relay. No hay versión fijada de `ws` ni instalación reproducible en el estado inspeccionado.
+Navegador con Web MIDI, APIs de captura, WebRTC y `AudioWorklet`; Node.js con `ws` y `selfsigned`, ambos fijados en `package.json` y `package-lock.json`.
 
 # Integraciones
 
-Web MIDI, WebSocket local, captura de pantalla/dispositivo, selección de carpetas y ventana secundaria. No se encontró código que integre directamente Ableton Live u OBS; esos usos no se consideran confirmados.
+Web MIDI, WebSocket local, WebRTC (cámara de teléfono y salida a OBS), captura de pantalla/dispositivo, entrada de audio, selección de carpetas y ventana secundaria. OBS se integra como fuente de navegador en `/salida` (ADR-005). No hay integración con Ableton Live.
 
 # Decisiones técnicas
 
-- La aplicación principal conserva su formato monolítico.
+- La aplicación principal conserva su formato monolítico; los subsistemas nuevos se agregan como módulos en `src/modules/` (ADR-006) y el núcleo se extraerá por estrangulamiento sin reescritura (ADR-007, propuesta).
+- El relay nunca transporta video ni audio: sólo señalización WebRTC (ADR-004, ADR-005).
 - Graphify indexa una copia generada de los scripts embebidos para no reescribir el HTML.
 - Los videos y las copias históricas quedan excluidos.
 - Las aristas `INFERRED` son hipótesis, no hechos.
 
 # Riesgos
 
-Acoplamiento en estado global, rutas sensibles de renderizado, ausencia de manifiesto Node, launcher con ruta obsoleta y validación de espectáculo dependiente de hardware/navegador real.
+Acoplamiento en estado global (medido en `docs/architecture/auditoria-modular-y-lite.md`), rutas sensibles de renderizado, ausencia de pruebas automatizadas, y validación de espectáculo dependiente de hardware/navegador real. Cámara, OBS y audio se verificaron con clientes sintéticos, no con hardware autorizado.
 
 # Incidentes conocidos
 
@@ -95,10 +104,10 @@ La aplicación se sirve localmente en `http://localhost:9191/`. El relay se ejec
 
 # Próximos pasos
 
-Corregir el launcher, fijar la dependencia `ws` y realizar una prueba operativa con un controlador MIDI y salida secundaria autorizados. Estos puntos no se ejecutaron porque exceden la integración estructural y requieren una sesión de hardware.
+Realizar una prueba operativa con controlador MIDI, salida secundaria, teléfono como cámara, OBS y una interfaz de audio autorizados. Ejecutar el Paso 0 de ADR-007 (cortar el `<script>` inline en `src/app/*.js` sin cambiar el ámbito) y pasar el ADR a aceptada cuando la aplicación se verifique idéntica.
 
 Para el mando móvil queda pendiente la prueba de función con teléfonos reales sobre una red creada por la computadora: el protocolo, el layout y el retorno de submenú se validaron con clientes simulados y en navegador, no con dispositivos ni con un punto de acceso activo.
 
 # Fuentes verificadas
 
-`src/Midivj ZYX.html`, `src/midivj-relay.js`, `src/midivj-sender.html`, `src/INICIAR_RELAY.bat`, `PROJECT_CONTEXT.md` y los tres archivos `Sessions/*.vjp`, revalidados tras la reorganización del 2026-07-16. El mando móvil (`src/midivj-mando.html`, `src/midivj-control.html`, `src/midivj-qr.js` y los cambios del relay y de la aplicación) se agregó el 2026-08-20; ver `docs/decisions/ADR-003-mando-movil-por-websocket.md`.
+`src/Midivj ZYX.html`, `src/midivj-relay.js`, `src/midivj-sender.html`, `src/INICIAR_RELAY.bat`, `PROJECT_CONTEXT.md` y los tres archivos `Sessions/*.vjp`, revalidados tras la reorganización del 2026-07-16. El mando móvil (`src/midivj-mando.html`, `src/midivj-control.html`, `src/midivj-qr.js` y los cambios del relay y de la aplicación) se agregó el 2026-08-20; ver `docs/decisions/ADR-003-mando-movil-por-websocket.md`. Cámara móvil (ADR-004), salida a OBS (ADR-005) y módulo de audio (ADR-006) se agregaron entre el 2026-09-01 y el 2026-09-03; la auditoría modular y ADR-007 son del 2026-09-13.

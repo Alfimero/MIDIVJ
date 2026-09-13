@@ -51,7 +51,14 @@ foreach ($item in $inputs) {
     Write-Host "Generado $($item.Target) desde $index bloque(s)."
 }
 
-$copias = @('src/midivj-relay.js', 'src/midivj-qr.js')
+$copias = @(
+    'src/midivj-relay.js',
+    'src/midivj-qr.js',
+    'src/modules/midivj-module.js',
+    'src/modules/audio/midivj-audio-engine.js',
+    'src/modules/audio/midivj-audio-ui.js',
+    'src/modules/audio/midivj-audio-worklet.js'
+)
 foreach ($relativa in $copias) {
     $origen = Join-Path $root $relativa
     if (-not (Test-Path -LiteralPath $origen)) {
