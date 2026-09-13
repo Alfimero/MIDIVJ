@@ -37,7 +37,13 @@ node --check .\src\midivj-relay.js
 powershell -ExecutionPolicy Bypass -File .\scripts\Export-InlineScripts.ps1
 node --check .\graphify-src\Midivj-ZYX.inline.js
 node --check .\graphify-src\midivj-sender.inline.js
+node --check .\src\modules\midivj-module.js
+node --check .\src\modules\audio\midivj-audio-engine.js
+node --check .\src\modules\audio\midivj-audio-ui.js
+node --check .\src\modules\audio\midivj-audio-worklet.js
 ```
+
+Los archivos de `src/modules/` se editan a mano (no salen de `graphify-src/`) y deben estar en la lista blanca `MODULOS` de `src/midivj-relay.js` para que el navegador pueda cargarlos.
 
 Una prueba de sintaxis no demuestra reproducción, MIDI, captura ni salida secundaria. Esas funciones requieren validación manual con navegador y hardware autorizados. Si cambias persistencia, prueba una sesión nueva y una copia de una `.vjp` existente; nunca sobrescribas el original.
 
@@ -49,7 +55,7 @@ Registra decisiones en `docs/decisions/` e incidentes en `docs/incidents/`. Ante
 
 Solicita aprobación antes de conectar o controlar hardware real, ejecutar una actuación pública, instalar dependencias globales, publicar un grafo, exponer WebSocket a Internet, cambiar sesiones originales, usar credenciales o realizar una operación irreversible.
 
-<!-- project-manager:context:start revision="3" hash="01ea2d37aa075c5c4f56073f177abcd6a00bf2760c6d3b0d3ed28144e1a9ccf5" -->
+<!-- project-manager:context:start revision="4" hash="586007ff8bb07825d7e6fbab8ed1720413d6556c96e1dfa5bfe012dfb2fc6b60" -->
 ## Contexto compartido
 
 Herramienta local de visuales en vivo controlada por MIDI.
@@ -77,6 +83,6 @@ active
 
 ### Repositorio
 - GitHub: https://github.com/Alfimero/MIDIVJ
-- Visibilidad: private
+- Visibilidad: public
 - Rama predeterminada: main
 <!-- project-manager:context:end -->

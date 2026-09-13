@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIDIVJ · Salida</title>
+<style>
+:root{
+  --accent:#00ff88; --warn:#ffcc00; --danger:#ff3366; --text2:#98a2b3;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{background:#000;width:100%;height:100%;overflow:hidden;}
+body{position:relative;}
+/* OBS renderiza esta página exactamente al ancho/alto que le des a la
+   fuente de navegador — no hay "pantalla" que llenar de más, ese cuadro ES
+   el resultado final. object-fit:cover hace que el video llene ese cuadro
+   por completo siempre (recortando los bordes que sobren si el aspecto no
+   coincide con el del lienzo de MIDIVJ) en vez de dejar franjas negras sin
+   usar como con "contain". Para un resultado sin recorte, hacé coincidir
+   el ancho/alto de la fuente en OBS con la resolución de salida de MIDIVJ
+   (panel ⛶ SALIDA). */
+video{
+  position:absolute;inset:0;width:100%;height:100%;display:block;
+  background:#000;object-fit:cover;object-position:center center;
+}
+/* Oculto por defecto: en OBS (Fuente de navegador) nadie la ve; sirve sólo
+   para probar la página en una pestaña normal antes de agregarla a OBS. */
+#st{
+  position:fixed;top:10px;left:10px;color:var(--accent);font-family:var(--mono);
+  font-size:11px;letter-spacing:1px;background:rgba(0,0,0,.55);padding:4px 8px;
+  pointer-events:none;
+}
+#st.warn{color:var(--warn);}
+#st.err{color:var(--danger);}
+#vacio{
+  font-family:var(--mono);font-size:13px;color:var(--text2);text-align:center;
+  max-width:34ch;line-height:1.6;
+}
+</style>
+</head>
+<body>
+
+<video id="v" autoplay muted playsinline></video>
+<div id="vacio">Esperando la señal de MIDIVJ…</div>
+<div id="st">conectando…</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   MIDIVJ · SALIDA (fuente de navegador para OBS)
+
+   Esta página se agrega en OBS como "Fuente de navegador" (Browser Source),
+   apuntando a esta misma URL — típicamente http://localhost:<puerto>/salida
+   si OBS corre en la misma PC que el relay, o la IP de LAN si corre en otra
+   computadora de la red. Con eso, la salida de MIDIVJ entra a OBS como
+   cualquier otra fuente y "Iniciar cámara virtual" de OBS la expone al resto
+   del sistema (Zoom, Meet, Discord, etc.) como si fuera una webcam.
+
+   El video viaja directo entre la pestaña de MIDIVJ y esta página por
+   WebRTC — el relay sólo negocia la conexión (SDP/ICE), nunca ve el video.
+   A diferencia de la cámara de teléfono (ver ADR-004), aquí es la APP la
+   que arma la oferta: ya tiene el MediaStream del lienzo listo de forma
+   síncrona (cvs.captureStream()), sin ningún permiso de usuario que esperar,
+   así que no hace falta que esta página sea la offerer.
+═══════════════════════════════════════════════════════ */
+
+const PARAMS = new URLSearchParams(location.search);
+const SALA   = (PARAMS.get('sala') || 'midivj').slice(0, 40);
+const URL_WS = PARAMS.get('ws') || ((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+
+const $ = id => document.getElementById(id);
+
+function _log(msg, extra) {
+  const linea = '[salida] ' + msg;
+  if (extra !== undefined) console.log(linea, extra); else console.log(linea);
+}
+
+function estado(texto, clase) {
+  $('st').textContent = texto;
+  $('st').className = clase || '';
+}
+
+const O = {
+  ws: null,
+  pc: null,
+  candidatosPendientes: [],
+  transmitiendo: false,
+  reintento: 0,
+  timerReintento: 0
+};
+
+function conectar() {
+  clearTimeout(O.timerReintento);
+  try { O.ws = new WebSocket(URL_WS); }
+  catch (_) { programarReintento(); return; }
+
+  estado('conectando…');
+
+  O.ws.onopen = () => {
+    O.reintento = 0;
+    O.ws.send(JSON.stringify({ type: 'join', room: SALA, rol: 'salida', nombre: 'OBS' }));
+  };
+
+  O.ws.onmessage = ev => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    recibir(msg);
+  };
+
+  O.ws.onclose = () => {
+    /* Igual que la cámara de teléfono: el video viaja aparte (WebRTC
+       directo), así que un corte de este WebSocket no significa que la
+       llamada se haya caído. Sólo se apaga si el RTCPeerConnection no
+       estaba realmente vivo. */
+    const pcVivo = O.pc && (O.pc.connectionState === 'connected' || O.pc.connectionState === 'connecting');
+    if (!pcVivo) cerrarSesion('se cayó la señalización y no había video en curso');
+    estado(pcVivo ? 'transmitiendo · reconectando señal…' : 'sin conexión — reintentando', 'warn');
+    programarReintento();
+  };
+  O.ws.onerror = () => estado('error de conexión', 'err');
+}
+
+function programarReintento() {
+  const espera = Math.min(6000, 500 * Math.pow(1.7, Math.min(O.reintento, 5)));
+  O.reintento++;
+  clearTimeout(O.timerReintento);
+  O.timerReintento = setTimeout(conectar, espera);
+}
+
+function recibir(msg) {
+  switch (msg.type) {
+    case 'joined':
+      estado(O.transmitiendo ? '' : 'conectado — esperando la salida…');
+      break;
+    case 'salida-error':
+      estado(msg.motivo || 'no se pudo conectar', 'err');
+      break;
+    case 'salida-oferta':
+      recibirOferta(msg.sdp);
+      break;
+    case 'salida-candidato':
+      recibirCandidato(msg.candidato);
+      break;
+    case 'salida-cerrar':
+      _log('MIDIVJ avisó que corta — motivo: "' + (msg.motivo || 'sin especificar') + '"');
+      cerrarSesion(null);
+      break;
+  }
+}
+
+async function recibirOferta(sdp) {
+  if (!sdp) return;
+  cerrarSesion(null);   // por si quedaba una sesión previa (renegociación)
+  _log('oferta recibida de MIDIVJ — negociando WebRTC');
+
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  O.pc = pc;
+  O.candidatosPendientes = [];
+
+  pc.ontrack = ev => {
+    $('v').srcObject = ev.streams[0];
+    O.transmitiendo = true;
+    document.body.classList.add('transmitiendo');
+    $('vacio').style.display = 'none';
+    estado('');
+    _log('llegó el video de MIDIVJ');
+  };
+
+  pc.onicecandidate = ev => {
+    if (ev.candidate) enviar({ type: 'salida-candidato', candidato: ev.candidate });
+  };
+
+  pc.oniceconnectionstatechange = () => _log('ICE → ' + pc.iceConnectionState);
+
+  let timerDesconexion = 0;
+  pc.onconnectionstatechange = () => {
+    _log('conexión → ' + pc.connectionState);
+    if (pc.connectionState === 'connected') { clearTimeout(timerDesconexion); return; }
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      cerrarSesion('RTCPeerConnection en estado "' + pc.connectionState + '"');
+    } else if (pc.connectionState === 'disconnected') {
+      clearTimeout(timerDesconexion);
+      timerDesconexion = setTimeout(() => {
+        if (pc.connectionState === 'disconnected') {
+          cerrarSesion('RTCPeerConnection "disconnected" por más de 8s sin recuperarse');
+        }
+      }, 8000);
+    }
+  };
+
+  try {
+    await pc.setRemoteDescription({ type: 'offer', sdp });
+    for (const candidato of O.candidatosPendientes) await pc.addIceCandidate(candidato).catch(() => {});
+    O.candidatosPendientes = [];
+    const respuesta = await pc.createAnswer();
+    await pc.setLocalDescription(respuesta);
+    enviar({ type: 'salida-respuesta', sdp: respuesta.sdp });
+  } catch (e) {
+    _log('⚠ error negociando: ' + e.name + ' — ' + e.message);
+    cerrarSesion('error negociando: ' + e.message);
+  }
+}
+
+async function recibirCandidato(candidato) {
+  if (!candidato) return;
+  if (O.pc && O.pc.remoteDescription) await O.pc.addIceCandidate(candidato).catch(() => {});
+  else O.candidatosPendientes.push(candidato);
+}
+
+function cerrarSesion(motivo) {
+  if (O.pc) { O.pc.onconnectionstatechange = null; O.pc.oniceconnectionstatechange = null; O.pc.close(); O.pc = null; }
+  O.candidatosPendientes = [];
+  const estabaTransmitiendo = O.transmitiendo;
+  O.transmitiendo = false;
+  $('v').srcObject = null;
+  document.body.classList.remove('transmitiendo');
+  $('vacio').style.display = '';
+  if (estabaTransmitiendo) {
+    estado(motivo ? 'salida cortada: ' + motivo : 'esperando la salida…', motivo ? 'warn' : '');
+  }
+}
+
+function enviar(payload) {
+  if (O.ws && O.ws.readyState === 1) O.ws.send(JSON.stringify(payload));
+}
+
+conectar();
+</script>
+</body>
+</html>

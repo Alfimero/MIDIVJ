@@ -13,6 +13,7 @@ En Windows, inicia `src/INICIAR_RELAY.bat`. En macOS, `src/INICIAR_RELAY.command
 - Emisor MIDI: `http://localhost:9191/sender`
 - Control remoto (QR de conexión): `http://localhost:9191/control`
 - Mando móvil: `http://localhost:9191/mando`
+- Cámara móvil: `http://localhost:9191/camara` desde esta computadora; desde un teléfono necesita HTTPS — usa el QR de `/control` (ver más abajo)
 
 > **Macs viejos.** En un Mac anterior a macOS 11 (por ejemplo una MacBook Pro de 2012, que llega hasta Catalina 10.15) instala **Node 16**: [node-v16.20.2.pkg](https://nodejs.org/dist/v16.20.2/node-v16.20.2.pkg). Las versiones nuevas de Node se instalan sin avisar y al arrancar mueren con `dyld: Symbol not found`. El launcher `.command` detecta ese caso y lo dice.
 
@@ -148,6 +149,26 @@ El regreso al menú principal se elige en *VOLVER*:
 - **sólo a mano** — con la barra `◀ VOLVER`, que siempre está visible dentro del submenú.
 
 Cada dispositivo navega por su cuenta: el mando 1 puede estar en su submenú de efectos mientras el mando 2 sigue en la parrilla de clips.
+
+## Control remoto: la cámara del teléfono
+
+Un teléfono también puede ser una fuente de video más para una pista: `VIDEO`, `PANTALLA`, `CAPTURA` y ahora `📱 CÁMARA`. El video viaja **directo** entre el teléfono y la pestaña de MIDIVJ (WebRTC); el relay sólo negocia la conexión, igual que hace de mensajero para el mando, y nunca ve ni retransmite el video.
+
+### Conectar
+
+1. Con el relay corriendo, pulsa **📡 RELAY** en el encabezado y luego **📱 ABRIR QR DE CÁMARAS** (paso 4 del panel). Se abre la misma página `/control` que ya usa el mando, con una tarjeta y un QR por cada número de cámara (hasta 4).
+2. En el teléfono, escanea el QR de una cámara libre. La página se conecta y queda **esperando**, sin encender la cámara todavía — no hay activación automática.
+3. En una pista de MIDIVJ, pulsa **📱 CÁMARA**. Si hay un solo teléfono conectado y libre lo usa directo; si hay varios, pregunta cuál. El teléfono recién ahí pide permiso de cámara y empieza a transmitir.
+4. Para soltarla, pulsa **✕** en la pista (o vuelve a pulsar **📱 CÁMARA**) — el teléfono apaga la cámara y vuelve a quedar disponible. También hay un botón **DETENER** en el propio teléfono.
+
+### Notas
+
+- **La primera vez, el teléfono muestra "conexión no privada".** `/camara` necesita HTTPS — es la única forma de que el navegador del teléfono dé acceso a la cámara en una IP de red, `getUserMedia` no funciona por HTTP salvo en `localhost`. El relay genera un certificado autofirmado en esta misma computadora (nada de internet ni de una CA real), así que el teléfono avisa que no reconoce el certificado: toca **Avanzado → continuar de todos modos**. Es esperado, una sola vez por teléfono (mientras la red no cambie), y no significa que algo esté mal.
+- Sólo video, sin audio — igual que `PANTALLA` y `CAPTURA`.
+- Cada cámara ocupa un slot propio (independiente de los slots del mando): un mismo teléfono puede abrir `/mando` y `/camara` a la vez si hace falta.
+- Sin STUN ni TURN: la conexión sólo usa candidatos de la propia red local, consistente con que el resto del proyecto no depende de internet. Esto puede fallar en una red con "aislamiento de cliente" (poco común en routers domésticos o en el hotspot de esta misma PC, que es el escenario principal — ver `docs/decisions/ADR-004-camara-movil-por-webrtc.md`).
+- Si el teléfono cierra la pestaña a media transmisión, el relay detecta la desconexión y avisa a MIDIVJ solo — no depende de que el teléfono alcance a despedirse.
+- Si en la consola del relay aparece "Cámara de teléfono no disponible esta sesión", el HTTPS no pudo levantarse (raro); todo lo demás — video, pantalla, capturadora, mando — sigue funcionando igual.
 
 ## Graphify
 

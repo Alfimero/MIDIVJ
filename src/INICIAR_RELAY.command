@@ -142,13 +142,13 @@ echo "  Node: $VERSION_NODE  ($NODE)"
 [ -n "$MACOS" ] && echo "  macOS: $MACOS"
 echo
 
-if [ ! -d "node_modules/ws" ]; then
-  echo "  Instalando dependencia \"ws\"…"
+if [ ! -d "node_modules/ws" ] || [ ! -d "node_modules/selfsigned" ]; then
+  echo "  Instalando dependencias…"
   if ! command -v npm >/dev/null 2>&1; then
     error "npm no esta disponible." "npm viene junto con Node.js: reinstalalo desde https://nodejs.org"
   fi
   if ! npm install --ignore-scripts; then
-    error "no se pudo instalar la dependencia \"ws\"." "Revisa que haya conexion a internet y vuelve a intentar."
+    error "no se pudieron instalar las dependencias." "Revisa que haya conexion a internet y vuelve a intentar."
   fi
   echo
 fi

@@ -1,4 +1,4 @@
-<!-- project-manager:context:start revision="3" hash="01ea2d37aa075c5c4f56073f177abcd6a00bf2760c6d3b0d3ed28144e1a9ccf5" -->
+<!-- project-manager:context:start revision="4" hash="586007ff8bb07825d7e6fbab8ed1720413d6556c96e1dfa5bfe012dfb2fc6b60" -->
 ## Contexto compartido
 
 Herramienta local de visuales en vivo controlada por MIDI.
@@ -26,6 +26,6 @@ active
 
 ### Repositorio
 - GitHub: https://github.com/Alfimero/MIDIVJ
-- Visibilidad: private
+- Visibilidad: public
 - Rama predeterminada: main
 <!-- project-manager:context:end -->
