@@ -82,6 +82,7 @@ code.inline{background:var(--bg3);border-radius:4px;padding:1px 5px;color:var(--
   <span><span class="dot" id="dot-relay"></span>relay</span>
   <span><span class="dot" id="dot-app"></span>MIDIVJ</span>
   <span id="txt-mandos">— mandos</span>
+  <span id="txt-camaras">— cámaras</span>
   <span id="txt-dir">—</span>
   <label style="margin-left:auto;font-size:10px;color:var(--text3);">
     dirección:
@@ -115,6 +116,31 @@ code.inline{background:var(--bg3);border-radius:4px;padding:1px 5px;color:var(--
 </section>
 
 <section>
+  <h3>PASO 3 · CONECTAR TELÉFONOS COMO CÁMARA</h3>
+  <div class="grid" id="tarjetas-camara"></div>
+</section>
+
+<section>
+  <h3>PASO 4 · SALIDA A OBS (CÁMARA VIRTUAL)</h3>
+  <div class="wifi">
+    <div>
+      <p class="nota" style="margin-top:0">
+        En OBS: <b>+ Fuente → Fuente de navegador</b>, pega esta URL. Poné el ancho/alto de la fuente
+        igual a la resolución de salida de MIDIVJ para que llene el cuadro sin recortar nada. El video
+        viaja directo por WebRTC entre MIDIVJ y OBS; el relay sólo negocia la conexión, y la resolución
+        queda fija (no la reduce sola por ancho de banda). Con la fuente agregada,
+        <b>Iniciar cámara virtual</b> de OBS expone toda la escena a Zoom/Meet/Discord como si fuera
+        una webcam.
+      </p>
+      <div class="rp-linea" style="display:flex;gap:8px;align-items:center;">
+        <code class="inline" id="cod-salida" style="padding:5px 8px;">…</code>
+        <span id="txt-salidas" style="font-family:var(--mono);font-size:11px;color:var(--text2);">— fuentes</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
   <h3>NOTAS</h3>
   <p class="nota">
     Los mandos envían mensajes MIDI normales: MIDIVJ los recibe por su bloque de red y los trata
@@ -122,6 +148,16 @@ code.inline{background:var(--bg3);border-radius:4px;padding:1px 5px;color:var(--
     efecto dentro de MIDIVJ y toca el botón del teléfono.
     En la app, el bloque <b>RED</b> debe estar conectado a <code class="inline" id="cod-ws">ws://…</code>
     con la misma sala.
+  </p>
+  <p class="nota">
+    La cámara de un teléfono viaja <b>directo</b> hasta MIDIVJ por WebRTC: el relay sólo negocia la
+    conexión, nunca ve el video. Para eso necesita HTTPS (el navegador del teléfono no da acceso a la
+    cámara por HTTP en una IP de red), así que <code class="inline">/camara</code> usa un puerto aparte
+    con un certificado <b>autofirmado</b> generado en esta misma computadora: la primera vez, el
+    teléfono muestra un aviso de "conexión no privada" — es esperado, no un problema real; hay que
+    tocar <b>Avanzado → continuar de todos modos</b> para seguir. No usa STUN/TURN, así que puede no
+    conectar en una red con "aislamiento de cliente" (poco común en routers domésticos o en el hotspot
+    de esta misma PC).
   </p>
   <p class="nota">
     <b>Red creada por esta computadora.</b> Si no hay router, comparte Internet desde Windows
@@ -148,7 +184,7 @@ $('sub-sala').textContent = 'sala "' + SALA + '"';
 
 let red = null;
 let dirElegida = null;
-let presencia = { app: false, mandos: [], maxMandos: 4 };
+let presencia = { app: false, mandos: [], maxMandos: 4, camaras: [], maxCamaras: 4, salidas: 0, maxSalidas: 4 };
 
 function qrEn(contenedor, texto, escala) {
   contenedor.innerHTML = texto ? QRLite.svg(texto, { escala: escala || 4, margen: 2, ecl: 'M' }) : '';
@@ -184,9 +220,11 @@ async function cargarRed() {
 
   pintarWifi();
   pintarTarjetas();
+  pintarTarjetasCamara();
+  pintarSalida();
 }
 
-$('sel-dir').addEventListener('change', ev => { dirElegida = ev.target.value; pintarTarjetas(); });
+$('sel-dir').addEventListener('change', ev => { dirElegida = ev.target.value; pintarTarjetas(); pintarTarjetasCamara(); pintarSalida(); });
 
 const ORIGEN_WIFI = {
   hotspot: 'punto de acceso de esta PC (encendido)',
@@ -221,6 +259,13 @@ function baseURL() {
   return 'http://' + (dirElegida || location.hostname) + ':' + red.puerto;
 }
 
+/* /camara necesita HTTPS (getUserMedia no funciona por HTTP en una IP de
+   LAN): el relay lo sirve en un puerto aparte, con certificado autofirmado. */
+function baseURLCamara() {
+  if (!red.puertoSeguro) return null;
+  return 'https://' + (dirElegida || location.hostname) + ':' + red.puertoSeguro;
+}
+
 function pintarTarjetas() {
   const cont = $('tarjetas');
   cont.innerHTML = '';
@@ -243,6 +288,44 @@ function pintarTarjetas() {
   $('cod-firewall').textContent =
     `netsh advfirewall firewall add rule name="MIDIVJ ${red.puerto}" dir=in action=allow ` +
     `protocol=TCP localport=${red.puerto} profile=private`;
+}
+
+function pintarTarjetasCamara() {
+  const cont = $('tarjetas-camara');
+  cont.innerHTML = '';
+  const base = baseURLCamara();
+  if (!base) {
+    cont.innerHTML = '<p class="nota" style="color:var(--warn)">'
+      + 'El relay no pudo levantar HTTPS en esta sesión, así que no hay QR de cámara todavía '
+      + '(revisa la consola donde corre <code class="inline">INICIAR_RELAY</code>). El resto — video, '
+      + 'pantalla, capturadora y el mando — funciona igual.</p>';
+    return;
+  }
+  const total = red.maxCamaras || 4;
+  for (let s = 1; s <= total; s++) {
+    const url = base + '/camara?sala=' + encodeURIComponent(SALA) + '&slot=' + s;
+    const ocupado = presencia.camaras.some(c => c.slot === s);
+    const card = document.createElement('div');
+    card.className = 'card' + (ocupado ? ' ocupado' : '');
+    card.innerHTML = `
+      <span class="badge${ocupado ? ' on' : ''}">${ocupado ? 'CONECTADA' : 'LIBRE'}</span>
+      <h2>CÁMARA ${s}</h2>
+      <div class="qr"></div>
+      <code>${escapar(url)}</code>`;
+    qrEn(card.querySelector('.qr'), url, 4);
+    cont.appendChild(card);
+  }
+}
+
+function pintarSalida() {
+  /* A diferencia de /camara, /salida no necesita HTTPS (no toca
+     getUserMedia: sólo recibe video por WebRTC), así que usa la misma
+     dirección/puerto que el resto de la app. */
+  const url = baseURL() + '/salida?sala=' + encodeURIComponent(SALA);
+  $('cod-salida').textContent = url;
+  $('txt-salidas').textContent = presencia.salidas
+    ? presencia.salidas + '/' + (presencia.maxSalidas || 4) + ' fuentes conectadas'
+    : 'ninguna fuente conectada todavía';
 }
 
 function escapar(s) {
@@ -281,10 +364,15 @@ function conectarWS() {
     let msg;
     try { msg = JSON.parse(ev.data); } catch (_) { return; }
     if (msg.type !== 'presencia') return;
-    presencia = { app: msg.app, mandos: msg.mandos || [], maxMandos: msg.maxMandos || 4 };
+    presencia = {
+      app: msg.app, mandos: msg.mandos || [], maxMandos: msg.maxMandos || 4,
+      camaras: msg.camaras || [], maxCamaras: msg.maxCamaras || 4,
+      salidas: msg.salidas || 0, maxSalidas: msg.maxSalidas || 4
+    };
     $('dot-app').className = 'dot' + (msg.app ? ' on' : '');
     $('txt-mandos').textContent = presencia.mandos.length + '/' + presencia.maxMandos + ' mandos';
-    if (red) pintarTarjetas();
+    $('txt-camaras').textContent = presencia.camaras.length + '/' + presencia.maxCamaras + ' cámaras';
+    if (red) { pintarTarjetas(); pintarTarjetasCamara(); pintarSalida(); }
   };
   ws.onclose = () => setTimeout(conectarWS, 1500);
 }

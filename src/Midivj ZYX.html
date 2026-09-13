@@ -201,6 +201,8 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 #center{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}
 #vid-area{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:#000;position:relative;overflow:hidden;}
 #out-canvas{display:block;max-width:100%;max-height:100%;width:auto;height:auto;}
+#txov{position:absolute;display:none;pointer-events:none;top:0;left:0;}
+.hbtn.on{border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.1);}
 #load-ov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:#000;}
 #load-ov.hide{display:none;}
 #dzone{border:1px dashed var(--border2);padding:22px 30px;text-align:center;cursor:pointer;transition:all .2s;}
@@ -242,6 +244,16 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 #ses-panel header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);}
 #ses-panel h2{margin:0;font-family:var(--mono);font-size:12px;letter-spacing:2px;color:var(--accent);flex:1;}
 #ses-cerrar{background:none;border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:12px;line-height:1;padding:4px 9px;cursor:pointer;}
+#res-fondo{position:fixed;inset:0;background:rgba(3,3,10,.78);z-index:900;display:none;align-items:center;justify-content:center;padding:20px;}
+#res-fondo.vis{display:flex;}
+#res-panel{background:var(--panel);border:1px solid var(--border2);border-radius:6px;width:min(560px,96vw);max-height:92vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.6);}
+#res-panel header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);}
+#res-panel h2{margin:0;font-family:var(--mono);font-size:12px;letter-spacing:2px;color:var(--accent);flex:1;}
+#res-cerrar{background:none;border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:12px;line-height:1;padding:4px 9px;cursor:pointer;}
+.res-pbtn{background:var(--panel2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:9px;font-weight:700;padding:7px 10px;cursor:pointer;text-align:left;line-height:1.5;}
+.res-pbtn:hover{border-color:var(--accent);color:var(--accent);}
+.res-pbtn.on{border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.1);}
+.res-pbtn b{display:block;font-size:10px;}
 .rp-cuerpo{padding:14px 16px 18px;}
 .rp-estado{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;padding:10px 12px;border:1px solid var(--border2);background:var(--panel2);margin-bottom:14px;}
 .rp-estado .pt{width:9px;height:9px;border-radius:50%;background:var(--hot);flex-shrink:0;}
@@ -289,7 +301,10 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <div id="learn-banner">● MIDI LEARN — toca nota o mueve CC</div>
   <div class="spacer"></div>
   <button class="hbtn out" onclick="openOutputWindow()">⊡ HDMI</button>
+  <button class="hbtn" onclick="window.open(salidaURL(),'_blank','noopener')" title="Abre la página que agregarías en OBS como Fuente de navegador (también en 📡 RELAY → 5)">🎥 OBS</button>
+  <button class="hbtn" onclick="abrirPanelRes()" title="Resolución y tamaño del video de salida">⛶ SALIDA</button>
   <button class="hbtn" id="mando-btn" onclick="abrirPanelRelay()" title="Relay, conexión y códigos QR de los mandos">📡 RELAY <span id="mando-count">—</span></button>
+  <button class="hbtn" id="audio-btn" onclick="abrirPanelAudio()" title="Entradas de audio, análisis y mapeos audio → visual">🔊 AUDIO</button>
   <button id="excl-btn" class="hbtn" onclick="toggleExcl()" title="Exclusivo: disparar un clip detiene los clips de otros tracks" style="border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.08);">EXCL ●</button>
   <button class="hbtn danger" onclick="resetAll()">RESET</button>
   <button class="hbtn" onclick="abrirPanelSesiones()" title="Lista las sesiones guardadas en Sessions/ y permite elegir la carpeta de MEDIA">ABRIR</button>
@@ -362,6 +377,88 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
           <p class="rp-ayuda">
             Cada teléfono escanea el QR de su número (hasta 4). Para mapear un botón, pulsa
             <b>MAP</b> en el clip o efecto y tócalo en el teléfono.
+          </p>
+        </div>
+      </div>
+
+      <div class="rp-paso">
+        <h3>4 · CÁMARA DE TELÉFONO</h3>
+        <div>
+          <div class="rp-linea">
+            <button class="rp-btn pri" onclick="abrirControlRemoto()">📱 ABRIR QR DE CÁMARAS</button>
+            <span class="rp-mandos" id="rp-camaras">—</span>
+          </div>
+          <p class="rp-ayuda">
+            El video viaja directo entre el teléfono y esta pestaña (WebRTC); el relay sólo negocia
+            la conexión. Para usarla, pulsa <b>📱 CÁMARA</b> en una pista. Requiere la misma red.
+          </p>
+        </div>
+      </div>
+
+      <div class="rp-paso">
+        <h3>5 · SALIDA A OBS (CÁMARA VIRTUAL)</h3>
+        <div>
+          <div class="rp-linea">
+            <label>URL</label>
+            <input class="rp-cmd" id="rp-salida-url" readonly>
+            <button class="rp-btn" onclick="copiarDeCampo('rp-salida-url', this)">COPIAR</button>
+            <button class="rp-btn" onclick="window.open(document.getElementById('rp-salida-url').value,'_blank','noopener')">ABRIR</button>
+          </div>
+          <div class="rp-linea">
+            <span class="rp-mandos" id="rp-salidas">—</span>
+          </div>
+          <p class="rp-ayuda">
+            En OBS: <b>+ Fuente → Fuente de navegador</b>, pega esta URL. Poné el ancho/alto de la fuente
+            igual a tu resolución de salida (panel ⛶ SALIDA) para que llene el cuadro sin recortar nada.
+            El video viaja directo por WebRTC, igual que la cámara del teléfono; el relay sólo negocia, y
+            la resolución queda fija (no la reduce sola por ancho de banda). Con la fuente agregada,
+            <b>Iniciar cámara virtual</b> de OBS expone toda la escena a Zoom/Meet/Discord como si fuera
+            una webcam.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ── PANEL DE RESOLUCIÓN DE SALIDA ── -->
+<div id="res-fondo" onclick="if(event.target===this) cerrarPanelRes()">
+  <div id="res-panel">
+    <header>
+      <h2>RESOLUCIÓN DE SALIDA</h2>
+      <button id="res-cerrar" onclick="cerrarPanelRes()">✕</button>
+    </header>
+    <div class="rp-cuerpo">
+
+      <div class="rp-paso">
+        <h3>PRESETS DE PANTALLA</h3>
+        <div>
+          <div class="rp-linea" id="res-presets"></div>
+          <p class="rp-ayuda">Elige la resolución que coincida con la pantalla, proyector o capturadora HDMI donde vas a proyectar.</p>
+        </div>
+      </div>
+
+      <div class="rp-paso">
+        <h3>PERSONALIZADA</h3>
+        <div>
+          <div class="rp-linea">
+            <label>ANCHO</label>
+            <input class="rp-inp" id="res-w" type="number" min="64" max="7680" step="2" style="width:80px;">
+            <label>ALTO</label>
+            <input class="rp-inp" id="res-h" type="number" min="64" max="4320" step="2" style="width:80px;">
+            <button class="rp-btn pri" onclick="aplicarResPersonalizada()">APLICAR</button>
+          </div>
+          <div class="rp-linea">
+            <span class="rp-ayuda" id="res-estado" style="margin:0">—</span>
+          </div>
+          <div class="rp-linea">
+            <button class="rp-btn" onclick="liberarRes()">🔓 AUTO (según el video cargado)</button>
+          </div>
+          <p class="rp-ayuda">
+            Al fijar una resolución, el lienzo de salida queda bloqueado a ese tamaño — los videos se
+            escalan para llenarlo. Usa el efecto <b>TRANSFORM</b> del panel de efectos para desplazar,
+            escalar, rotar o darle profundidad a la imagen dentro de ese encuadre.
           </p>
         </div>
       </div>
@@ -442,6 +539,7 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <div id="center">
     <div id="vid-area">
       <canvas id="out-canvas" width="1280" height="720"></canvas>
+      <svg id="txov"></svg>
       <div id="res-lbl"></div>
       <div id="load-ov">
         <div id="dzone"
@@ -533,6 +631,15 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 <input type="file" id="mdirinput" webkitdirectory multiple style="display:none" onchange="openProjectFolder(event)">
 <input type="file" id="pfileinput" accept=".vjp,.json" style="display:none" onchange="openProjectFile(event)">
 
+<!-- ── MÓDULOS (ver docs/audio-module.md) ──
+     Se cargan antes del script principal y son opcionales: si el relay no
+     está sirviendo la página (o alguien abre este HTML como file://), estos
+     scripts no cargan y la aplicación sigue funcionando exactamente igual,
+     sólo sin el botón AUDIO. -->
+<script src="modules/midivj-module.js"></script>
+<script src="modules/audio/midivj-audio-engine.js"></script>
+<script src="modules/audio/midivj-audio-ui.js"></script>
+
 <script>
 /* ═══════════════════════════════════════════════════════
    CONSTANTS
@@ -542,9 +649,16 @@ const NNAMES    = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const TRACK_ACC = ['#7070ff','#00ff88','#ff9944','#dd66ff','#00e5ff','#ff6b35','#c6ff00','#ff2d78'];
 
 const EFX_ICO = {flash:'✦',glitch:'▒',invert:'◑',rgb:'⊕',strobe:'◈',pixel:'▣',
-  mirrorH:'⇔',mirrorV:'⇕',zoom:'⊙',tint:'◉',shake:'〜',negative:'◐',slowmo:'»',bw:'◧',scan:'≡'};
+  mirrorH:'⇔',mirrorV:'⇕',zoom:'⊙',tint:'◉',shake:'〜',negative:'◐',slowmo:'»',bw:'◧',scan:'≡',xform:'⛶'};
 
 const EFX_DEFS = [
+  /* TRANSFORM va primero para que sea lo primero visible en el panel — es
+     una herramienta de encuadre de uso constante, no un efecto ocasional.
+     Empieza encendida (con valores identidad = sin distorsión) para que
+     mover un slider tenga efecto inmediato, sin tener que activarla antes. */
+  {id:'e16',name:'TRANSFORM',type:'xform',   midi:null,on:true, mode:'toggle',
+    x:0, y:0, scaleX:1, scaleY:1, rotation:0,
+    pin: { tl:[0,0], tr:[0,0], bl:[0,0], br:[0,0] } },
   {id:'e1', name:'FLASH',    type:'flash',   midi:null,on:false,mode:'hold',   intensity:.9},
   {id:'e2', name:'GLITCH',   type:'glitch',  midi:null,on:false,mode:'hold',   amount:.6},
   {id:'e3', name:'INVERT',   type:'invert',  midi:null,on:false,mode:'toggle'},
@@ -628,6 +742,7 @@ const S = {
   })),
   activeBank: 0,
   bankLearning: null,   // index of bank being MIDI-learned
+  outRes: { locked:false, w:1280, h:720 },  // resolución fija del lienzo de salida (null=auto según video)
 };
 let clipSeq = 1;
 const MEDIA = {
@@ -638,7 +753,14 @@ const HDMI_STREAM_WAIT_MS = 900;
 
 /* DOM */
 const cvs    = document.getElementById('out-canvas');
-const ctx    = cvs.getContext('2d', { alpha:false, desynchronized:true, willReadFrequently:false });
+/* alpha:false, sin desynchronized: el canvas visible se dibuja en varios
+   pasos por frame (limpiar, cada pista, TRANSFORM, color, glitch...) —
+   con desynchronized:true el navegador puede presentar un paso a MEDIO
+   dibujar (por ejemplo el video recién compuesto, todavía sin el warp de
+   TRANSFORM encima) en vez de esperar al frame ya terminado, lo que se ve
+   como el video "flasheando" a su posición original varias veces por
+   segundo. Sin desynchronized el navegador solo muestra frames completos. */
+const ctx    = cvs.getContext('2d', { alpha:false, willReadFrequently:false });
 const tlCvs  = document.getElementById('tl-canvas');
 const tlCtx  = tlCvs.getContext('2d', { alpha:false });
 const offCvs  = document.createElement('canvas');
@@ -788,6 +910,8 @@ function makeTrack(i) {
     _plBufKey:null, _plBufUrl:null, _plBufMediaRef:null, // cross-source prebuffer bookkeeping
     _plPrebuffered:false, _pendingClip:null,
     opacity:1, visible:true,
+    xform: { x:0, y:0, scaleX:1, scaleY:1, rotation:0,
+      pin: { tl:[0,0], tr:[0,0], bl:[0,0], br:[0,0] } },  // transform independiente de esta pista (pin = corner-pin/profundidad libre)
     videoOffset:0,         // seconds offset of video start in timeline
     sourceType:'file',     // 'file' | 'display' | 'capture'
     _stream:null,          // MediaStream for display/capture sources
@@ -923,11 +1047,8 @@ function makeTrack(i) {
     t.loaded = true; t.dur = vidA.duration;
     t.loadedName = t._pendingName || 'video';
     if (i === 0) {
-      cvs.width  = vidA.videoWidth  || 1280;
-      cvs.height = vidA.videoHeight || 720;
-      offCvs.width = cvs.width; offCvs.height = cvs.height;
-      resizeOutWin();
-      document.getElementById('res-lbl').textContent = cvs.width+'×'+cvs.height;
+      if (!S.outRes.locked) { cvs.width = vidA.videoWidth || 1280; cvs.height = vidA.videoHeight || 720; }
+      syncOutCanvasBuffers();
       document.getElementById('load-ov').classList.add('hide');
     }
     t.clips.forEach(c => {
@@ -1117,6 +1238,85 @@ function resizeOutWin() {
 }
 
 /* ═══════════════════════════════════════════════════════
+   RESOLUCIÓN DE SALIDA — tamaño del lienzo de render
+   Por defecto el lienzo toma la resolución nativa del primer video
+   cargado en la pista 1 (ver 'loadedmetadata' abajo). Al fijar una
+   resolución manualmente ese auto-ajuste queda bloqueado, para poder
+   igualar la salida al tamaño real de la pantalla/proyector/capturadora.
+═══════════════════════════════════════════════════════ */
+const RES_PRESETS = [
+  {label:'720p',        w:1280, h:720},
+  {label:'1080p',       w:1920, h:1080},
+  {label:'1080p vert.', w:1080, h:1920},
+  {label:'4K UHD',      w:3840, h:2160},
+  {label:'Cuadrado',    w:1080, h:1080},
+];
+
+function syncOutCanvasBuffers() {
+  offCvs.width = cvs.width; offCvs.height = cvs.height;
+  resizeOutWin();
+  const lbl = document.getElementById('res-lbl');
+  if (lbl) lbl.textContent = cvs.width+'×'+cvs.height + (S.outRes.locked ? ' 🔒' : '');
+}
+
+function applyOutRes(w, h, locked) {
+  w = Math.max(64, Math.min(7680, Math.round(w) || S.outRes.w));
+  h = Math.max(64, Math.min(4320, Math.round(h) || S.outRes.h));
+  S.outRes.w = w; S.outRes.h = h; S.outRes.locked = !!locked;
+  cvs.width = w; cvs.height = h;
+  syncOutCanvasBuffers();
+  try { localStorage.setItem('midivj-out-res', JSON.stringify(S.outRes)); } catch(_) {}
+  renderPanelRes();
+}
+
+function liberarRes() {
+  S.outRes.locked = false;
+  try { localStorage.setItem('midivj-out-res', JSON.stringify(S.outRes)); } catch(_) {}
+  const lbl = document.getElementById('res-lbl');
+  if (lbl) lbl.textContent = cvs.width+'×'+cvs.height;
+  renderPanelRes();
+}
+
+function aplicarResPersonalizada() {
+  const w = +document.getElementById('res-w').value;
+  const h = +document.getElementById('res-h').value;
+  if (!w || !h) { alert('Ancho y alto deben ser mayores a 0.'); return; }
+  applyOutRes(w, h, true);
+}
+
+function restoreOutResFromStorage() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('midivj-out-res') || 'null'); } catch(_) {}
+  if (saved && saved.locked && saved.w && saved.h) applyOutRes(saved.w, saved.h, true);
+}
+
+function abrirPanelRes() {
+  renderPanelRes();
+  document.getElementById('res-fondo').classList.add('vis');
+}
+function cerrarPanelRes() {
+  document.getElementById('res-fondo').classList.remove('vis');
+}
+function renderPanelRes() {
+  const box = document.getElementById('res-presets');
+  if (box) {
+    box.innerHTML = RES_PRESETS.map(p => {
+      const on = S.outRes.locked && S.outRes.w===p.w && S.outRes.h===p.h;
+      return `<button class="res-pbtn${on?' on':''}" onclick="applyOutRes(${p.w},${p.h},true)"><b>${p.label}</b>${p.w}×${p.h}</button>`;
+    }).join('');
+  }
+  const wI = document.getElementById('res-w'), hI = document.getElementById('res-h');
+  if (wI) wI.value = S.outRes.w;
+  if (hI) hI.value = S.outRes.h;
+  const estado = document.getElementById('res-estado');
+  if (estado) {
+    estado.textContent = S.outRes.locked
+      ? `Salida fija en ${cvs.width}×${cvs.height}.`
+      : `Automática — sigue la resolución del video de la pista 1 (actual: ${cvs.width}×${cvs.height}).`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
    VIDEO LOADING
 ═══════════════════════════════════════════════════════ */
 function normalizeMediaKey(v='') {
@@ -1293,6 +1493,8 @@ async function applyProjectData(d) {
       S.tracks[i].groups=(td.groups||[]);
       if(td.opacity!==undefined) S.tracks[i].opacity=td.opacity;
       if(td.videoOffset!==undefined) S.tracks[i].videoOffset=td.videoOffset;
+      if(td.xform) S.tracks[i].xform={ x:0,y:0,scaleX:1,scaleY:1,rotation:0, ...td.xform,
+        pin:{ tl:[0,0],tr:[0,0],bl:[0,0],br:[0,0], ...(td.xform.pin||{}) } };
       S.tracks[i].mediaRef = td.media || td.mediaRef || null;
       (S.tracks[i].playlist||[]).forEach(e => { if (e.objectURL) URL.revokeObjectURL(e.objectURL); });
       S.tracks[i].playlist = (td.playlist||[]).map(pe => ({
@@ -1306,6 +1508,8 @@ async function applyProjectData(d) {
   }
   if (d.efxs) d.efxs.forEach(de=>{ const e=S.efxs.find(x=>x.id===de.id); if(e) Object.assign(e,de,{on:false,midi:de.midi!==undefined?de.midi:(de.note!==undefined?de.note:null)}); });
   if (d.banks) d.banks.forEach((db,i)=>{ if(i<S.banks.length) Object.assign(S.banks[i],db); });
+  if (d.outRes && d.outRes.locked && d.outRes.w && d.outRes.h) applyOutRes(d.outRes.w, d.outRes.h, true);
+  if (d.audio) audioRestaurar(d.audio);
   if (d.name) document.getElementById('proj-name').value=d.name;
   clipSeq=allClips().length+1; S.selClipId=null;
   /* Sesiones sin mando propio (nuevas o guardadas antes de esta función)
@@ -1577,21 +1781,27 @@ function _applyStream(track, stream, type, label) {
 
   lv.onloadedmetadata = () => {
     if (track.i === 0) {
-      cvs.width  = lv.videoWidth  || 1280;
-      cvs.height = lv.videoHeight || 720;
-      offCvs.width=cvs.width; offCvs.height=cvs.height;
-      resizeOutWin();
-      document.getElementById('res-lbl').textContent=cvs.width+'×'+cvs.height;
+      if (!S.outRes.locked) { cvs.width = lv.videoWidth || 1280; cvs.height = lv.videoHeight || 720; }
+      syncOutCanvasBuffers();
       document.getElementById('load-ov').classList.add('hide');
     }
     renderTrackInfo();
   };
 
-  stream.getVideoTracks()[0].onended = () => stopTrackSource(track.i);
+  stream.getVideoTracks()[0].onended = () => {
+    /* El navegador puede dar por terminado el track sin que el
+       RTCPeerConnection (si lo hay) haya cambiado de estado todavía — para
+       una cámara de teléfono, esto puede disparar el apagado ANTES o en vez
+       de que lo haga _camRecibirOferta()'s pc.onconnectionstatechange. */
+    console.log('[fuente] pista '+track.i+' ('+type+' — "'+label+'"): el track de video terminó por sí solo (onended) — se corta la pista');
+    appendNetLog('⚠ pista '+track.i+' ('+type+'): el video terminó por sí solo');
+    stopTrackSource(track.i);
+  };
   renderAll();
 }
 
 function stopTrackStream(track) {
+  _camCerrar(track.i, true, 'la pista cambió o soltó su fuente (stopTrackStream)');   // no-op si esta pista no tiene sesión de cámara de teléfono
   if (track._stream) {
     track._stream.getTracks().forEach(tr=>tr.stop());
     track._stream = null;
@@ -2213,21 +2423,27 @@ function renderTrackInfo() {
                : '';
 
   /* Source type icons */
-  const srcIco = t.sourceType==='display'?'🖥':'capture'==='capture'?'📷':'🎬';
+  const srcIco = t.sourceType==='display'?'🖥':t.sourceType==='phone'?'📱':t.sourceType==='capture'?'📷':'🎬';
+
+  const camSes = CAM.sesiones.get(idx);
+  const camEsperando = camSes && camSes.estado !== 'lista'
+    ? `<span style="color:var(--yellow);font-size:8px;">⏳ esperando cámara ${camSes.slot}…</span>` : '';
 
   document.getElementById('track-info').innerHTML = `
 <div class="ti-row">
-  <span class="ti-name">${t.loaded ? (t.sourceType==='display'?'🖥 ':t.sourceType==='capture'?'📷 ':'🎬 ')+t.loadedName : 'Sin fuente'}</span>
+  <span class="ti-name">${t.loaded ? (t.sourceType==='display'?'🖥 ':t.sourceType==='phone'?'📱 ':t.sourceType==='capture'?'📷 ':'🎬 ')+t.loadedName : 'Sin fuente'}</span>
   <span class="ti-dur">${t.loaded&&t.dur?ft(t.dur):(t.loaded?'∞':'—')}</span>
-  ${t.loaded&&t.sourceType!=='file'?`<button class="hbtn" style="font-size:8px;padding:2px 6px;border-color:var(--hot);color:var(--hot);" onclick="stopTrackSource(${idx})">✕</button>`:''}
+  ${camEsperando}
+  ${(t.loaded&&t.sourceType!=='file')||camSes?`<button class="hbtn" style="font-size:8px;padding:2px 6px;border-color:var(--hot);color:var(--hot);" onclick="stopTrackSource(${idx})">✕</button>`:''}
 </div>
 <div class="ti-row" style="gap:3px;flex-wrap:wrap;">
   <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackVideo()" title="Cargar archivo de video">🎬 VIDEO</button>
   <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackDisplay(${idx})" title="Capturar pestaña o ventana del navegador">🖥 PANTALLA</button>
   <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackCapture(${idx})" title="Capturadora de video / cámara (Elgato, AVerMedia, webcam, etc.)">📷 CAPTURA</button>
+  <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="toggleCamara(${idx})" title="Cámara de un teléfono conectado por /camara">📱 CÁMARA</button>
 </div>
 <div style="font-family:var(--mono);font-size:7px;color:var(--text3);padding:2px 0;">
-  🖥 = otra ventana/pestaña · 📷 = cámara o capturadora USB
+  🖥 = otra ventana/pestaña · 📷 = cámara o capturadora USB · 📱 = cámara de teléfono
 </div>
 <div class="opa-row">
   <span class="opa-lbl">OPAC</span>
@@ -2242,8 +2458,22 @@ function renderTrackInfo() {
   <span class="opa-lbl" id="off-v">${ft(t.videoOffset||0)}</span>
   <button class="hbtn" style="font-size:8px;padding:1px 6px;" onclick="S.tracks[S.ati].videoOffset=0;renderTrackInfo();renderTL();">0</button>
 </div>
+<div class="ti-row" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border2);">
+  <span class="ti-name" style="flex:none;font-weight:700;color:var(--text2);">⛶ TRANSFORM DE PISTA</span>
+  <button class="hbtn" style="font-size:8px;padding:1px 6px;margin-left:auto;" onclick="resetTrackXform(${idx})" title="Volver esta pista a su posición/tamaño original">RESET</button>
+</div>
+<div class="ti-row" style="gap:4px;">
+  <button class="hbtn${xovMode==='track'?' on':''}" id="txov-btn" style="font-size:8px;padding:3px 7px;flex:1;" onclick="toggleTrackBoxEdit()"
+    title="Muestra una caja sobre el video: arrastrá una esquina para escalar, la manija de afuera para rotar, y Shift+arrastrá una esquina para deformar libremente (profundidad)">${xovMode==='track'?'👁 OCULTAR CAJA':'▦ EDITAR EN CANVAS'}</button>
+  <button class="hbtn${trackGridOn?' on':''}" id="tgrid-btn" style="font-size:8px;padding:3px 7px;" onclick="toggleTrackGrid()"
+    title="Proyecta una grilla de calibración sobre esta pista — se deforma junto con el corner-pin, útil para alinear una proyección física">▦ GRID</button>
+</div>
+<div class="efx-params open" style="padding:6px 0 0;">
+  ${buildTrackXformHTML(t)}
+</div>
 ${capLbl ? `<div style="padding:1px 0;">${capLbl}</div>` : ''}
 ${renderPlaylistPanel(t)}`;
+  syncXov();
 }
 
 /* ── Playlist panel: ordered list of extra videos for this track,
@@ -2276,6 +2506,42 @@ function renderPlaylistPanel(t) {
     <button class="hbtn save" style="font-size:9px;padding:3px 7px;margin-left:auto;" onclick="generatePlaylistClips(${idx})" title="Crea/actualiza un clip por cada video de la lista, encadenados en orden" ${t.playlist.length?'':'disabled'}>⚡ GENERAR CLIPS</button>
   </div>
 </div>`;
+}
+
+/* ── Transform independiente por pista — posición/escala/rotación por
+   slider, más una caja delimitadora interactiva sobre el canvas (ver
+   "BOUNDING BOX INTERACTIVO" más abajo) para arrastrar esquinas: solas =
+   escalar, con Shift = corner-pin libre (profundidad), y una manija
+   afuera de cada esquina para rotar. El efecto global TRANSFORM sigue
+   existiendo aparte y actúa sobre la salida ya compuesta — son dos capas
+   independientes, no se reemplazan. ── */
+function trackXformSliderParams() {
+  return efxParams({type:'xform'});
+}
+function buildTrackXformHTML(t) {
+  return trackXformSliderParams().map(p => {
+    const cur = t.xform[p.key] !== undefined ? t.xform[p.key] : p.def;
+    const disp = EFX_FMT[p.fmt] ? EFX_FMT[p.fmt](cur) : cur;
+    return `<div class="ep-row" data-pkey="${p.key}">
+      <span class="ep-lbl">${p.lbl}</span>
+      <input type="range" class="epsl" min="${p.min}" max="${p.max}" step="${p.step}" value="${cur}"
+        oninput="trackXformInput('${p.key}',this.value,'${p.fmt}')">
+      <span class="ep-val">${disp}</span>
+    </div>`;
+  }).join('');
+}
+function trackXformInput(key, rawVal, fmt) {
+  const t = S.tracks[S.ati];
+  const val = +rawVal;
+  t.xform[key] = val;
+  const label = document.querySelector(`#track-info [data-pkey="${key}"] .ep-val`);
+  if (label) label.textContent = EFX_FMT[fmt] ? EFX_FMT[fmt](val) : val;
+  syncXov();
+}
+function resetTrackXform(idx) {
+  S.tracks[idx].xform = { x:0, y:0, scaleX:1, scaleY:1, rotation:0, pin:{ tl:[0,0], tr:[0,0], bl:[0,0], br:[0,0] } };
+  renderTrackInfo();
+  syncXov();
 }
 
 function onPlaylistFilesChosen(ev) {
@@ -2840,7 +3106,7 @@ function renderClips() {
 /* ── EFFECTS PANEL ── */
 
 /* Track which effects have their param panel open */
-const efxOpen = new Set();
+const efxOpen = new Set(['e16']);  // TRANSFORM empieza con sus controles ya desplegados
 
 /* Format helpers — called by name from oninput */
 const EFX_FMT = {
@@ -2848,6 +3114,8 @@ const EFX_FMT = {
   px:    v => (+v)+'px',
   fps:   v => (+v)+' fps',
   scale: v => (+v).toFixed(1)+'×',
+  deg:   v => Math.round(+v)+'°',
+  axis:  v => (+v)===1 ? '↕ ARRIBA/ABAJO' : '↔ IZQUIERDA/DERECHA',
   raw:   v => +v,
 };
 
@@ -2870,6 +3138,13 @@ function efxParams(e) {
       {key:'gap',   lbl:'Espaciado', min:2,  max:10, step:1,   fmt:'px',  def:3},
       {key:'alpha', lbl:'Opacidad',  min:.05,max:.8,  step:.05, fmt:'pct', def:.3},
     ];
+    case 'xform':  return [
+      {key:'x',         lbl:'Pos X',       min:-800, max:800, step:5,   fmt:'px',    def:0},
+      {key:'y',         lbl:'Pos Y',       min:-800, max:800, step:5,   fmt:'px',    def:0},
+      {key:'scaleX',    lbl:'Escala X',    min:.1,   max:3,   step:.02, fmt:'scale', def:1},
+      {key:'scaleY',    lbl:'Escala Y',    min:.1,   max:3,   step:.02, fmt:'scale', def:1},
+      {key:'rotation',  lbl:'Rotación',    min:-180, max:180, step:1,   fmt:'deg',   def:0},
+    ];
     default: return [];
   }
 }
@@ -2887,6 +3162,7 @@ function efxParamInput(id, key, rawVal, fmt) {
   }
   /* Live side-effects */
   if (e.type==='slowmo' && e.on) S.tracks.forEach(t=>{ if(t.loaded) t.vid.playbackRate=val; });
+  if (e.type==='xform' && xovMode==='global') syncXov();
 }
 
 /* Kept for compatibility with setEfxParam calls from color picker */
@@ -2894,8 +3170,14 @@ function setEfxParam(id, key, val) { efxParamInput(id, key, val, key==='color'?'
 
 function buildParamHTML(e) {
   const params = efxParams(e);
-  if (!params.length) return '<div class="ep-row"><span class="ep-note">Sin parámetros configurables</span></div>';
-  return params.map(p => {
+  const boxBtn = e.type==='xform' ? `<div class="ep-row">
+      <button class="hbtn${xovMode==='global'?' on':''}" id="gxov-btn" style="font-size:8px;padding:3px 7px;flex:1;" onclick="toggleGlobalBoxEdit()"
+        title="Muestra una caja sobre la salida completa: arrastrá una esquina para escalar, la manija de afuera para rotar, y Shift+arrastrá una esquina para deformar libremente (profundidad)">${xovMode==='global'?'👁 OCULTAR CAJA':'▦ EDITAR SALIDA EN CANVAS'}</button>
+      <button class="hbtn${globalGridOn?' on':''}" id="ggrid-btn" style="font-size:8px;padding:3px 7px;" onclick="toggleGlobalGrid()"
+        title="Proyecta una grilla de calibración sobre la salida completa — se deforma junto con el corner-pin, útil para alinear una proyección física">▦ GRID</button>
+    </div>` : '';
+  if (!params.length) return boxBtn || '<div class="ep-row"><span class="ep-note">Sin parámetros configurables</span></div>';
+  return boxBtn + params.map(p => {
     const cur = e[p.key] !== undefined ? e[p.key] : p.def;
     if (p.type === 'color') {
       return `<div class="ep-row" data-pkey="${p.key}">
@@ -3351,6 +3633,46 @@ new ResizeObserver(() => renderTL()).observe(document.getElementById('tl-canvas'
 ═══════════════════════════════════════════════════════ */
 const gfx = type => S.efxs.find(e=>e.type===type&&e.on);
 
+/* ── TRANSFORM — desplaza, escala, rota y deforma con corner-pin libre el
+   composite completo (todas las pistas ya mezcladas). Misma lógica que el
+   transform por pista (trackXformRect/trackQuadCorners/drawQuadWarped —
+   definidos más abajo, junto a drawTrackWarped), sólo que acá el "rect
+   base" es el lienzo entero (0,0,W,H) en vez del rect de una pista. */
+function applyXform(W, H) {
+  const xf = gfx('xform');
+  if (!xf) return;
+  const rect   = trackXformRect(0, 0, W, H, xf);
+  const rot    = (xf.rotation||0) * Math.PI/180;
+  const pinned = trackHasPin(xf.pin);
+  const identity = !rot && !pinned && !globalGridOn && rect.dx===0 && rect.dy===0
+    && Math.abs(rect.dw-W)<.01 && Math.abs(rect.dh-H)<.01;
+  if (identity) return;
+
+  /* Buffer con el composite ya escalado al tamaño final (dw×dh) — mismo
+     patrón que el buffer por pista: el pan/rotación/pin se aplican al
+     dibujar el buffer, nunca directo sobre el canvas visible en varios
+     pasos (por eso el buffer, no por el desynchronized que ya se sacó). */
+  const bw = Math.max(1, Math.round(rect.dw)), bh = Math.max(1, Math.round(rect.dh));
+  ensureCanvasSize(fxCvs, bw, bh);
+  fxCtx.clearRect(0, 0, bw, bh);
+  fxCtx.drawImage(cvs, 0, 0, bw, bh);
+  if (globalGridOn) drawGridOverlay(fxCtx, bw, bh);
+
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+
+  if (!pinned) {
+    ctx.save();
+    ctx.translate(rect.dx + rect.dw/2, rect.dy + rect.dh/2);
+    if (rot) ctx.rotate(rot);
+    ctx.drawImage(fxCvs, -bw/2, -bh/2, bw, bh);
+    ctx.restore();
+    return;
+  }
+
+  const quad = trackQuadCorners(rect.dx, rect.dy, rect.dw, rect.dh, xf);
+  drawQuadWarped(fxCvs, bw, bh, quad);
+}
+
 function drawVid(vid, dx,dy,dw,dh, mH, mV) {
   ctx.save();
   if (mH && mV) { ctx.translate(dx+dw,dy+dh); ctx.scale(-1,-1); ctx.drawImage(vid,0,0,dw,dh); }
@@ -3359,6 +3681,332 @@ function drawVid(vid, dx,dy,dw,dh, mH, mV) {
   else          { ctx.drawImage(vid,dx,dy,dw,dh); }
   ctx.restore();
 }
+
+/* ── Transform independiente por pista (pan/escala) ──
+   Aplica el x/y/scaleX/scaleY de esta pista sobre su rect de destino
+   (que ya trae el zoom/shake globales horneados) — misma composición
+   que hace el efecto global TRANSFORM con la salida completa. */
+function trackXformRect(zdx, zdy, zdw, zdh, txf) {
+  if (!txf) return { dx:zdx, dy:zdy, dw:zdw, dh:zdh };
+  const sx = txf.scaleX || 1, sy = txf.scaleY || 1;
+  const dw = zdw * sx, dh = zdh * sy;
+  const dx = zdx - (dw - zdw) / 2 + (txf.x || 0);
+  const dy = zdy - (dh - zdh) / 2 + (txf.y || 0);
+  return { dx, dy, dw, dh };
+}
+
+/* Buffer chico reutilizado por TODAS las pistas (una a la vez, síncrono
+   dentro del mismo frame) para armar la rotación/profundidad de cada una
+   antes de componerla en el lienzo principal. */
+const trackXfBuf = document.createElement('canvas');
+const trackXfCtx = trackXfBuf.getContext('2d', { alpha:true, willReadFrequently:false });
+
+/* Las 4 esquinas del rect (ya rotado) más el offset libre de corner-pin de
+   cada una — es el "cuadrilátero final" que se ve en pantalla. Se usa tanto
+   para dibujar (drawQuadWarped) como para la caja interactiva (mismo cálculo
+   en los dos lados, así la caja SIEMPRE coincide con lo que se ve). */
+function trackQuadCorners(dx, dy, dw, dh, txf) {
+  const cx = dx + dw / 2, cy = dy + dh / 2;
+  const rot = (txf?.rotation || 0) * Math.PI / 180;
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  const rp = (x, y) => ({ x: cx + (x - cx) * cos - (y - cy) * sin, y: cy + (x - cx) * sin + (y - cy) * cos });
+  const base = { tl: rp(dx, dy), tr: rp(dx + dw, dy), bl: rp(dx, dy + dh), br: rp(dx + dw, dy + dh) };
+  const pin = txf?.pin || {};
+  const add = (p, k) => { const o = pin[k] || [0, 0]; return { x: p.x + (o[0] || 0), y: p.y + (o[1] || 0) }; };
+  return { tl: add(base.tl, 'tl'), tr: add(base.tr, 'tr'), bl: add(base.bl, 'bl'), br: add(base.br, 'br') };
+}
+function trackHasPin(pin) {
+  if (!pin) return false;
+  return ['tl', 'tr', 'bl', 'br'].some(k => pin[k] && (pin[k][0] || pin[k][1]));
+}
+
+/* Interpolación bilineal entre las 4 esquinas de un cuadrilátero, en
+   coordenadas de pantalla — para partir el cuadrilátero en una grilla. */
+function bilerpQuad(q, u, v) {
+  const top = { x: q.tl.x + (q.tr.x - q.tl.x) * u, y: q.tl.y + (q.tr.y - q.tl.y) * u };
+  const bot = { x: q.bl.x + (q.br.x - q.bl.x) * u, y: q.bl.y + (q.br.y - q.bl.y) * u };
+  return { x: top.x + (bot.x - top.x) * v, y: top.y + (bot.y - top.y) * v };
+}
+/* Transforma afín exacta que manda (u0,v0)→(x0,y0), (u1,v1)→(x1,y1), (u2,v2)→(x2,y2).
+   Con eso se puede "estampar" un triángulo de la imagen fuente en cualquier
+   triángulo de destino — es el truco estándar para simular un warp libre en
+   Canvas 2D, que no tiene transform proyectivo real. */
+function affineFrom3Points(u0,v0,x0,y0, u1,v1,x1,y1, u2,v2,x2,y2) {
+  const den = u0*(v1-v2) - v0*(u1-u2) + (u1*v2 - u2*v1);
+  if (Math.abs(den) < 1e-6) return null;
+  const a = (x0*(v1-v2) - v0*(x1-x2) + (x1*v2-x2*v1)) / den;
+  const c = (u0*(x1-x2) - x0*(u1-u2) + (u1*x2-u2*x1)) / den;
+  const e = (u0*(v1*x2-v2*x1) - v0*(u1*x2-u2*x1) + x0*(u1*v2-u2*v1)) / den;
+  const b = (y0*(v1-v2) - v0*(y1-y2) + (y1*v2-y2*v1)) / den;
+  const d = (u0*(y1-y2) - y0*(u1-u2) + (u1*y2-u2*y1)) / den;
+  const f = (u0*(v1*y2-v2*y1) - v0*(u1*y2-u2*y1) + y0*(u1*v2-u2*v1)) / den;
+  return [a,b,c,d,e,f];
+}
+function drawTriangleWarped(img, sx0,sy0,sx1,sy1,sx2,sy2, dx0,dy0,dx1,dy1,dx2,dy2) {
+  const m = affineFrom3Points(sx0,sy0,dx0,dy0, sx1,sy1,dx1,dy1, sx2,sy2,dx2,dy2);
+  if (!m) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(dx0,dy0); ctx.lineTo(dx1,dy1); ctx.lineTo(dx2,dy2); ctx.closePath();
+  ctx.clip();
+  ctx.setTransform(m[0],m[1],m[2],m[3],m[4],m[5]);
+  ctx.drawImage(img, 0, 0);
+  ctx.restore();
+}
+/* Dibuja la fuente (buffer w×h) deformada dentro del cuadrilátero `quad`,
+   subdividiendo en una grilla NxN de pares de triángulos — cada celda es lo
+   bastante chica como para que la aproximación afín se vea suave. */
+function drawQuadWarped(img, w, h, quad) {
+  const N = 10;
+  for (let j = 0; j < N; j++) {
+    const v0 = j/N, v1 = (j+1)/N;
+    for (let i = 0; i < N; i++) {
+      const u0 = i/N, u1 = (i+1)/N;
+      const p00 = bilerpQuad(quad,u0,v0), p10 = bilerpQuad(quad,u1,v0);
+      const p01 = bilerpQuad(quad,u0,v1), p11 = bilerpQuad(quad,u1,v1);
+      const sx0=u0*w, sy0=v0*h, sx1=u1*w, sy1=v0*h, sx2=u0*w, sy2=v1*h, sx3=u1*w, sy3=v1*h;
+      drawTriangleWarped(img, sx0,sy0,sx1,sy1,sx2,sy2, p00.x,p00.y,p10.x,p10.y,p01.x,p01.y);
+      drawTriangleWarped(img, sx1,sy1,sx3,sy3,sx2,sy2, p10.x,p10.y,p11.x,p11.y,p01.x,p01.y);
+    }
+  }
+}
+
+/* Dibuja una pista con su propia rotación y corner-pin (además del pan/
+   escala ya resuelto en dx,dy,dw,dh). Sin rotación ni pin cae en drawVid
+   normal — el camino barato de siempre, sin costo extra. Con sólo rotación
+   (sin pin) usa ctx.rotate nativo, exacto y barato. El warp por grilla sólo
+   entra en juego cuando alguna esquina se movió (corner-pin / profundidad). */
+function drawTrackWarped(vid, dx, dy, dw, dh, txf, mH, mV, showGrid) {
+  const rot    = (txf?.rotation || 0) * Math.PI / 180;
+  const pinned = trackHasPin(txf?.pin);
+  if (!rot && !pinned && !showGrid) { drawVid(vid, dx, dy, dw, dh, mH, mV); return; }
+
+  const w = Math.max(1, Math.round(dw)), h = Math.max(1, Math.round(dh));
+  if (trackXfBuf.width !== w || trackXfBuf.height !== h) { trackXfBuf.width = w; trackXfBuf.height = h; }
+  trackXfCtx.clearRect(0, 0, w, h);
+  trackXfCtx.save();
+  if (mH && mV) { trackXfCtx.translate(w, h); trackXfCtx.scale(-1, -1); trackXfCtx.drawImage(vid, 0, 0, w, h); }
+  else if (mH)  { trackXfCtx.translate(w, 0); trackXfCtx.scale(-1, 1);  trackXfCtx.drawImage(vid, 0, 0, w, h); }
+  else if (mV)  { trackXfCtx.translate(0, h); trackXfCtx.scale(1, -1);  trackXfCtx.drawImage(vid, 0, 0, w, h); }
+  else          { trackXfCtx.drawImage(vid, 0, 0, w, h); }
+  trackXfCtx.restore();
+  if (showGrid) drawGridOverlay(trackXfCtx, w, h);
+
+  if (!pinned) {
+    ctx.save();
+    ctx.translate(dx + dw / 2, dy + dh / 2);
+    ctx.rotate(rot);
+    ctx.drawImage(trackXfBuf, -w / 2, -h / 2, w, h);
+    ctx.restore();
+    return;
+  }
+
+  const quad = trackQuadCorners(dx, dy, dw, dh, txf);
+  drawQuadWarped(trackXfBuf, w, h, quad);
+}
+
+/* ═══════════════════════════════════════════════════════
+   BOUNDING BOX INTERACTIVO — por pista Y para la salida general
+   Caja sobre el video: arrastrar una esquina = escalar; la manija de
+   afuera = rotar; Shift + arrastrar una esquina = corner-pin libre
+   (deformar / profundidad). Arrastrar el cuerpo = mover (pan).
+   Un solo sistema sirve para las dos cosas — sólo cambia de dónde saca y
+   dónde guarda el objeto xform (xovMode: 'track' | 'global' | null). Sólo
+   una caja a la vez: abrir una cierra la otra.
+═══════════════════════════════════════════════════════ */
+let xovMode = null;
+let txDrag = null;
+/* zdx/zdy/zdw/zdh del frame más reciente — el loop() los cachea acá cada
+   frame para que la caja de PISTA sepa exactamente sobre qué rect está
+   trabajando (la caja de SALIDA usa siempre el lienzo entero, 0,0,W,H). */
+let lastZd = { zdx:0, zdy:0, zdw:1280, zdh:720 };
+
+/* El efecto global TRANSFORM siempre existe en S.efxs (EFX_DEFS lo crea) */
+const efxXform = () => S.efxs.find(e => e.type === 'xform');
+
+function xovXf()       { return xovMode === 'track' ? S.tracks[S.ati]?.xform : xovMode === 'global' ? efxXform() : null; }
+function xovBaseRect() { return xovMode === 'track' ? [lastZd.zdx, lastZd.zdy, lastZd.zdw, lastZd.zdh] : [0, 0, cvs.width, cvs.height]; }
+function xovReady()    { if (xovMode === 'track') { const t = S.tracks[S.ati]; return !!(t && t.loaded); } return xovMode === 'global'; }
+
+function toggleTrackBoxEdit()  { xovMode = xovMode === 'track'  ? null : 'track';  syncXov(); }
+function toggleGlobalBoxEdit() { xovMode = xovMode === 'global' ? null : 'global'; syncXov(); }
+
+/* Grilla de calibración — se dibuja DENTRO de la fuente antes de aplicar
+   rotación/corner-pin, así se deforma junto con el video (útil para ver a
+   ojo cómo queda una proyección real sobre una superficie). Independiente
+   de la caja de edición: se puede dejar prendida durante una función. */
+let trackGridOn = false;
+let globalGridOn = false;
+function toggleTrackGrid()  { trackGridOn  = !trackGridOn;  document.getElementById('tgrid-btn')?.classList.toggle('on', trackGridOn); }
+function toggleGlobalGrid() { globalGridOn = !globalGridOn; document.getElementById('ggrid-btn')?.classList.toggle('on', globalGridOn); }
+
+function drawGridOverlay(c, w, h, n = 8) {
+  c.save();
+  c.strokeStyle = 'rgba(255,230,0,.55)';
+  c.lineWidth = Math.max(1, Math.min(w, h) / 400);
+  for (let i = 1; i < n; i++) {
+    const x = w * i / n;
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
+    const y = h * i / n;
+    c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+  }
+  c.strokeStyle = 'rgba(255,60,220,.85)';
+  c.lineWidth = Math.max(1.5, Math.min(w, h) / 250);
+  c.strokeRect(0, 0, w, h);
+  c.beginPath(); c.moveTo(w/2, 0); c.lineTo(w/2, h); c.moveTo(0, h/2); c.lineTo(w, h/2); c.stroke();
+  c.restore();
+}
+
+function txovEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+/* Reconstruye la caja SVG para lo que esté activo (xovMode). Se llama cada
+   vez que cambia algo relevante: selección de pista, sliders, drag en
+   curso, toggle de cualquiera de los dos botones. Si no hay nada activo o
+   el destino no está listo, se oculta y listo. */
+function syncXov() {
+  const svg = document.getElementById('txov');
+  if (!svg) return;
+  const tBtn = document.getElementById('txov-btn');
+  if (tBtn) { tBtn.textContent = xovMode==='track' ? '👁 OCULTAR CAJA' : '▦ EDITAR EN CANVAS'; tBtn.classList.toggle('on', xovMode==='track'); }
+  const gBtn = document.getElementById('gxov-btn');
+  if (gBtn) { gBtn.textContent = xovMode==='global' ? '👁 OCULTAR CAJA' : '▦ EDITAR SALIDA EN CANVAS'; gBtn.classList.toggle('on', xovMode==='global'); }
+
+  const xf = xovXf();
+  if (!xovMode || !xf || !xovReady()) { svg.style.display = 'none'; svg.innerHTML = ''; return; }
+
+  const box = cvs.getBoundingClientRect();
+  const parent = document.getElementById('vid-area').getBoundingClientRect();
+  if (!box.width || !box.height) { svg.style.display = 'none'; return; }
+  svg.style.left = (box.left - parent.left) + 'px';
+  svg.style.top  = (box.top  - parent.top)  + 'px';
+  svg.style.width  = box.width + 'px';
+  svg.style.height = box.height + 'px';
+  svg.setAttribute('viewBox', `0 0 ${cvs.width} ${cvs.height}`);
+  svg.style.display = 'block';
+
+  /* píxeles de canvas por píxel de CSS — así las manijas se ven del mismo
+     tamaño en pantalla sin importar el zoom/resolución del lienzo */
+  const px = cvs.width / box.width;
+  const [bx, by, bw, bh] = xovBaseRect();
+  const rect = trackXformRect(bx, by, bw, bh, xf);
+  const quad = trackQuadCorners(rect.dx, rect.dy, rect.dw, rect.dh, xf);
+  const cx = rect.dx + rect.dw / 2, cy = rect.dy + rect.dh / 2;
+
+  svg.innerHTML = '';
+  const sw = 2*px, r1 = 8*px, r2 = 6*px, rotOff = 26*px;
+  const col = xovMode === 'global' ? '#00e5ff' : '#00ff88';
+
+  const poly = txovEl('polygon', {
+    points: [quad.tl, quad.tr, quad.br, quad.bl].map(p => `${p.x},${p.y}`).join(' '),
+    fill: xovMode==='global' ? 'rgba(0,229,255,.10)' : 'rgba(0,255,136,.10)', stroke: col, 'stroke-width': sw,
+    style: 'cursor:move;pointer-events:all;'
+  });
+  poly.addEventListener('mousedown', e => txStartDrag(e, 'move', null));
+  svg.appendChild(poly);
+
+  for (const [key, p] of [['tl',quad.tl],['tr',quad.tr],['bl',quad.bl],['br',quad.br]]) {
+    /* manija de rotar: un poco afuera de la esquina, sobre la diagonal desde el centro */
+    const ox = p.x - cx, oy = p.y - cy, len = Math.hypot(ox, oy) || 1;
+    const rp = { x: p.x + ox/len*rotOff, y: p.y + oy/len*rotOff };
+    svg.appendChild(txovEl('line', { x1:p.x, y1:p.y, x2:rp.x, y2:rp.y, stroke:'#ffb400', 'stroke-width':sw*.7, 'stroke-dasharray':`${sw},${sw}` }));
+    const rotH = txovEl('circle', { cx:rp.x, cy:rp.y, r:r2, fill:'#ffb400', stroke:'#0a0a14', 'stroke-width':sw*.6, style:'cursor:alias;pointer-events:all;' });
+    rotH.addEventListener('mousedown', e => txStartDrag(e, 'rotate', key));
+    svg.appendChild(rotH);
+
+    /* manija de esquina: escalar (sola) o corner-pin libre (con Shift) */
+    const ch = txovEl('circle', { cx:p.x, cy:p.y, r:r1, fill:col, stroke:'#0a0a14', 'stroke-width':sw*.6, style:'cursor:nwse-resize;pointer-events:all;' });
+    ch.addEventListener('mousedown', e => txStartDrag(e, e.shiftKey ? 'pin' : 'scale', key));
+    svg.appendChild(ch);
+  }
+}
+
+/* Convierte un evento de mouse a coordenadas de canvas (mismo espacio que
+   dx,dy,dw,dh) usando la matriz de pantalla del SVG — así ya viene resuelto
+   el viewBox sin tener que repetir a mano la cuenta de escala. */
+function txCanvasPoint(evt) {
+  const svg = document.getElementById('txov');
+  const pt = svg.createSVGPoint();
+  pt.x = evt.clientX; pt.y = evt.clientY;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return { x:0, y:0 };
+  const p = pt.matrixTransform(ctm.inverse());
+  return { x:p.x, y:p.y };
+}
+
+const TXOV_CORNER_SIGN = { tl:[-1,-1], tr:[1,-1], bl:[-1,1], br:[1,1] };
+
+function txStartDrag(evt, mode, corner) {
+  evt.preventDefault(); evt.stopPropagation();
+  const xf = xovXf();
+  if (!xf) return;
+  const [bx, by, bw, bh] = xovBaseRect();
+  const rect = trackXformRect(bx, by, bw, bh, xf);
+  const cx = rect.dx + rect.dw/2, cy = rect.dy + rect.dh/2;
+  const mp = txCanvasPoint(evt);
+  const restQuad = mode === 'pin'
+    ? trackQuadCorners(rect.dx, rect.dy, rect.dw, rect.dh, { ...xf, pin:{tl:[0,0],tr:[0,0],bl:[0,0],br:[0,0]} })
+    : null;
+  txDrag = {
+    mode, corner, cx, cy,
+    halfW: (rect.dw / (xf.scaleX || 1)) / 2,
+    halfH: (rect.dh / (xf.scaleY || 1)) / 2,
+    rot: (xf.rotation || 0) * Math.PI / 180,
+    startRotation: xf.rotation || 0,
+    startAngle: Math.atan2(mp.y - cy, mp.x - cx),
+    startX: xf.x || 0, startY: xf.y || 0,
+    startMouse: mp,
+    restCorner: restQuad ? restQuad[corner] : null,
+  };
+}
+
+window.addEventListener('mousemove', e => {
+  if (!txDrag) return;
+  const xf = xovXf();
+  if (!xf) { txDrag = null; return; }
+  const mp = txCanvasPoint(e);
+
+  if (txDrag.mode === 'move') {
+    xf.x = txDrag.startX + (mp.x - txDrag.startMouse.x);
+    xf.y = txDrag.startY + (mp.y - txDrag.startMouse.y);
+  } else if (txDrag.mode === 'scale') {
+    const sign = TXOV_CORNER_SIGN[txDrag.corner];
+    const cos = Math.cos(-txDrag.rot), sin = Math.sin(-txDrag.rot);
+    const dx0 = mp.x - txDrag.cx, dy0 = mp.y - txDrag.cy;
+    const lx = dx0*cos - dy0*sin, ly = dx0*sin + dy0*cos;
+    xf.scaleX = Math.max(.05, (lx * sign[0]) / txDrag.halfW);
+    xf.scaleY = Math.max(.05, (ly * sign[1]) / txDrag.halfH);
+  } else if (txDrag.mode === 'rotate') {
+    const angle = Math.atan2(mp.y - txDrag.cy, mp.x - txDrag.cx);
+    xf.rotation = txDrag.startRotation + (angle - txDrag.startAngle) * 180/Math.PI;
+  } else if (txDrag.mode === 'pin') {
+    if (!xf.pin) xf.pin = { tl:[0,0], tr:[0,0], bl:[0,0], br:[0,0] };
+    xf.pin[txDrag.corner] = [mp.x - txDrag.restCorner.x, mp.y - txDrag.restCorner.y];
+  } else return;
+
+  syncXov();
+  syncXformSliders(xf);
+});
+window.addEventListener('mouseup', () => { txDrag = null; });
+
+/* Refleja en los sliders (panel de pista o panel de efectos, según
+   xovMode) lo que se movió arrastrando en el canvas, sin reconstruir todo
+   el panel (evita perder el foco/flicker). */
+function syncXformSliders(xf) {
+  const scope = xovMode === 'global' ? `[data-eid="${efxXform()?.id}"]` : '#track-info';
+  for (const p of trackXformSliderParams()) {
+    const cur = xf[p.key] !== undefined ? xf[p.key] : p.def;
+    const row = document.querySelector(`${scope} [data-pkey="${p.key}"]`);
+    if (!row) continue;
+    const inp = row.querySelector('input'); if (inp) inp.value = cur;
+    const lbl = row.querySelector('.ep-val'); if (lbl) lbl.textContent = EFX_FMT[p.fmt] ? EFX_FMT[p.fmt](cur) : cur;
+  }
+}
+
+new ResizeObserver(() => syncXov()).observe(document.getElementById('vid-area'));
 
 /* ═══════════════════════════════════════════════════════
    SNAP
@@ -3503,6 +4151,8 @@ function loop() {
   const zdx = -(W*(zs-1))/2+ox, zdy=-(H*(zs-1))/2+oy;
   const zdw = W*zs, zdh=H*zs;
   const mH=gfx('mirrorH'), mV=gfx('mirrorV'), rgb=gfx('rgb');
+  /* Lo cachea el editor de caja por pista (bounding box en pantalla) para saber a qué escala trabajar */
+  lastZd.zdx=zdx; lastZd.zdy=zdy; lastZd.zdw=zdw; lastZd.zdh=zdh;
 
   /* Draw each track (T1=bottom → T4=top) */
   for (let ti=0; ti<N_TRACKS; ti++) {
@@ -3531,7 +4181,8 @@ function loop() {
       }
 
       ctx.globalAlpha = t.opacity;
-      ctx.drawImage(lv, zdx, zdy, zdw, zdh);
+      { const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
+        drawTrackWarped(lv, tr.dx, tr.dy, tr.dw, tr.dh, t.xform, false, false, trackGridOn && ti===S.ati); }
       ctx.globalAlpha = 1;
       continue; // skip all file-based logic below
     }
@@ -3554,7 +4205,8 @@ function loop() {
       const frame = t._revFrames[idx];
       if (frame) {
         if (tf.cvs.width!==W||tf.cvs.height!==H){tf.cvs.width=W;tf.cvs.height=H;}
-        ctx.drawImage(frame, zdx, zdy, zdw, zdh);
+        { const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
+          drawTrackWarped(frame, tr.dx, tr.dy, tr.dw, tr.dh, t.xform, false, false, trackGridOn && ti===S.ati); }
         tf.ctx.drawImage(cvs, 0, 0); tf.hasFrame=true;
         ctx.globalAlpha=1;
         continue;
@@ -3578,7 +4230,8 @@ function loop() {
         ctx.save(); ctx.filter='hue-rotate(175deg) saturate(6)'; ctx.globalAlpha=t.opacity*.7; ctx.drawImage(offCvs,off,0); ctx.restore();
         ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1; ctx.filter='none';
       } else {
-        drawVid(vsrc, zdx,zdy,zdw,zdh, !!mH, !!mV);
+        const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
+        drawTrackWarped(vsrc, tr.dx, tr.dy, tr.dw, tr.dh, t.xform, !!mH, !!mV, trackGridOn && ti===S.ati);
       }
 
       /* Save current frame for seek-buffer fallback */
@@ -3594,6 +4247,9 @@ function loop() {
 
   /* ── Post-process on composite ── */
   const anyEfxOn = S.efxs.some(e=>e.on);
+
+  /* Transform: pan/scale/rotate/depth — goes first so color/glitch fx below apply to the warped frame */
+  if (anyEfxOn) applyXform(W, H);
 
   /* B&W */
   if (anyEfxOn && gfx('bw')) {
@@ -4305,6 +4961,7 @@ async function saveProject() {
     version:6, name,
     media: { folderHint: MEDIA.library?.rootName || '' },
     tracks: S.tracks.map(t=>({id:t.id,name:t.name,opacity:t.opacity,videoOffset:t.videoOffset||0,
+      xform:{...t.xform},
       media:t.sourceType==='file' ? serializeMediaRef(t.mediaRef) : null,
       clips:t.clips.map(c=>({...c, srcRef:c.srcRef ? serializeMediaRef(c.srcRef) : null})),
       groups:t.groups.map(g=>({...g})),
@@ -4312,7 +4969,12 @@ async function saveProject() {
       playlistLoop:!!t.playlistLoop})),
     efxs:   S.efxs.map(e=>({...e,on:false})),
     banks:  S.banks.map(b=>({...b})),
+    outRes: {...S.outRes},
     mando:  await obtenerMandoLayoutActual(),
+    /* Configuración del módulo de audio (entradas, buses, mapeos, eventos).
+       No incluye streams ni permisos: al abrir la sesión las entradas quedan
+       pendientes hasta que el operador pulse RECONECTAR. */
+    audio:  audioSerializar(),
   };
   try {
     const response = await fetch(sessionApiUrl(), {
@@ -4405,6 +5067,34 @@ let netManualOff = false;   // el usuario pulsó DESCONECTAR: no reconectar solo
 let netReintentos = 0;
 let netTimer = 0;
 
+/* Identidad estable de esta pestaña: permite al relay distinguir "esta misma
+   pestaña reconectando tras un blip" de "otra pestaña de MIDIVJ tomando la
+   sala" — sin esto, cualquier reconexión de este WebSocket se veía igual que
+   un reemplazo real y colgaba las cámaras de teléfono en vivo sin necesidad. */
+const APP_DISP = (() => {
+  let v = null;
+  try { v = localStorage.getItem('midivj-app-disp'); } catch (_) {}
+  if (!v) {
+    v = 'app-' + Math.random().toString(36).slice(2, 10);
+    try { localStorage.setItem('midivj-app-disp', v); } catch (_) {}
+  }
+  return v;
+})();
+
+/* Cámaras de teléfono conectadas por WebRTC — ver la sección "CÁMARA DE
+   TELÉFONO" más abajo, después de netDisconnect(). */
+const CAM = {
+  sesiones: new Map(),   // trackIdx -> { slot, pc, candidatosPendientes, estado, timeout }
+  porSlot:  new Map(),   // slot -> trackIdx
+  disponibles: []        // última presencia.camaras recibida, para el selector
+};
+
+/* Visores de /salida (OBS u otro navegador) conectados por WebRTC — ver la
+   sección "SALIDA A OBS" más abajo, después de netDisconnect(). */
+const SAL = {
+  sesiones: new Map()   // id -> { pc, candidatosPendientes }
+};
+
 function netToggle() {
   if (netWS && netWS.readyState < 2) { netManualOff = true; netDisconnect(); return; }
   netManualOff = false;
@@ -4467,7 +5157,7 @@ function netConnect() {
   netWS.onopen = () => {
     /* rol:'app' → el relay sabe que esta pestaña es MIDIVJ y le manda la
        presencia de los mandos; los emisores MIDI antiguos siguen igual. */
-    netWS.send(JSON.stringify({ type:'join', room, rol:'app', disp:'midivj-app', nombre:'MIDIVJ' }));
+    netWS.send(JSON.stringify({ type:'join', room, rol:'app', disp:APP_DISP, nombre:'MIDIVJ' }));
     dot.classList.add('on');
     btn.textContent = 'DESCONECTAR'; btn.classList.add('con');
     setSt('st-net', url.replace(/^ws:\/\//,'')+' · '+room, 'ok');
@@ -4498,6 +5188,14 @@ function netConnect() {
         return;
       }
       if (msg.type === 'toast') { appendNetLog('↙ '+msg.texto); return; }
+      if (msg.type === 'rtc-oferta')    { _camRecibirOferta(msg.slot, msg.sdp); return; }
+      if (msg.type === 'rtc-candidato') { _camRecibirCandidato(msg.slot, msg.candidato); return; }
+      if (msg.type === 'camara-colgar') { _camColgarRecibido(msg.slot, msg.motivo); return; }
+      if (msg.type === 'camara-error')  { _camError(msg.slot, msg.motivo); return; }
+      if (msg.type === 'salida-hola')      { _salIniciar(msg.id); return; }
+      if (msg.type === 'salida-respuesta') { _salRecibirRespuesta(msg.id, msg.sdp); return; }
+      if (msg.type === 'salida-candidato') { _salRecibirCandidato(msg.id, msg.candidato); return; }
+      if (msg.type === 'salida-cerrar')    { _salCerrar(msg.id, false, msg.motivo || 'la fuente de salida se desconectó'); return; }
     } catch(_) {}
   };
 
@@ -4505,7 +5203,25 @@ function netConnect() {
     dot.className = 'ndot';
     btn.textContent = 'CONECTAR'; btn.classList.remove('con');
     setSt('st-net','—','');
-    pintarPresenciaMandos({ mandos: [], maxMandos: 4 });
+    pintarPresenciaMandos({ mandos: [], maxMandos: 4, camaras: [], maxCamaras: 4 });
+    /* Un corte de ESTE WebSocket no significa que el video se haya caído:
+       viaja aparte, P2P, y el relay le da un margen a esta misma pestaña
+       para reconectar antes de avisarle a los teléfonos (ver ADR-004). Sólo
+       se sueltan aquí las sesiones cuyo RTCPeerConnection ya no está sano —
+       las demás siguen transmitiendo mientras la señalización se recupera. */
+    for (const [trackIdx, sesion] of [...CAM.sesiones]) {
+      const vivo = sesion.pc && (sesion.pc.connectionState === 'connected' || sesion.pc.connectionState === 'connecting');
+      if (!vivo) _camCerrar(trackIdx, false, 'se cayó el relay (netWS) y la sesión de cámara no estaba conectada todavía');
+    }
+    /* Mismo razonamiento para los visores de /salida: el video de una
+       sesión ya conectada viaja aparte del WebSocket de señalización, así
+       que sobrevive un blip del relay. Al reconectar, el relay reenvía
+       'salida-hola' por cada visor que sigue en la sala — _salIniciar() ya
+       es idempotente si esta pestaña todavía tiene la sesión viva. */
+    for (const [id, sesion] of [...SAL.sesiones]) {
+      const vivo = sesion.pc && (sesion.pc.connectionState === 'connected' || sesion.pc.connectionState === 'connecting');
+      if (!vivo) _salCerrar(id, false, 'se cayó el relay (netWS) y la sesión de salida no estaba conectada todavía');
+    }
     appendNetLog('✘ desconectado');
     refrescarPanelRelay();
     /* Caída inesperada (relay reiniciado, red que parpadea): volvemos solos,
@@ -4521,6 +5237,365 @@ function netConnect() {
 }
 
 function netDisconnect() { if (netWS) { netWS.close(); netWS = null; } }
+
+/* ═══════════════════════════════════════════════════════
+   CÁMARA DE TELÉFONO — video en vivo por WebRTC
+
+   Un teléfono abre http://<ip>:9191/camara, se conecta al relay (mismo
+   protocolo de salas/slots que el mando) y queda "disponible" sin encender
+   la cámara. Al elegir 📱 CÁMARA en una pista, la app le pide ese slot
+   ('camara-iniciar'); el teléfono recién ahí pide permiso de cámara y
+   construye la oferta SDP — es el offerer, porque es quien tiene el
+   MediaStream y porque el permiso puede tardar un tiempo impredecible.
+
+   El relay sólo reenvía la señalización (SDP/ICE): el video viaja directo
+   teléfono↔pestaña. Cuando llega el stream remoto (pc.ontrack), se entrega
+   a _applyStream() — el mismo punto que ya usan PANTALLA y CAPTURA — así
+   que el resto del pipeline (loop, efectos, salida) no distingue el origen.
+═══════════════════════════════════════════════════════ */
+
+function _camEnviar(payload) {
+  if (netWS && netWS.readyState === 1) netWS.send(JSON.stringify(payload));
+}
+
+/* Diagnóstico de cámara: todo pasa por aquí — consola del navegador (F12,
+   con hora exacta y el estado completo de la sesión) y el log visible de
+   NET (tooltip del indicador NET en la barra inferior). */
+function _camLog(msg, extra) {
+  const linea = '[cámara] ' + msg;
+  if (extra !== undefined) console.log(linea, extra); else console.log(linea);
+  appendNetLog('📱 ' + msg);
+}
+
+function loadTrackCamara(trackIdx) {
+  if (!netWS || netWS.readyState !== 1) { alert('Conecta el relay (bloque RED o panel 📡 RELAY) para usar la cámara de un teléfono.'); return; }
+
+  const libres = CAM.disponibles.filter(c => {
+    const usadoPor = CAM.porSlot.get(c.slot);
+    return usadoPor === undefined || usadoPor === trackIdx;
+  });
+  if (!libres.length) {
+    alert('No hay teléfonos conectados en /camara (o ya están todos en uso).\nAbre 📡 RELAY → 4 · CÁMARA DE TELÉFONO para ver el QR.');
+    return;
+  }
+  if (libres.length === 1) { _camIniciar(trackIdx, libres[0].slot); return; }
+
+  const lista = libres.map((c,i) => `${i+1}: Cámara ${c.slot}${c.nombre ? ' — '+c.nombre : ''}`).join('\n');
+  const raw = prompt('Teléfonos con cámara disponibles:\n\n'+lista+'\n\nEscribe el número (1-'+libres.length+'):', '1');
+  if (!raw) return;
+  const idx = parseInt(raw)-1;
+  if (isNaN(idx) || idx<0 || idx>=libres.length) { alert('Número inválido'); return; }
+  _camIniciar(trackIdx, libres[idx].slot);
+}
+
+function toggleCamara(trackIdx) {
+  const t = S.tracks[trackIdx];
+  if (t.sourceType === 'phone' || CAM.sesiones.has(trackIdx)) stopTrackSource(trackIdx);
+  else loadTrackCamara(trackIdx);
+}
+
+function _camIniciar(trackIdx, slot) {
+  /* Un mismo slot no puede alimentar dos pistas a la vez */
+  const otraPista = CAM.porSlot.get(slot);
+  if (otraPista !== undefined && otraPista !== trackIdx) _camCerrar(otraPista, true, 'slot reasignado a otra pista');
+
+  stopTrackStream(S.tracks[trackIdx]);   // corta cualquier fuente previa de esta pista (incluida otra sesión CAM)
+
+  const timeout = setTimeout(() => {
+    _camLog('cámara '+slot+' (pista '+trackIdx+') no respondió a "camara-iniciar" en 15 s — cancelando pedido');
+    _camCerrar(trackIdx, true, 'timeout esperando oferta del teléfono (15s)');
+  }, 15000);
+  CAM.sesiones.set(trackIdx, { slot, pc: null, candidatosPendientes: [], estado: 'pidiendo', timeout });
+  CAM.porSlot.set(slot, trackIdx);
+  _camLog('pidiendo cámara '+slot+' para la pista '+trackIdx);
+  _camEnviar({ type: 'camara-iniciar', slot });
+  if (S.ati === trackIdx) renderTrackInfo();
+}
+
+async function _camRecibirOferta(slot, sdp) {
+  const trackIdx = CAM.porSlot.get(slot);
+  const sesion = trackIdx !== undefined ? CAM.sesiones.get(trackIdx) : null;
+  if (!sesion) {
+    _camLog('llegó una oferta de la cámara '+slot+' sin pista esperándola (huérfana/tardía) — se le pide colgar');
+    _camEnviar({ type: 'camara-colgar', slot, motivo: 'sin sesión activa en la app' });
+    return;
+  }
+
+  clearTimeout(sesion.timeout);
+  sesion.estado = 'negociando';
+  _camLog('oferta recibida de cámara '+slot+' (pista '+trackIdx+') — negociando WebRTC');
+
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  sesion.pc = pc;
+
+  pc.ontrack = ev => {
+    sesion.estado = 'lista';
+    const track = ev.streams[0].getVideoTracks()[0];
+    _camLog('cámara '+slot+' (pista '+trackIdx+') conectada — llegó el video', {
+      track: track && { readyState: track.readyState, muted: track.muted, label: track.label }
+    });
+    /* onended lo pisa _applyStream() con su propio manejador genérico (abajo
+       queda igual de registrado); aquí sólo agregamos mute/unmute, que
+       _applyStream no toca y ayudan a distinguir "se cortó" de "está
+       llegando pero sin datos por un instante". */
+    if (track) {
+      track.onmute   = () => _camLog('cámara '+slot+' (pista '+trackIdx+'): track silenciado (sin datos de video llegando por ahora)');
+      track.onunmute = () => _camLog('cámara '+slot+' (pista '+trackIdx+'): track activo de nuevo');
+    }
+    /* _applyStream() empieza llamando a stopTrackStream(), que a su vez
+       llama a _camCerrar() para soltar cualquier sesión de cámara previa
+       de esta pista — pero la sesión "previa" en este punto exacto ES esta
+       misma, la que acaba de traer el video (sesion.pc === pc). Sin esta
+       marca, _camCerrar() cerraba la conexión que se acababa de establecer
+       en el mismo instante en que llegaba: conectaba y se cortaba sola,
+       siempre, cada vez. Ver ADR-004, complemento (6). */
+    sesion.aplicando = true;
+    try { _applyStream(S.tracks[trackIdx], ev.streams[0], 'phone', 'Cámara — Mando '+slot); }
+    finally { sesion.aplicando = false; }
+  };
+
+  pc.onicecandidate = ev => {
+    if (ev.candidate) _camEnviar({ type: 'rtc-candidato', slot, candidato: ev.candidate });
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    _camLog('cámara '+slot+' (pista '+trackIdx+'): ICE → '+pc.iceConnectionState);
+  };
+
+  let timerDesconexion = 0;
+  pc.onconnectionstatechange = () => {
+    _camLog('cámara '+slot+' (pista '+trackIdx+'): conexión → '+pc.connectionState);
+    if (pc.connectionState === 'connected') { clearTimeout(timerDesconexion); return; }
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      _camCerrar(trackIdx, true, 'RTCPeerConnection en estado "'+pc.connectionState+'"');
+    } else if (pc.connectionState === 'disconnected') {
+      clearTimeout(timerDesconexion);
+      timerDesconexion = setTimeout(() => {
+        if (pc.connectionState === 'disconnected') {
+          _camLog('cámara '+slot+' (pista '+trackIdx+'): siguió "disconnected" 8 s sin recuperarse — se da por caída');
+          _camCerrar(trackIdx, true, 'RTCPeerConnection "disconnected" por más de 8s sin recuperarse');
+        }
+      }, 8000);
+    }
+  };
+
+  try {
+    await pc.setRemoteDescription({ type: 'offer', sdp });
+    for (const candidato of sesion.candidatosPendientes) await pc.addIceCandidate(candidato).catch(()=>{});
+    sesion.candidatosPendientes = [];
+    const respuesta = await pc.createAnswer();
+    await pc.setLocalDescription(respuesta);
+    _camEnviar({ type: 'rtc-respuesta', slot, sdp: respuesta.sdp });
+  } catch (e) {
+    _camLog('⚠ error negociando cámara '+slot+' (pista '+trackIdx+'): '+e.name+' — '+e.message);
+    _camCerrar(trackIdx, true, 'error negociando: '+e.message);
+  }
+}
+
+async function _camRecibirCandidato(slot, candidato) {
+  const trackIdx = CAM.porSlot.get(slot);
+  const sesion = trackIdx !== undefined ? CAM.sesiones.get(trackIdx) : null;
+  if (!sesion || !candidato) return;
+  if (sesion.pc && sesion.pc.remoteDescription) await sesion.pc.addIceCandidate(candidato).catch(()=>{});
+  else sesion.candidatosPendientes.push(candidato);
+}
+
+function _camColgarRecibido(slot, motivo) {
+  const trackIdx = CAM.porSlot.get(slot);
+  if (trackIdx === undefined) return;
+  const t = S.tracks[trackIdx];
+  _camLog('el teléfono (cámara '+slot+', pista '+trackIdx+') avisó que cuelga — motivo del teléfono: "'+(motivo||'sin especificar')+'"');
+  if (t.sourceType === 'phone') { stopTrackSource(trackIdx); return; }
+  _camCerrar(trackIdx, false, 'colgado remoto (teléfono)');
+}
+
+function _camError(slot, motivo) {
+  const trackIdx = CAM.porSlot.get(slot);
+  if (trackIdx === undefined) return;
+  _camLog('⚠ cámara '+slot+' (pista '+trackIdx+') reportó error: '+(motivo || 'sin especificar'));
+  _camCerrar(trackIdx, false, 'error reportado por el teléfono: '+(motivo || 'sin especificar'));
+}
+
+/* Único punto de apagado de una sesión CAM: cierra el RTCPeerConnection,
+   limpia el estado y, si corresponde, le avisa al teléfono que cuelgue.
+   `motivo` queda en la consola y viaja al teléfono para que su propio
+   aviso en pantalla diga por qué, en vez de un genérico "se cortó". */
+function _camCerrar(trackIdx, avisarPhone, motivo) {
+  const sesion = CAM.sesiones.get(trackIdx);
+  if (!sesion) return;
+  /* La propia sesión se está terminando de aplicar ahora mismo (ver el
+     pc.ontrack de _camRecibirOferta): no es una sesión vieja que soltar,
+     es esta misma llegando. Cerrarla aquí sería cortar el video en el
+     instante en que conecta. */
+  if (sesion.aplicando) return;
+  _camLog('cerrando sesión de cámara '+sesion.slot+' (pista '+trackIdx+') — motivo: '+(motivo||'sin especificar')+(avisarPhone?' — avisando al teléfono':' — sin avisar al teléfono'));
+  clearTimeout(sesion.timeout);
+  if (sesion.pc) {
+    sesion.pc.onconnectionstatechange = null;
+    sesion.pc.oniceconnectionstatechange = null;
+    sesion.pc.close();
+  }
+  CAM.sesiones.delete(trackIdx);
+  CAM.porSlot.delete(sesion.slot);
+  if (avisarPhone) _camEnviar({ type: 'camara-colgar', slot: sesion.slot, motivo });
+  if (S.ati === trackIdx) renderTrackInfo();
+}
+
+/* Sólo diagnóstico: si esta pestaña pasa a segundo plano justo antes de que
+   una cámara se corte, ayuda a distinguir "el navegador de la PC frenó el
+   WebSocket/WebRTC por estar en background" de un problema del lado del
+   teléfono. No apaga nada por sí solo. */
+document.addEventListener('visibilitychange', () => {
+  if (CAM.sesiones.size) _camLog('visibilitychange de la pestaña de MIDIVJ → '+document.visibilityState+' ('+CAM.sesiones.size+' sesión(es) de cámara activas)');
+});
+
+/* ═══════════════════════════════════════════════════════
+   SALIDA A OBS — cámara virtual por WebRTC
+
+   Cualquier página que abra /salida (típicamente OBS, agregada como "Fuente
+   de navegador") se conecta al relay (rol nuevo 'salida', mismo protocolo de
+   sala que mando/cámara, pero sin slot: cada conexión recibe un `id` propio
+   y efímero) y avisa que quiere ver la salida. A diferencia de la cámara de
+   teléfono, aquí la APP es la offerer: ya tiene el MediaStream del lienzo
+   listo de forma síncrona (cvs.captureStream(), ver getOutputStream() más
+   arriba) — no hay ningún permiso de usuario que esperar, así que no tiene
+   sentido dejar que el visor inicie la negociación.
+
+   El relay sólo reenvía la señalización (SDP/ICE): el video viaja directo
+   pestaña↔visor. Una vez en OBS, "Iniciar cámara virtual" expone toda la
+   escena (incluida esta fuente) al resto del sistema como si fuera una
+   webcam — Zoom, Meet, Discord, etc. la ven igual que cualquier cámara.
+═══════════════════════════════════════════════════════ */
+
+function _salEnviar(payload) {
+  if (netWS && netWS.readyState === 1) netWS.send(JSON.stringify(payload));
+}
+
+function _salLog(msg, extra) {
+  const linea = '[salida] ' + msg;
+  if (extra !== undefined) console.log(linea, extra); else console.log(linea);
+  appendNetLog('🎥 ' + msg);
+}
+
+/* Por defecto, el encoder de WebRTC reduce la resolución sola cuando estima
+   poco ancho de banda disponible (visto en pruebas: un lienzo de 1280×720
+   se entregaba como 480×270) — pensado para redes inciertas, pero
+   contraproducente aquí: MIDIVJ y OBS suelen estar en la misma PC o la
+   misma LAN, donde sobra ancho de banda, y una resolución que cambia sola
+   es justamente lo que no se quiere en una fuente de video para un show.
+   `scaleResolutionDownBy:1` fija la resolución del envío a la del lienzo;
+   `degradationPreference:'maintain-resolution'` le dice al encoder que, si
+   de verdad falta ancho de banda, sacrifique cuadros por segundo antes que
+   resolución; y el `maxBitrate` sube el techo lo suficiente como para que
+   la estimación de ancho de banda no sea la que fuerce esa reducción. */
+async function _salFijarCalidad(pc) {
+  const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+  if (!sender) return;
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+    const w = cvs.width || 1280, h = cvs.height || 720;
+    params.encodings[0].scaleResolutionDownBy = 1;
+    params.encodings[0].maxBitrate = Math.round(Math.min(20_000_000, Math.max(2_500_000, w * h * HDMI_STREAM_FPS * 0.10)));
+    params.degradationPreference = 'maintain-resolution';
+    await sender.setParameters(params);
+  } catch (e) {
+    _salLog('⚠ no se pudo fijar la resolución/bitrate de salida: ' + e.message);
+  }
+}
+
+/* Arma una sesión nueva para el visor `id`. Idempotente: si ya hay una
+   sesión para este `id` (el relay puede repetir 'salida-hola' — por
+   ejemplo al reconectar esta pestaña, reenvía un aviso por cada visor que
+   sigue en la sala) no hace nada, para no pisar un RTCPeerConnection que
+   podría seguir perfectamente vivo. */
+async function _salIniciar(id) {
+  if (id === undefined || id === null || SAL.sesiones.has(id)) return;
+
+  const stream = typeof getOutputStream === 'function' ? getOutputStream() : null;
+  if (!stream) {
+    _salLog('visor de salida ' + id + ' pidió conexión, pero este navegador no puede capturar el lienzo (cvs.captureStream no disponible)');
+    _salEnviar({ type: 'salida-error', id, motivo: 'esta instancia de MIDIVJ no puede capturar el lienzo' });
+    return;
+  }
+
+  _salLog('visor de salida ' + id + ' conectado — armando oferta');
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  const sesion = { pc, candidatosPendientes: [] };
+  SAL.sesiones.set(id, sesion);
+  stream.getTracks().forEach(track => pc.addTrack(track, stream));
+  await _salFijarCalidad(pc);
+
+  pc.onicecandidate = ev => {
+    if (ev.candidate) _salEnviar({ type: 'salida-candidato', id, candidato: ev.candidate });
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    _salLog('salida ' + id + ': ICE → ' + pc.iceConnectionState);
+  };
+
+  let timerDesconexion = 0;
+  pc.onconnectionstatechange = () => {
+    _salLog('salida ' + id + ': conexión → ' + pc.connectionState);
+    if (pc.connectionState === 'connected') { clearTimeout(timerDesconexion); return; }
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      _salCerrar(id, true, 'RTCPeerConnection en estado "' + pc.connectionState + '"');
+    } else if (pc.connectionState === 'disconnected') {
+      clearTimeout(timerDesconexion);
+      timerDesconexion = setTimeout(() => {
+        if (pc.connectionState === 'disconnected') {
+          _salCerrar(id, true, 'RTCPeerConnection "disconnected" por más de 8s sin recuperarse');
+        }
+      }, 8000);
+    }
+  };
+
+  try {
+    const oferta = await pc.createOffer();
+    await pc.setLocalDescription(oferta);
+    _salEnviar({ type: 'salida-oferta', id, sdp: oferta.sdp });
+  } catch (e) {
+    _salLog('⚠ error creando la oferta para la salida ' + id + ': ' + e.name + ' — ' + e.message);
+    _salCerrar(id, true, 'error creando la oferta: ' + e.message);
+  }
+}
+
+async function _salRecibirRespuesta(id, sdp) {
+  const sesion = SAL.sesiones.get(id);
+  if (!sesion || !sdp) return;
+  try {
+    await sesion.pc.setRemoteDescription({ type: 'answer', sdp });
+    for (const candidato of sesion.candidatosPendientes) await sesion.pc.addIceCandidate(candidato).catch(()=>{});
+    sesion.candidatosPendientes = [];
+    _salLog('salida ' + id + ' negociada — transmitiendo');
+  } catch (e) {
+    _salLog('⚠ error aplicando la respuesta de la salida ' + id + ': ' + e.name + ' — ' + e.message);
+    _salCerrar(id, true, 'error negociando: ' + e.message);
+  }
+}
+
+async function _salRecibirCandidato(id, candidato) {
+  const sesion = SAL.sesiones.get(id);
+  if (!sesion || !candidato) return;
+  if (sesion.pc.remoteDescription) await sesion.pc.addIceCandidate(candidato).catch(()=>{});
+  else sesion.candidatosPendientes.push(candidato);
+}
+
+/* Único punto de apagado de una sesión SAL. `avisar` manda 'salida-cerrar'
+   al visor (relay de por medio) para que muestre por qué se cortó en vez de
+   quedarse con un video congelado sin explicación. */
+function _salCerrar(id, avisar, motivo) {
+  const sesion = SAL.sesiones.get(id);
+  if (!sesion) return;
+  _salLog('cerrando sesión de salida ' + id + ' — motivo: ' + (motivo || 'sin especificar'));
+  if (sesion.pc) {
+    sesion.pc.onconnectionstatechange = null;
+    sesion.pc.oniceconnectionstatechange = null;
+    sesion.pc.close();
+  }
+  SAL.sesiones.delete(id);
+  if (avisar) _salEnviar({ type: 'salida-cerrar', id, motivo });
+}
 
 /* ═══════════════════════════════════════════════════════
    MANDOS — teléfonos como control remoto
@@ -4542,10 +5617,24 @@ function netDisconnect() { if (netWS) { netWS.close(); netWS = null; } }
    decir en qué estado está, dar el comando exacto, buscarlo en los puertos
    habituales y dejar configurar la conexión. */
 
+/* Misma resolución de host que abrirControlRemoto(): el relay conectado
+   (bloque RED, puede ser otra computadora) gana; si no hay conexión, el
+   origen que sirvió esta página. */
+function salidaURL() {
+  const room = document.getElementById('n-room').value.trim() || 'midivj';
+  const conectado = netWS && netWS.readyState === 1;
+  const delCampo = document.getElementById('n-url').value.trim()
+    .replace(/^wss?:\/\//,'').replace(/\/.*$/,'');
+  const delOrigen = location.protocol.startsWith('http') ? location.host : '';
+  const host = (conectado ? delCampo : (delOrigen || delCampo)) || 'localhost:9191';
+  return 'http://'+host+'/salida?sala='+encodeURIComponent(room);
+}
+
 function abrirPanelRelay() {
   document.getElementById('rp-url').value  = document.getElementById('n-url').value;
   document.getElementById('rp-room').value = document.getElementById('n-room').value;
   document.getElementById('rp-hallazgo').textContent = '';
+  document.getElementById('rp-salida-url').value = salidaURL();
   document.getElementById('relay-fondo').classList.add('vis');
   refrescarPanelRelay();
 }
@@ -4577,6 +5666,9 @@ function refrescarPanelRelay() {
   }
   const btn = document.getElementById('rp-conectar');
   if (btn) btn.textContent = conectado ? 'RECONECTAR' : 'CONECTAR';
+
+  const salUrl = document.getElementById('rp-salida-url');
+  if (salUrl) salUrl.value = salidaURL();
 }
 
 function conectarDesdePanel() {
@@ -4683,6 +5775,28 @@ function pintarPresenciaMandos(msg) {
       : 'ningún teléfono conectado todavía';
     lista.style.color = n ? 'var(--accent)' : 'var(--text3)';
   }
+
+  CAM.disponibles = msg.camaras || [];
+  const nCam = CAM.disponibles.length;
+  const maxCam = msg.maxCamaras || 4;
+  const listaCam = document.getElementById('rp-camaras');
+  if (listaCam) {
+    listaCam.textContent = nCam
+      ? nCam+'/'+maxCam+' conectadas: '+CAM.disponibles.map(c => 'C'+c.slot).join(' · ')
+      : 'ningún teléfono conectado todavía';
+    listaCam.style.color = nCam ? 'var(--accent)' : 'var(--text3)';
+  }
+
+  const nSal = msg.salidas || 0;
+  const maxSal = msg.maxSalidas || 4;
+  const listaSal = document.getElementById('rp-salidas');
+  if (listaSal) {
+    listaSal.textContent = nSal
+      ? nSal+'/'+maxSal+' fuentes de salida conectadas (ej. OBS)'
+      : 'ninguna fuente de salida conectada todavía';
+    listaSal.style.color = nSal ? 'var(--accent)' : 'var(--text3)';
+  }
+
   refrescarPanelRelay();
 }
 
@@ -4762,6 +5876,10 @@ function bankSnapshot() {
       nextClipId: c.nextClipId, isLock: c.isLock,
     }))),
     efxs: S.efxs.map(e => ({ ...e })),
+    /* Transform independiente de cada pista (posición/escala/rotación/
+       corner-pin) — antes no se guardaba en los bancos, así que cambiar de
+       banco no tocaba estas cajas aunque sí tocaba el resto. */
+    tracksXform: S.tracks.map(t => ({ ...t.xform, pin:{ ...t.xform.pin } })),
   };
 }
 
@@ -4785,9 +5903,21 @@ function bankApply(data) {
     if (e.type === 'slowmo') S.tracks.forEach(t => { if(t.loaded) t.vid.playbackRate = e.on ? (e.rate??0.25) : 1; });
     if (e.type === 'flash' && e.on && !wasOn) S.flash = Math.max(S.flash, e.intensity||.9);
   });
+  /* Restore per-track transforms — bancos guardados antes de esta función
+     no traen tracksXform, así que se dejan las pistas como están. */
+  if (data.tracksXform) {
+    data.tracksXform.forEach((snap, i) => {
+      if (i < S.tracks.length && snap) {
+        S.tracks[i].xform = { x:0,y:0,scaleX:1,scaleY:1,rotation:0, ...snap,
+          pin:{ tl:[0,0],tr:[0,0],bl:[0,0],br:[0,0], ...(snap.pin||{}) } };
+      }
+    });
+  }
   /* Force full re-render of efx panel so params update */
   document.getElementById('efx-list').innerHTML = '';
   renderClips(); renderEfxs(); refreshEfxUI();
+  renderTrackInfo();
+  syncXov();
 }
 
 function bankSaveCurrent() {
@@ -4904,6 +6034,7 @@ function setSt(id,txt,cls){const el=document.getElementById(id);if(el){el.textCo
 /* Keyboard */
 document.addEventListener('keydown',e=>{
   if (e.key==='Escape' && panelRelayVisible()) { cerrarPanelRelay(); return; }
+  if (e.key==='Escape' && document.getElementById('res-fondo').classList.contains('vis')) { cerrarPanelRes(); return; }
   if (e.target.tagName==='INPUT') return;
   if (e.key==='Escape') endLearn();
   if (e.key===' ') { e.preventDefault(); masterPlayPause(); }
@@ -4914,7 +6045,137 @@ document.addEventListener('keydown',e=>{
   }
 });
 
+/* ═══════════════════════════════════════════════════════
+   PUENTE CON EL MÓDULO DE AUDIO
+   ═══════════════════════════════════════════════════════
+
+   Todo lo que el AudioEngine sabe de MIDIVJ está aquí, y son dos listas:
+   qué parámetros se pueden mover (destinos) y qué se puede disparar
+   (acciones). El motor nunca toca `S`, ni el canvas, ni el relay.
+
+   Si `modules/…` no cargó (página abierta como file://, o relay viejo), no
+   pasa nada: se esconde el botón AUDIO y la aplicación queda idéntica a
+   como estaba antes de existir este módulo.
+═══════════════════════════════════════════════════════ */
+let audioMotor = null, audioUI = null;
+
+function audioDisponible() {
+  return !!(window.MIDIVJ && window.MIDIVJAudio && window.MIDIVJAudioUI);
+}
+
+/* Destinos y acciones se reconstruyen al abrir el panel: los clips y los
+   bancos cambian todo el tiempo y no vale la pena engancharse a cada
+   render sólo para esto. */
+function refrescarDestinosAudio() {
+  if (!audioDisponible()) return;
+  const T = MIDIVJ.targets, A = MIDIVJ.acciones;
+  T.listar().forEach(d => T.quitar(d.id));
+  A.listar().forEach(a => A.quitar(a.id));
+
+  /* ── Destinos continuos ── */
+  S.tracks.forEach((t, i) => {
+    T.registrar({
+      id: 'track.' + t.id + '.opacity', grupo: t.name, nombre: 'Opacidad',
+      min: 0, max: 1,
+      aplicar: v => { S.tracks[i].opacity = v; refrescarSlidersDePista(i); },
+      leer: () => S.tracks[i].opacity,
+    });
+  });
+  S.efxs.forEach(e => {
+    efxParams(e).forEach(p => {
+      if (p.type === 'color') return;                 // el color no es un escalar
+      T.registrar({
+        id: 'efx.' + e.id + '.' + p.key, grupo: e.name, nombre: p.lbl,
+        min: p.min, max: p.max,
+        aplicar: v => { e[p.key] = v; refrescarSliderDeEfecto(e.id, p.key, v, p.fmt); },
+        leer: () => e[p.key],
+      });
+    });
+  });
+
+  /* ── Acciones discretas ── */
+  S.efxs.forEach(e => {
+    A.registrar({
+      id: 'efx.' + e.id + '.toggle', grupo: 'EFECTOS', nombre: e.name + ' — encender/apagar',
+      ejecutar: () => manualEfx(e.id),
+    });
+  });
+  S.tracks.forEach(t => t.clips.forEach(c => {
+    A.registrar({
+      id: 'clip.' + c.id, grupo: t.name, nombre: 'Disparar « ' + (c.name || c.id) + ' »',
+      ejecutar: () => trigClip(t, c),
+    });
+  }));
+  S.banks.forEach((b, i) => {
+    if (!b.data) return;
+    A.registrar({ id: 'bank.' + i, grupo: 'BANCOS', nombre: 'Recuperar ' + b.name, ejecutar: () => bankSelect(i) });
+  });
+  A.registrar({ id: 'master.playpause', grupo: 'MASTER', nombre: 'Play / Pause', ejecutar: () => masterPlayPause() });
+}
+
+/* Cuando el audio mueve un parámetro, el slider correspondiente tiene que
+   seguirlo — pero sólo si está a la vista y no lo está arrastrando nadie. */
+function refrescarSlidersDePista(i) {
+  if (i !== S.ati) return;
+  const el = document.querySelector('#track-info .opasl');
+  if (el && document.activeElement !== el) el.value = S.tracks[i].opacity;
+  const lbl = document.getElementById('opa-v');
+  if (lbl) lbl.textContent = Math.round(S.tracks[i].opacity * 100) + '%';
+}
+function refrescarSliderDeEfecto(id, key, val, fmt) {
+  const cont = document.querySelector('[data-eid="' + id + '"] [data-pkey="' + key + '"]');
+  if (!cont) return;
+  const rango = cont.querySelector('input[type=range]');
+  if (rango && document.activeElement !== rango) rango.value = val;
+  const lbl = cont.querySelector('.ep-val');
+  if (lbl) lbl.textContent = EFX_FMT[fmt] ? EFX_FMT[fmt](val) : val;
+}
+
+function audioInicializar() {
+  if (audioMotor || !audioDisponible()) return audioMotor;
+  audioMotor = MIDIVJAudio.crear({
+    log: msg => appendNetLog('[audio] ' + msg),
+    onChange: () => { if (audioUI) audioUI.refrescar(); },
+  });
+  MIDIVJ.modulos.registrar(audioMotor);
+  audioUI = MIDIVJAudioUI.crear(audioMotor, MIDIVJ.host, { avisar: msg => appendNetLog('[audio] ' + msg) });
+  return audioMotor;
+}
+
+async function abrirPanelAudio() {
+  if (!audioDisponible()) {
+    alert('El módulo de audio no cargó.\n\nAbre MIDIVJ desde el relay local (src/INICIAR_RELAY.bat → http://localhost:9191), no como archivo suelto: el AudioWorklet sólo puede cargarse por HTTP.');
+    return;
+  }
+  audioInicializar();
+  refrescarDestinosAudio();
+  /* Este clic es el gesto de usuario que los navegadores exigen para
+     arrancar audio: se aprovecha. */
+  try { await audioMotor.start(); audioMotor.rearmarTodo(); } catch (e) {}
+  audioUI.abrir();
+}
+
+/* Persistencia dentro de la sesión .vjp (clave "audio", aditiva: las
+   sesiones anteriores simplemente no la traen). */
+function audioSerializar() {
+  return audioMotor ? audioMotor.serializar() : null;
+}
+function audioRestaurar(data) {
+  if (!data || !audioDisponible()) return;
+  audioInicializar();
+  const pendientes = audioMotor.restaurar(data);
+  if (pendientes.length) {
+    appendNetLog('[audio] ' + pendientes.length + ' entrada(s) esperan RECONECTAR en el panel AUDIO.');
+  }
+}
+
+if (!audioDisponible()) {
+  const btn = document.getElementById('audio-btn');
+  if (btn) btn.style.display = 'none';
+}
+
 /* ── INIT ── */
+restoreOutResFromStorage();
 renderTabs();
 renderTrackInfo();
 renderClips();

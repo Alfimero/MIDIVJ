@@ -13,11 +13,13 @@
  */
 
 const http = require('http');
+const https = require('https');
 const os = require('os');
 const path = require('path');
 const fsp = require('fs/promises');
 const { execFile } = require('child_process');
 const { WebSocketServer } = require('ws');
+const selfsigned = require('selfsigned');
 const QRLite = require('./midivj-qr.js');
 
 /* Puerto: si el pedido está ocupado se prueban los siguientes. `PORT` deja de
@@ -29,10 +31,19 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 const SESSIONS_DIR = path.join(PROJECT_ROOT, 'Sessions');
 const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 const LAYOUT_FILE = path.join(DATA_DIR, 'mando-layout.json');
+const CERT_DIR = path.join(DATA_DIR, 'certs');
 const MAX_SESSION_BYTES = 5 * 1024 * 1024;
 const MAX_LAYOUT_BYTES = 8 * 1024 * 1024;   // los botones pueden llevar imágenes/GIF
 const MAX_MANDOS = 4;                        // dispositivos de control simultáneos
+const MAX_CAMARAS = 4;                       // teléfonos compartiendo cámara simultáneos
+const MAX_SALIDAS = 4;                       // fuentes de navegador (OBS, etc.) simultáneas viendo la salida
 const SLOT_DENY_DELAY_MS = 150;
+
+/* Puerto HTTPS para /camara: getUserMedia exige un "contexto seguro" y una IP
+   de LAN no lo es (sólo localhost/127.0.0.1 se libran sin TLS). `null` hasta
+   que el certificado se genera y el puerto queda escuchando; si algo falla,
+   el relay sigue funcionando igual — sólo la cámara de teléfono queda sin QR. */
+let PORT_HTTPS = null;
 
 /** Sala: clientes + quién es la app, quién ocupa cada slot y el último inventario. */
 const rooms = new Map();
@@ -383,6 +394,64 @@ function direcciones() {
   return salida;
 }
 
+/* ═══════════════════════════════════════════════════════
+   Certificado HTTPS para /camara
+
+   getUserMedia exige un "contexto seguro": HTTPS, o el propio localhost.
+   Una IP de LAN por HTTP no cuenta, así que el teléfono ve
+   `navigator.mediaDevices` como undefined aunque la sala sí lo detecte
+   (el WebSocket no tiene esa restricción). No hay forma de evitarlo sin
+   servir esa página por TLS — se genera un certificado autofirmado en
+   local (nada de internet ni de una CA real) la primera vez, y el
+   teléfono acepta una advertencia de "conexión no privada" una sola vez.
+═══════════════════════════════════════════════════════ */
+
+const CERT_FILE = path.join(CERT_DIR, 'cert.pem');
+const KEY_FILE = path.join(CERT_DIR, 'key.pem');
+const CERT_META_FILE = path.join(CERT_DIR, 'meta.json');
+
+/** Genera (o reutiliza) un certificado autofirmado cuyo SAN cubra `localhost`,
+    `127.0.0.1`, `::1` y todas las IPs de LAN detectadas ahora mismo. Sólo
+    regenera cuando falta alguna: así el teléfono no tiene que volver a
+    aceptar la advertencia del navegador en cada show si la red no cambió. */
+async function obtenerCertificado() {
+  const requeridos = ['localhost', '127.0.0.1', '::1', ...direcciones().map(d => d.ip)];
+
+  try {
+    const meta = JSON.parse(await fsp.readFile(CERT_META_FILE, 'utf8'));
+    const cubiertos = new Set(meta.nombres || []);
+    if (requeridos.every(n => cubiertos.has(n))) {
+      const [cert, key] = await Promise.all([
+        fsp.readFile(CERT_FILE, 'utf8'),
+        fsp.readFile(KEY_FILE, 'utf8')
+      ]);
+      return { cert, key };
+    }
+  } catch { /* sin caché válida: se genera abajo */ }
+
+  const altNames = [
+    { type: 2, value: 'localhost' },
+    ...requeridos.filter(n => n !== 'localhost').map(ip => ({ type: 7, ip }))
+  ];
+  const pems = await selfsigned.generate([{ name: 'commonName', value: 'MIDIVJ (red local)' }], {
+    keySize: 2048,
+    days: 3650,
+    algorithm: 'sha256',
+    extensions: [
+      { name: 'basicConstraints', cA: false },
+      { name: 'keyUsage', digitalSignature: true, keyEncipherment: true },
+      { name: 'subjectAltName', altNames }
+    ]
+  });
+
+  await fsp.mkdir(CERT_DIR, { recursive: true });
+  await fsp.writeFile(CERT_FILE, pems.cert, 'utf8');
+  await fsp.writeFile(KEY_FILE, pems.private, 'utf8');
+  await fsp.writeFile(CERT_META_FILE, JSON.stringify({ nombres: requeridos, generado: Date.now() }, null, 2), 'utf8');
+
+  return { cert: pems.cert, key: pems.private };
+}
+
 /** Cache corta: las consultas tardan ~250 ms y /control refresca seguido. */
 let wifiCache = { ts: 0, info: null };
 
@@ -513,13 +582,24 @@ async function infoRed(sala) {
     ...d,
     control: `http://${d.ip}:${PORT}/control`,
     mando: `http://${d.ip}:${PORT}/mando`,
+    /* /camara necesita HTTPS: getUserMedia no funciona por HTTP en una IP de
+       LAN (sólo localhost se libra). Sin PORT_HTTPS no hay QR de cámara. */
+    camara: PORT_HTTPS ? `https://${d.ip}:${PORT_HTTPS}/camara` : null,
+    /* /salida no toca getUserMedia (sólo recibe video por WebRTC), así que
+       no tiene la restricción de contexto seguro de /camara: funciona por
+       HTTP normal, tanto en localhost (OBS en esta misma PC) como en una
+       IP de LAN (OBS en otra computadora de la red). */
+    salida: `http://${d.ip}:${PORT}/salida`,
     ws: `ws://${d.ip}:${PORT}`
   }));
 
   return {
     puerto: PORT,
+    puertoSeguro: PORT_HTTPS,
     sala,
     maxMandos: MAX_MANDOS,
+    maxCamaras: MAX_CAMARAS,
+    maxSalidas: MAX_SALIDAS,
     direcciones: lista,
     wifi: {
       ssid: efectiva.ssid || '',
@@ -541,6 +621,18 @@ const TIPOS = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8'
 };
+
+/* Módulos nuevos de `src/modules/` (ver docs/audio-module.md). Se sirven por
+   lista blanca explícita y no recorriendo la carpeta: el relay nunca debe
+   poder entregar un archivo del proyecto que no esté en esta lista. El
+   AudioWorklet además NECESITA venir por HTTP — `addModule()` no funciona
+   con la página abierta como file://. */
+const MODULOS = new Set([
+  '/modules/midivj-module.js',
+  '/modules/audio/midivj-audio-engine.js',
+  '/modules/audio/midivj-audio-ui.js',
+  '/modules/audio/midivj-audio-worklet.js'
+]);
 
 async function serveFile(res, filename, contentType) {
   const body = await fsp.readFile(path.join(__dirname, filename));
@@ -590,6 +682,14 @@ async function handleHttp(req, res) {
     await serveFile(res, 'midivj-mando.html');
     return;
   }
+  if (req.method === 'GET' && (ruta === '/camara' || ruta === '/camara.html')) {
+    await serveFile(res, 'midivj-camara.html');
+    return;
+  }
+  if (req.method === 'GET' && (ruta === '/salida' || ruta === '/salida.html')) {
+    await serveFile(res, 'midivj-salida.html');
+    return;
+  }
   if (req.method === 'GET' && (ruta === '/control' || ruta === '/control.html')) {
     await serveFile(res, 'midivj-control.html');
     return;
@@ -600,6 +700,10 @@ async function handleHttp(req, res) {
   }
   if (req.method === 'GET' && ruta === '/midivj-plantillas.js') {
     await serveFile(res, 'midivj-plantillas.js');
+    return;
+  }
+  if (req.method === 'GET' && MODULOS.has(ruta)) {
+    await serveFile(res, ruta.slice(1));
     return;
   }
   if (req.method === 'GET' && ruta === '/api/red') {
@@ -642,7 +746,7 @@ async function handleHttp(req, res) {
     return;
   }
   if (req.method === 'GET' && ruta === '/health') {
-    sendJson(res, 200, { ok: true, sessionsDirectory: 'Sessions', mandos: MAX_MANDOS });
+    sendJson(res, 200, { ok: true, sessionsDirectory: 'Sessions', mandos: MAX_MANDOS, camaras: MAX_CAMARAS, salidas: MAX_SALIDAS });
     return;
   }
   sendJson(res, 404, { error: 'Ruta no encontrada.' });
@@ -659,7 +763,7 @@ const server = http.createServer((req, res) => {
    WebSocket — salas, roles y slots
 
    Protocolo (todo JSON):
-     cliente → { type:'join', room, rol:'app'|'mando'|'emisor', slot, disp, nombre }
+     cliente → { type:'join', room, rol:'app'|'mando'|'emisor'|'camara'|'salida', slot, disp, nombre }
      cliente → { type:'midi', data:[status,num,vel] }          (se reenvía tal cual)
      cliente → { type:'layout', layout:{...} }                 (se valida y persiste)
      cliente → { type:'pedir-layout' }
@@ -671,25 +775,176 @@ const server = http.createServer((req, res) => {
 
    El rol por defecto ('emisor') mantiene el comportamiento original:
    el emisor MIDI y las versiones anteriores de la app siguen funcionando.
+
+   Señalización WebRTC de cámara (unicast app↔cámara-de-un-slot; el relay
+   sólo reenvía, nunca toca video):
+     app     → { type:'camara-iniciar', slot }
+     cámara  → { type:'rtc-oferta', sdp }
+     app     → { type:'rtc-respuesta', slot, sdp }
+     ambos   → { type:'rtc-candidato', [slot,] candidato }
+     ambos   → { type:'camara-colgar', [slot] }
+     relay   → { type:'camara-error', slot, motivo }           (destino inexistente)
+
+   Señalización WebRTC de salida (unicast app↔fuente-de-navegador-de-un-id;
+   misma idea que la cámara pero con los papeles invertidos: aquí la app es
+   la offerer, porque ya tiene el MediaStream del lienzo listo de forma
+   síncrona, sin ningún permiso de usuario que esperar. Sirve para que OBS
+   (u otro programa) agregue http://…/salida como "Fuente de navegador" y
+   reciba la salida de MIDIVJ como si fuera una cámara):
+     relay   → { type:'salida-hola', id }                      (a la app: hay un visor nuevo, o uno que sigue ahí)
+     app     → { type:'salida-oferta', id, sdp }
+     visor   → { type:'salida-respuesta', sdp }
+     ambos   → { type:'salida-candidato', [id,] candidato }
+     ambos   → { type:'salida-cerrar', [id,] motivo }
+     relay   → { type:'salida-error', motivo }                 (sala llena, o destino inexistente)
 ═══════════════════════════════════════════════════════ */
+
+const TIPOS_RTC = new Set(['camara-iniciar', 'camara-colgar', 'camara-error', 'rtc-oferta', 'rtc-respuesta', 'rtc-candidato']);
+const TIPOS_SALIDA = new Set(['salida-oferta', 'salida-respuesta', 'salida-candidato', 'salida-cerrar', 'salida-error']);
+
+/* El WebSocket de señalización de un teléfono se cae mucho más seguido que
+   la propia llamada WebRTC (ahorro de batería, roaming entre puntos de
+   acceso, un blip cualquiera de la Wi-Fi): el video viaja aparte, P2P, y no
+   se entera de ese corte. Si el relay avisara "colgar" apenas ve caerse ese
+   socket, cortaría transmisiones que seguían perfectamente vivas. Por eso
+   espera este margen a que el mismo `disp` reclame su slot de nuevo antes
+   de darlo por perdido. */
+const CAMARA_GRACIA_MS = 8000;
 
 function getOrCreate(room) {
   if (!rooms.has(room)) {
-    rooms.set(room, { clientes: new Set(), app: null, mandos: new Map(), inventario: null });
+    rooms.set(room, {
+      clientes: new Set(), app: null, mandos: new Map(), camaras: new Map(),
+      camarasGracia: new Map(), appGracia: null, pendientesOferta: new Set(), inventario: null,
+      salidas: new Map(), salidaSeq: 0
+    });
   }
   return rooms.get(room);
+}
+
+/** Le dice a cada teléfono-cámara conectado en la sala que suelte la cámara.
+    Se usa cuando la app se va o cuando otra pestaña la reemplaza: ninguna
+    debe quedar transmitiendo para una app que ya no está del otro lado. */
+function colgarTodasLasCamaras(sala) {
+  for (const ws of sala.camaras.values()) enviar(ws, { type: 'camara-colgar', motivo: 'la app se fue o fue reemplazada por otra pestaña' });
+  for (const { timer } of sala.camarasGracia.values()) clearTimeout(timer);
+  sala.camarasGracia.clear();
+}
+
+/** Le dice a cada visor de /salida conectado que la app se fue: no cierra su
+    WebSocket (sigue en sala.salidas, listo para una negociación nueva en
+    cuanto la app vuelva), sólo le avisa que corte el video que tenía. Mismo
+    disparador que colgarTodasLasCamaras(): la app se fue de verdad, o la
+    reemplazó otra pestaña. */
+function colgarTodasLasSalidas(sala) {
+  for (const ws of sala.salidas.values()) enviar(ws, { type: 'salida-cerrar', motivo: 'la app se fue o fue reemplazada por otra pestaña' });
+}
+
+/** Log de diagnóstico de cámara/app, con hora exacta — pensado para quedar
+    a la vista en la consola donde corre el relay (la ventana del .bat/.command,
+    que el operador ya tiene abierta), sin depender de abrir DevTools en
+    ningún dispositivo. */
+function logCam(msg) {
+  console.log(`  [cámara ${new Date().toLocaleTimeString()}] ${msg}`);
 }
 
 function leaveRoom(ws, room) {
   const sala = rooms.get(room);
   if (!sala) return;
   sala.clientes.delete(ws);
-  if (sala.app === ws) sala.app = null;
+  if (sala.app === ws) {
+    sala.app = null;
+    /* Mismo problema que con las cámaras: el WebSocket de la app también
+       reconecta solo (recarga de la pestaña, un blip cualquiera) y no debe
+       tumbar cámaras que siguen transmitiendo perfectamente. Si la misma
+       app (mismo `disp`) vuelve a tiempo, se cancela el colgado. */
+    const disp = ws._disp;
+    if (sala.appGracia) clearTimeout(sala.appGracia.timer);
+    if (disp) {
+      logCam(`se desconectó la app (disp=${disp}) — esperando ${CAMARA_GRACIA_MS / 1000}s por si reconecta antes de colgar las cámaras`);
+      const timer = setTimeout(() => {
+        sala.appGracia = null;
+        logCam(`la app no volvió a tiempo — colgando todas las cámaras de la sala "${room}"`);
+        colgarTodasLasCamaras(sala);
+        colgarTodasLasSalidas(sala);
+      }, CAMARA_GRACIA_MS);
+      sala.appGracia = { disp, timer };
+    } else {
+      sala.appGracia = null;
+      logCam('se desconectó la app sin disp — colgando todas las cámaras de inmediato');
+      colgarTodasLasCamaras(sala);
+      colgarTodasLasSalidas(sala);
+    }
+  }
   for (const [slot, cliente] of sala.mandos) {
     if (cliente === ws) sala.mandos.delete(slot);
   }
-  if (!sala.clientes.size) rooms.delete(room);
-  else difundirPresencia(room);
+  for (const [slot, cliente] of sala.camaras) {
+    if (cliente === ws) {
+      sala.camaras.delete(slot);
+      /* No avisamos todavía: puede ser un corte de red del que el teléfono
+         se recupera solo en un instante, sin que la llamada WebRTC se haya
+         enterado. Sólo si no vuelve a reclamar este slot a tiempo, la app
+         se entera de que la cámara realmente se fue. */
+      const disp = cliente._disp;
+      const negociacionPendiente = sala.pendientesOferta.delete(slot);
+      if (sala.app && disp && !negociacionPendiente) {
+        /* Margen de gracia: sólo tiene sentido cuando hay una llamada YA
+           establecida que podría seguir viva pese al corte de señalización.
+           Si todavía no hay ni oferta (negociacionPendiente), no hay nada
+           que proteger esperando — avisar rápido es estrictamente mejor. */
+        logCam(`cámara ${slot} (disp=${disp}) se desconectó — esperando ${CAMARA_GRACIA_MS / 1000}s por si reconecta antes de avisarle a la app`);
+        const timer = setTimeout(() => {
+          sala.camarasGracia.delete(disp);
+          logCam(`cámara ${slot} (disp=${disp}) no volvió a tiempo — avisando "camara-colgar" a la app`);
+          if (sala.app) enviar(sala.app, { type: 'camara-colgar', slot, motivo: 'el teléfono se desconectó y no volvió a tiempo' });
+        }, CAMARA_GRACIA_MS);
+        sala.camarasGracia.set(disp, { slot, timer });
+      } else if (sala.app) {
+        logCam(`cámara ${slot} se desconectó (${negociacionPendiente ? 'seguía esperando que mandara su oferta — probable conexión zombie' : 'sin disp o sin app activa'}) — avisando de inmediato`);
+        enviar(sala.app, { type: 'camara-colgar', slot, motivo: negociacionPendiente ? 'el teléfono se desconectó antes de responder al pedido de cámara (posible conexión zombie)' : 'el teléfono se desconectó' });
+      }
+    }
+  }
+  for (const [id, cliente] of sala.salidas) {
+    if (cliente === ws) {
+      sala.salidas.delete(id);
+      /* A diferencia del teléfono-cámara, un visor de /salida (típicamente
+         OBS en la misma red o en esta misma PC) no tiene el mismo patrón de
+         cortes intermitentes de una Wi-Fi de celular — no hace falta el
+         margen de gracia: se avisa de inmediato para que la app cierre su
+         RTCPeerConnection y libere los recursos de captura. */
+      if (sala.app) enviar(sala.app, { type: 'salida-cerrar', id, motivo: 'la fuente de salida se desconectó' });
+    }
+  }
+  if (!sala.clientes.size) {
+    for (const { timer } of sala.camarasGracia.values()) clearTimeout(timer);
+    if (sala.appGracia) clearTimeout(sala.appGracia.timer);
+    rooms.delete(room);
+  } else {
+    difundirPresencia(room);
+  }
+}
+
+/** Reclama un slot 1..maxSlots dentro de `mapa` (Map slot→ws) para `disp`.
+    Reconecta al mismo slot si `disp` ya lo tenía (recarga de página); si no,
+    usa `pedido` cuando está libre o el primero disponible. Devuelve
+    { slot } en éxito, o { conflicto:true, ocupados } si no hay lugar o el
+    pedido choca con un `disp` distinto. Compartido por 'mando' y 'camara':
+    ambos roles tienen el mismo problema de identidad-por-dispositivo. */
+function reclamarSlot(mapa, maxSlots, disp, pedido) {
+  let slot = Number.isFinite(pedido) && pedido >= 1 && pedido <= maxSlots ? pedido : null;
+  for (const [s, cliente] of mapa) {
+    if (disp && cliente._disp === disp) { slot = s; cliente.close(); mapa.delete(s); }
+  }
+  if (!slot) {
+    for (let s = 1; s <= maxSlots && !slot; s++) if (!mapa.has(s)) slot = s;
+  }
+  const ocupante = slot ? mapa.get(slot) : null;
+  if (!slot || (ocupante && ocupante._disp !== disp)) {
+    return { conflicto: true, slot: slot || 0, ocupados: [...mapa.keys()].sort((a, b) => a - b) };
+  }
+  return { slot };
 }
 
 function enviar(ws, payload) {
@@ -707,17 +962,22 @@ function difundir(room, payload, excepto = null) {
 
 function presencia(room) {
   const sala = rooms.get(room);
-  if (!sala) return { type: 'presencia', app: false, mandos: [], clientes: 0 };
+  if (!sala) return { type: 'presencia', app: false, mandos: [], camaras: [], clientes: 0 };
+  const listarSlots = (mapa, etiqueta) => [...mapa.entries()].map(([slot, ws]) => ({
+    slot,
+    nombre: ws._nombre || `${etiqueta} ${slot}`,
+    disp: ws._disp || ''
+  })).sort((a, b) => a.slot - b.slot);
   return {
     type: 'presencia',
     app: !!sala.app,
     clientes: sala.clientes.size,
     maxMandos: MAX_MANDOS,
-    mandos: [...sala.mandos.entries()].map(([slot, ws]) => ({
-      slot,
-      nombre: ws._nombre || `Mando ${slot}`,
-      disp: ws._disp || ''
-    })).sort((a, b) => a.slot - b.slot)
+    maxCamaras: MAX_CAMARAS,
+    maxSalidas: MAX_SALIDAS,
+    mandos: listarSlots(sala.mandos, 'Mando'),
+    camaras: listarSlots(sala.camaras, 'Cámara'),
+    salidas: sala.salidas.size
   };
 }
 
@@ -741,10 +1001,18 @@ wss.on('error', error => {
   if (error.code !== 'EADDRINUSE') console.error('  [ws]', error.message);
 });
 
-wss.on('connection', ws => {
+/* Misma lógica de sala/rol/slot sin importar por qué servidor entró el
+   cliente: la app y el emisor llegan por HTTP (server, wss); una cámara de
+   teléfono llega por HTTPS (servidorSeguro, wssSeguro), porque es la única
+   forma de que su navegador le dé getUserMedia en una IP de LAN. Ambos
+   listeners comparten el mismo `rooms` en memoria, así que interoperan
+   igual que si fuera un solo servidor. */
+function alConectar(ws) {
   let myRoom = 'midivj';
   ws._rol = 'emisor';
   ws._slot = null;
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', raw => {
     let msg;
@@ -755,52 +1023,110 @@ wss.on('connection', ws => {
       leaveRoom(ws, myRoom);
       myRoom = typeof msg.room === 'string' && msg.room.trim() ? msg.room.trim().slice(0, 40) : 'midivj';
       const sala = getOrCreate(myRoom);
-      ws._rol = ['app', 'mando', 'emisor'].includes(msg.rol) ? msg.rol : 'emisor';
+      ws._rol = ['app', 'mando', 'emisor', 'camara', 'salida'].includes(msg.rol) ? msg.rol : 'emisor';
       ws._disp = typeof msg.disp === 'string' ? msg.disp.slice(0, 40) : '';
       ws._nombre = typeof msg.nombre === 'string' ? msg.nombre.slice(0, 30) : '';
 
-      if (ws._rol === 'mando') {
-        const pedido = parseInt(msg.slot, 10);
-        let slot = Number.isFinite(pedido) && pedido >= 1 && pedido <= MAX_MANDOS ? pedido : null;
+      if (ws._rol === 'salida') {
+        /* A diferencia de mando/cámara, un visor de /salida no necesita
+           identidad estable entre reconexiones (no hay QR de "este número
+           fijo" que recordar): cada conexión es efímera y recibe un `id`
+           nuevo, correlativo dentro de la sala. Sólo se limita el total
+           simultáneo para no dejar que se acumulen RTCPeerConnection sin
+           límite en la app. */
+        if (sala.salidas.size >= MAX_SALIDAS) {
+          enviar(ws, { type: 'salida-error', motivo: `límite de fuentes de salida alcanzado (${MAX_SALIDAS})` });
+          setTimeout(() => ws.close(), SLOT_DENY_DELAY_MS);
+          return;
+        }
+        sala.salidaSeq += 1;
+        ws._salidaId = sala.salidaSeq;
+        sala.salidas.set(ws._salidaId, ws);
+      }
 
-        /* Reconexión del mismo teléfono: recupera su slot aunque pida otro. */
-        for (const [s, cliente] of sala.mandos) {
-          if (ws._disp && cliente._disp === ws._disp) { slot = s; cliente.close(); sala.mandos.delete(s); }
-        }
-        if (!slot) {
-          for (let s = 1; s <= MAX_MANDOS && !slot; s++) if (!sala.mandos.has(s)) slot = s;
-        }
-        const ocupante = slot ? sala.mandos.get(slot) : null;
-        if (!slot || (ocupante && ocupante._disp !== ws._disp)) {
-          /* Le decimos qué slots están tomados para que el teléfono ofrezca
+      if (ws._rol === 'mando' || ws._rol === 'camara') {
+        const mapa = ws._rol === 'mando' ? sala.mandos : sala.camaras;
+        const maxSlots = ws._rol === 'mando' ? MAX_MANDOS : MAX_CAMARAS;
+        const resultado = reclamarSlot(mapa, maxSlots, ws._disp, parseInt(msg.slot, 10));
+        if (resultado.conflicto) {
+          /* Le decimos qué slots están tomados para que el dispositivo ofrezca
              sólo los libres en vez de reintentar contra el mismo. */
           enviar(ws, {
             type: 'slot-ocupado',
-            slot: slot || 0,
+            rol: ws._rol,
+            slot: resultado.slot,
             maxMandos: MAX_MANDOS,
-            ocupados: [...sala.mandos.keys()].sort((a, b) => a - b)
+            maxCamaras: MAX_CAMARAS,
+            ocupados: resultado.ocupados
           });
           setTimeout(() => ws.close(), SLOT_DENY_DELAY_MS);
           return;
         }
-        sala.mandos.set(slot, ws);
-        ws._slot = slot;
+        mapa.set(resultado.slot, ws);
+        ws._slot = resultado.slot;
+
+        /* Volvió a tiempo a su mismo slot tras un corte de señalización: no
+           hacía falta avisar a la app, el video P2P nunca se enteró del
+           corte. Cancela el aviso de "colgar" que estaba por dispararse. */
+        if (ws._rol === 'camara') {
+          const gracia = sala.camarasGracia.get(ws._disp);
+          if (gracia && gracia.slot === resultado.slot) {
+            clearTimeout(gracia.timer);
+            sala.camarasGracia.delete(ws._disp);
+            logCam(`cámara ${resultado.slot} (disp=${ws._disp}) volvió a tiempo — se cancela el aviso de colgar`);
+          }
+        }
       }
 
       if (ws._rol === 'app' && sala.app && sala.app !== ws) {
-        /* Dos pestañas de MIDIVJ: manda la última, la anterior deja de reintentar. */
-        enviar(sala.app, { type: 'reemplazado' });
-        sala.app = null;
+        if (sala.app._disp && sala.app._disp === ws._disp) {
+          /* Misma pestaña reconectando (recarga, blip de red): no es un
+             reemplazo real, así que no hay que avisar ni colgar cámaras. */
+          logCam(`la app reconectó (mismo disp=${ws._disp}) — no es un reemplazo, no se toca ninguna cámara`);
+          sala.app = null;
+        } else {
+          /* Dos pestañas de MIDIVJ de verdad: manda la última, la anterior
+             deja de reintentar y sus cámaras se cuelgan — quedó huérfana. */
+          logCam(`otra app tomó la sala (disp anterior=${sala.app._disp || '?'}, nuevo=${ws._disp}) — colgando cámaras de la instancia anterior`);
+          enviar(sala.app, { type: 'reemplazado' });
+          colgarTodasLasCamaras(sala);
+          colgarTodasLasSalidas(sala);
+          sala.app = null;
+        }
       }
-      if (ws._rol === 'app') sala.app = ws;
+      if (ws._rol === 'app') {
+        sala.app = ws;
+        /* Volvió a tiempo tras un corte de señalización: cancela el colgado
+           de cámaras que leaveRoom() había dejado programado. */
+        if (sala.appGracia && sala.appGracia.disp === ws._disp) {
+          clearTimeout(sala.appGracia.timer);
+          sala.appGracia = null;
+          logCam(`la app (disp=${ws._disp}) volvió a tiempo — se cancela el colgado de cámaras que estaba pendiente`);
+        }
+      }
 
       sala.clientes.add(ws);
       const count = sala.clientes.size;
       console.log(`  [+] sala "${myRoom}" — ${ws._rol}${ws._slot ? ' ' + ws._slot : ''} — ${count} cliente${count > 1 ? 's' : ''}`);
 
-      enviar(ws, { type: 'joined', room: myRoom, clients: count, rol: ws._rol, slot: ws._slot, maxMandos: MAX_MANDOS });
+      enviar(ws, {
+        type: 'joined', room: myRoom, clients: count, rol: ws._rol, slot: ws._slot, id: ws._salidaId || null,
+        maxMandos: MAX_MANDOS, maxCamaras: MAX_CAMARAS, maxSalidas: MAX_SALIDAS
+      });
       enviar(ws, { type: 'layout', layout: layout || layoutPorDefecto() });
       if (sala.inventario) enviar(ws, sala.inventario);
+
+      /* La app arma un RTCPeerConnection por cada visor de /salida ya
+         conectado — tanto los que llegaron mientras la app no estaba como
+         los que ya estaban ahí y sólo hace falta renegociar tras un
+         reemplazo/reconexión. Idempotente del lado de la app: si ya tiene
+         una sesión viva para ese `id`, ignora el aviso repetido. */
+      if (ws._rol === 'app') {
+        for (const id of sala.salidas.keys()) enviar(ws, { type: 'salida-hola', id });
+      } else if (ws._rol === 'salida' && sala.app) {
+        enviar(sala.app, { type: 'salida-hola', id: ws._salidaId });
+      }
+
       difundirPresencia(myRoom);
       return;
     }
@@ -850,18 +1176,117 @@ wss.on('connection', ws => {
 
     if (msg.type === 'toast') {
       difundir(myRoom, { type: 'toast', texto: String(msg.texto || '').slice(0, 120) }, ws);
+      return;
+    }
+
+    /* ── Señalización WebRTC de cámara: unicast app↔cámara de un slot.
+       El relay nunca interpreta el contenido (SDP/ICE): sólo lo reenvía al
+       destino correcto, igual que ya hace `enviar()` para 'joined'. El video
+       en sí viaja directo entre el teléfono y la app; esto sólo negocia. */
+    if (TIPOS_RTC.has(msg.type)) {
+      const sala = rooms.get(myRoom);
+      if (!sala) return;
+      /* 'camara-colgar' y 'camara-error' son las señales de "algo terminó":
+         quedan siempre en el log, con su motivo tal cual lo mandó el emisor,
+         para no tener que adivinar quién colgó y por qué. 'camara-iniciar'
+         también queda, porque si el socket del teléfono está "zombie"
+         (parece conectado pero ya no entrega nada — típico de un bloqueo
+         de pantalla) esto es lo último que se sabrá de ese pedido: la app
+         espera la oferta 15 s y nunca llega ni una oferta ni un error, sin
+         este log no habría forma de saber si el relay llegó a reenviarlo.
+         Las de SDP/ICE que sí van y vienen en una llamada sana (respuesta,
+         candidato) no se registran: son ruido normal, no aportan. */
+      if (msg.type === 'camara-colgar' || msg.type === 'camara-error') {
+        logCam(`${ws._rol}${ws._slot ? ' ' + ws._slot : ''} → ${ws._rol === 'app' ? 'cámara ' + msg.slot : 'app'}: ${msg.type} (motivo: "${msg.motivo || 'sin especificar'}")`);
+      }
+      if (ws._rol === 'app') {
+        const slot = parseInt(msg.slot, 10);
+        const destino = sala.camaras.get(slot);
+        if (msg.type === 'camara-iniciar') {
+          logCam(destino
+            ? `app pide iniciar cámara ${slot} (disp=${destino._disp || '?'}) — reenviado al teléfono`
+            : `app pide iniciar cámara ${slot}, pero no hay ningún teléfono en ese slot — se responde camara-error`);
+          /* Marca que este slot tiene un pedido sin responder: si se
+             desconecta antes de mandar su oferta, leaveRoom() se salta el
+             margen de gracia (no hay ninguna llamada viva que proteger). */
+          if (destino) sala.pendientesOferta.add(slot);
+        } else {
+          sala.pendientesOferta.delete(slot);
+        }
+        if (destino) enviar(destino, { ...msg, slot: undefined });
+        else if (msg.type === 'camara-iniciar') enviar(ws, { type: 'camara-error', slot, motivo: 'desconectado' });
+      } else if (ws._rol === 'camara' && ws._slot) {
+        sala.pendientesOferta.delete(ws._slot);   // cualquier respuesta de la cámara resuelve el pedido pendiente
+        if (sala.app) enviar(sala.app, { ...msg, slot: ws._slot });
+      }
+      return;
+    }
+
+    /* ── Señalización WebRTC de salida: unicast app↔visor de /salida de un
+       `id`. Mismo patrón que TIPOS_RTC — el relay sólo reenvía SDP/ICE al
+       destino correcto, nunca toca el video. */
+    if (TIPOS_SALIDA.has(msg.type)) {
+      const sala = rooms.get(myRoom);
+      if (!sala) return;
+      if (ws._rol === 'app') {
+        const id = parseInt(msg.id, 10);
+        const destino = sala.salidas.get(id);
+        if (destino) enviar(destino, { ...msg, id: undefined });
+      } else if (ws._rol === 'salida' && ws._salidaId && sala.app) {
+        enviar(sala.app, { ...msg, id: ws._salidaId });
+      }
+      return;
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', (code, reason) => {
     const rol = ws._rol;
     const slot = ws._slot;
+    if (rol === 'camara' || rol === 'app') {
+      logCam(`se cerró el socket de ${rol}${slot ? ' ' + slot : ''} (disp=${ws._disp || '?'}) — code=${code} reason="${reason ? reason.toString() : ''}"`);
+    }
     leaveRoom(ws, myRoom);
     const count = rooms.get(myRoom)?.clientes.size ?? 0;
     console.log(`  [-] sala "${myRoom}" — ${rol}${slot ? ' ' + slot : ''} — ${count} cliente${count !== 1 ? 's' : ''}`);
   });
-  ws.on('error', () => undefined);
-});
+  ws.on('error', error => {
+    if (ws._rol === 'camara' || ws._rol === 'app') logCam(`error de socket en ${ws._rol}${ws._slot ? ' ' + ws._slot : ''}: ${error.message}`);
+  });
+}
+
+wss.on('connection', alConectar);
+
+/* ═══════════════════════════════════════════════════════
+   Latido — detecta conexiones "zombie"
+
+   Un teléfono que se bloquea o pasa a segundo plano puede dejar de poder
+   entregar nada por su WebSocket sin que el sistema operativo llegue a
+   cerrarlo — el relay lo sigue viendo "conectado" (readyState=1) y le
+   reenvía 'camara-iniciar' a un socket que ya no llega a ningún lado: la
+   app espera 15 s y nunca ve ni una oferta ni un error. El ping/pong
+   estándar de WebSocket saca esto a la luz: si un cliente no contesta un
+   ping dentro de un ciclo, se da por muerto y se cierra de verdad — eso
+   sí dispara leaveRoom(). Con negociación pendiente eso salta directo al
+   aviso (sin el margen de gracia — no hay llamada viva que proteger), así
+   que el intervalo se mantiene corto para que la app se entere bien
+   adentro de su ventana de 15 s en vez de agotarla en silencio. */
+const LATIDO_MS = 4000;
+
+setInterval(() => {
+  for (const sala of rooms.values()) {
+    for (const cliente of sala.clientes) {
+      if (cliente.isAlive === false) {
+        if (cliente._rol === 'camara' || cliente._rol === 'app') {
+          logCam(`sin respuesta al ping — cerrando conexión zombie de ${cliente._rol}${cliente._slot ? ' ' + cliente._slot : ''} (disp=${cliente._disp || '?'})`);
+        }
+        cliente.terminate();
+        continue;
+      }
+      cliente.isAlive = false;
+      try { cliente.ping(); } catch (_) { /* ya se estará cerrando */ }
+    }
+  }
+}, LATIDO_MS);
 
 /* ═══════════════════════════════════════════════════════
    Arranque
@@ -872,6 +1297,7 @@ async function printIPs() {
   console.log('\n  Aplicación: http://localhost:' + PORT + '/');
   console.log('  Emisor MIDI: http://localhost:' + PORT + '/sender');
   console.log('  Control remoto (QR): http://localhost:' + PORT + '/control');
+  console.log('  Salida para OBS (fuente de navegador): http://localhost:' + PORT + '/salida');
   console.log('  Sesiones: ' + SESSIONS_DIR);
   console.log('  Layout del mando: ' + LAYOUT_FILE);
   if (info.direcciones.length) {
@@ -879,9 +1305,13 @@ async function printIPs() {
     info.direcciones.forEach(d => {
       const etiqueta = d.tipo === 'hotspot' ? '  ← red creada por esta PC' : '';
       console.log(`    http://${d.ip}:${PORT}/mando   (${d.interfaz})${etiqueta}`);
+      if (d.camara) console.log(`    ${d.camara}   (cámara — certificado autofirmado, aceptar la advertencia una vez)`);
     });
   } else {
     console.log('  Sin dirección de red: sólo funciona en esta computadora.');
+  }
+  if (!PORT_HTTPS) {
+    console.log('  Cámara de teléfono no disponible esta sesión (no se pudo levantar HTTPS).');
   }
   if (info.wifi.ssid) {
     const origen = info.wifi.fuente === 'hostednetwork' ? 'red creada por esta PC'
@@ -892,32 +1322,73 @@ async function printIPs() {
 }
 
 /**
- * Levanta el servidor probando puertos consecutivos.
+ * Levanta `servidor` probando puertos consecutivos a partir de `puerto`.
  *
  * Antes, un puerto ocupado (un relay viejo abierto, otra app) obligaba a
  * relanzar a mano con otro número, y entonces la aplicación seguía apuntando
  * al puerto anterior. Ahora el relay elige uno libre y la aplicación se conecta
- * al que la sirvió, así que la cadena no se rompe.
+ * al que la sirvió, así que la cadena no se rompe. Genérica sobre el servidor
+ * para poder levantar tanto el HTTP principal como el HTTPS de /camara.
  */
-function escuchar(puerto, intentosRestantes) {
+function escuchar(servidor, puerto, intentosRestantes) {
   return new Promise((resolve, reject) => {
     const alError = error => {
-      server.removeListener('listening', alEscuchar);
+      servidor.removeListener('listening', alEscuchar);
       if (error.code === 'EADDRINUSE' && intentosRestantes > 0) {
         console.log(`  Puerto ${puerto} ocupado — probando ${puerto + 1}…`);
-        resolve(escuchar(puerto + 1, intentosRestantes - 1));
+        resolve(escuchar(servidor, puerto + 1, intentosRestantes - 1));
         return;
       }
       reject(error);
     };
     const alEscuchar = () => {
-      server.removeListener('error', alError);
+      servidor.removeListener('error', alError);
       resolve(puerto);
     };
-    server.once('error', alError);
-    server.once('listening', alEscuchar);
-    server.listen(puerto);
+    servidor.once('error', alError);
+    servidor.once('listening', alEscuchar);
+    servidor.listen(puerto);
   });
+}
+
+/**
+ * Levanta el servidor HTTPS que sirve /camara: getUserMedia no funciona por
+ * HTTP en una IP de LAN (sólo localhost se libra sin TLS), así que el
+ * teléfono necesita esta ruta aparte. Es deliberadamente best-effort — si el
+ * certificado no se puede generar o el puerto no queda libre, el relay sigue
+ * funcionando igual para MIDI/mando; sólo la cámara de teléfono queda sin QR
+ * hasta el próximo arranque.
+ */
+async function iniciarHttps() {
+  let credenciales;
+  try {
+    credenciales = await obtenerCertificado();
+  } catch (error) {
+    console.error('  [https] no se pudo generar el certificado:', error.message);
+    return;
+  }
+
+  const servidorSeguro = https.createServer(credenciales, (req, res) => {
+    handleHttp(req, res).catch(error => {
+      if (!res.headersSent) sendJson(res, 500, { error: error.message || 'Error interno.' });
+      else res.end();
+    });
+  });
+  servidorSeguro.on('error', error => {
+    if (error.code !== 'EADDRINUSE') console.error('  [https]', error.message);
+  });
+
+  const wssSeguro = new WebSocketServer({ server: servidorSeguro });
+  wssSeguro.on('error', error => {
+    if (error.code !== 'EADDRINUSE') console.error('  [wss https]', error.message);
+  });
+  wssSeguro.on('connection', alConectar);
+
+  try {
+    PORT_HTTPS = await escuchar(servidorSeguro, PORT + 1000, PUERTOS_ALTERNOS);
+  } catch (error) {
+    console.error('  [https] no se pudo abrir el puerto:', error.message);
+  }
 }
 
 function abrirNavegador(url) {
@@ -929,11 +1400,12 @@ function abrirNavegador(url) {
 }
 
 cargarLayout()
-  .then(() => escuchar(PORT, PUERTOS_ALTERNOS))
+  .then(() => escuchar(server, PORT, PUERTOS_ALTERNOS))
   .then(async puerto => {
     PORT = puerto;
     server.on('error', error => console.error('\n  Error:', error.message, '\n'));
     console.log(`\nMIDIVJ — servidor local y relay en puerto ${PORT}`);
+    await iniciarHttps().catch(() => undefined);
     await printIPs().catch(() => undefined);
     abrirNavegador(`http://localhost:${PORT}/`);
     console.log('  Esperando conexiones… (Ctrl+C para detener)\n');

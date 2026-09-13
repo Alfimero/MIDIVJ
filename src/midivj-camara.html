@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0c10">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>MIDIVJ · Cámara</title>
+<style>
+:root{
+  --bg:#0a0c10; --bg2:#12151c; --bg3:#181c25;
+  --border:#232936; --border2:#2f3644;
+  --text:#e8ecf2; --text2:#98a2b3; --text3:#5c6675;
+  --accent:#00ff88; --accent2:#00c2ff; --warn:#ffcc00; --danger:#ff3366;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none;}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+  display:flex;flex-direction:column;
+  padding-top:var(--safe-t);padding-bottom:var(--safe-b);
+  user-select:none;-webkit-user-select:none;touch-action:manipulation;
+}
+
+/* ── Barra superior ── */
+#top{
+  display:flex;align-items:center;gap:6px;flex-shrink:0;
+  padding:6px 8px;background:var(--bg2);border-bottom:1px solid var(--border);
+  font-family:var(--mono);font-size:10px;
+}
+#dot{width:8px;height:8px;border-radius:50%;background:var(--danger);flex-shrink:0;transition:background .2s;}
+#dot.on{background:var(--accent);box-shadow:0 0 8px var(--accent);}
+#dot.wait{background:var(--warn);animation:parpadeo .6s infinite;}
+#estado{color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;}
+#slot-lbl{color:var(--accent);font-weight:700;}
+
+/* ── Cuerpo ── */
+#cuerpo{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:20px;min-height:0;}
+#previa-wrap{
+  position:relative;width:100%;max-width:520px;aspect-ratio:16/9;border-radius:12px;overflow:hidden;
+  background:var(--bg2);border:1px solid var(--border2);
+}
+#previa{width:100%;height:100%;object-fit:cover;display:block;background:#000;}
+#previa-vacia{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:40px;color:var(--text3);
+}
+#previa-wrap.transmitiendo #previa-vacia{display:none;}
+
+#banner{
+  font-family:var(--mono);font-size:13px;text-align:center;line-height:1.6;color:var(--text2);
+  max-width:34ch;
+}
+#banner.transmitiendo{color:var(--accent);}
+#banner.error{color:var(--danger);}
+
+#btn-detener{
+  background:var(--danger);color:#fff;border:0;border-radius:10px;
+  padding:14px 28px;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;
+  display:none;
+}
+#btn-detener.vis{display:block;}
+
+@keyframes parpadeo{0%,49%{opacity:1;}50%,100%{opacity:.25;}}
+
+/* ── Aviso / toast ── */
+#toast{
+  position:fixed;left:50%;bottom:calc(18px + var(--safe-b));transform:translateX(-50%);
+  background:rgba(0,0,0,.88);color:var(--accent);border:1px solid var(--accent);
+  border-radius:8px;padding:9px 16px;font-family:var(--mono);font-size:11px;
+  z-index:80;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center;
+}
+#toast.vis{opacity:1;}
+
+/* ── Pantalla de bloqueo (slot ocupado) ── */
+#bloqueo{
+  position:fixed;inset:0;z-index:100;background:var(--bg);display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;
+}
+#bloqueo.vis{display:flex;}
+#bloqueo h2{font-family:var(--mono);color:var(--danger);font-size:15px;margin:0;}
+#bloqueo p{font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.6;margin:0;max-width:34ch;}
+#bloqueo .slots{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+#bloqueo .slots button{
+  background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+  border-radius:8px;padding:12px 18px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;
+}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <span id="dot"></span>
+  <span id="estado">conectando…</span>
+  <span id="slot-lbl"></span>
+</div>
+
+<div id="cuerpo">
+  <div id="previa-wrap">
+    <video id="previa" muted autoplay playsinline></video>
+    <div id="previa-vacia">📷</div>
+  </div>
+  <div id="banner">Conectando con MIDIVJ…</div>
+  <button id="btn-detener">DETENER</button>
+</div>
+
+<div id="toast"></div>
+
+<div id="bloqueo">
+  <h2>CÁMARA OCUPADA</h2>
+  <p id="bloqueo-txt">Otro teléfono ya usa este número de cámara. Elige uno libre:</p>
+  <div class="slots" id="bloqueo-slots"></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   MIDIVJ · CÁMARA MÓVIL
+
+   El teléfono se conecta al relay por WebSocket (mismo relay y protocolo de
+   salas/slots que el mando) pero, en vez de mandar MIDI, comparte su cámara
+   por WebRTC directo con la pestaña de MIDIVJ. El relay sólo negocia la
+   conexión (SDP/ICE, mensajes 'rtc-*' y 'camara-*'): el video nunca pasa
+   por el servidor.
+
+   La cámara se queda APAGADA hasta que MIDIVJ pide expresamente este slot
+   ('camara-iniciar'). No hay activación automática al abrir la página.
+═══════════════════════════════════════════════════════ */
+
+const PARAMS = new URLSearchParams(location.search);
+const SALA   = (PARAMS.get('sala') || 'midivj').slice(0, 40);
+const URL_WS = PARAMS.get('ws') || ((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+
+/* Identidad estable del teléfono: permite recuperar su slot al recargar.
+   Clave distinta a la del mando por si el mismo teléfono abre las dos páginas. */
+const DISP = (() => {
+  let v = null;
+  try { v = localStorage.getItem('midivj-camara-disp'); } catch (_) {}
+  if (!v) {
+    v = 'c' + Math.random().toString(36).slice(2, 10);
+    try { localStorage.setItem('midivj-camara-disp', v); } catch (_) {}
+  }
+  return v;
+})();
+
+let slotPedido = parseInt(PARAMS.get('slot'), 10);
+if (!(slotPedido >= 1 && slotPedido <= 4)) {
+  try { slotPedido = parseInt(localStorage.getItem('midivj-camara-slot'), 10) || 0; } catch (_) { slotPedido = 0; }
+}
+
+const C = {
+  ws: null,
+  slot: null,
+  maxCamaras: 4,
+  bloqueado: false,
+  reintento: 0,
+  timerReintento: 0,
+  pc: null,
+  stream: null,
+  candidatosPendientes: [],
+  estado: 'esperando',    // esperando | pidiendo | transmitiendo | error
+  abandonado: false,      // llegó camara-colgar mientras getUserMedia seguía pendiente
+  appConectada: false
+};
+
+const $ = id => document.getElementById(id);
+
+/* Diagnóstico: F12 en el navegador del teléfono (Chrome Android admite
+   remote debugging por USB desde chrome://inspect en la PC; Safari/iOS,
+   desde el inspector web de Safari en un Mac). */
+function _log(msg, extra) {
+  const linea = '[cámara-tel] ' + msg;
+  if (extra !== undefined) console.log(linea, extra); else console.log(linea);
+}
+
+/* ── Conexión ─────────────────────────────────────────── */
+
+function conectar() {
+  clearTimeout(C.timerReintento);
+  try { C.ws = new WebSocket(URL_WS); }
+  catch (_) { programarReintento(); return; }
+
+  $('dot').className = 'wait';
+  $('estado').textContent = 'conectando…';
+
+  C.ws.onopen = () => {
+    C.reintento = 0;
+    C.ws.send(JSON.stringify({
+      type: 'join', room: SALA, rol: 'camara',
+      slot: slotPedido || undefined, disp: DISP,
+      nombre: 'Cámara ' + (slotPedido || '')
+    }));
+  };
+
+  C.ws.onmessage = ev => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    recibir(msg);
+  };
+
+  C.ws.onclose = () => {
+    $('dot').className = '';
+    /* El video viaja aparte, P2P: un corte de este WebSocket (Wi-Fi con
+       ahorro de batería, roaming entre puntos de acceso) no significa que
+       la llamada se haya caído. Si la conexión sigue viva no se toca nada
+       — sólo se reintenta la señalización en silencio; si de verdad se
+       cae, pc.onconnectionstatechange ya se encarga de avisar y limpiar. */
+    const pcVivo = C.pc && (C.pc.connectionState === 'connected' || C.pc.connectionState === 'connecting');
+    _log('se cayó el WebSocket de señalización — pc.connectionState=' + (C.pc ? C.pc.connectionState : '(sin pc)') + (pcVivo ? ' → se deja la cámara encendida, sólo se reconecta la señal' : ' → se apaga la cámara'));
+    if (!pcVivo) detenerCamara({ avisar: false, motivo: 'se cayó la señalización y no había video en curso' });
+    if (C.bloqueado) { $('estado').textContent = 'elige una cámara libre'; return; }
+    $('estado').textContent = pcVivo ? 'transmitiendo · reconectando señal…' : 'sin conexión — reintentando';
+    programarReintento();
+  };
+  C.ws.onerror = e => { $('dot').className = ''; _log('error de WebSocket', e); };
+}
+
+function programarReintento() {
+  const espera = Math.min(6000, 500 * Math.pow(1.7, Math.min(C.reintento, 5)));
+  C.reintento++;
+  clearTimeout(C.timerReintento);
+  C.timerReintento = setTimeout(conectar, espera);
+}
+
+function recibir(msg) {
+  switch (msg.type) {
+    case 'joined':
+      C.slot = msg.slot;
+      C.bloqueado = false;
+      C.maxCamaras = msg.maxCamaras || 4;
+      try { localStorage.setItem('midivj-camara-slot', String(msg.slot || '')); } catch (_) {}
+      $('dot').className = 'on';
+      $('slot-lbl').textContent = msg.slot ? 'C' + msg.slot : '';
+      $('bloqueo').classList.remove('vis');
+      pintarEstado();
+      break;
+
+    case 'slot-ocupado':
+      if (msg.rol && msg.rol !== 'camara') break;   // no es de este pool de slots
+      C.maxCamaras = msg.maxCamaras || 4;
+      C.bloqueado = true;
+      clearTimeout(C.timerReintento);
+      mostrarBloqueo(msg.slot, msg.ocupados || []);
+      break;
+
+    case 'presencia':
+      C.appConectada = !!msg.app;
+      pintarEstado();
+      break;
+
+    case 'camara-iniciar':
+      iniciarTransmision();
+      break;
+
+    case 'rtc-respuesta':
+      recibirRespuesta(msg.sdp);
+      break;
+
+    case 'rtc-candidato':
+      recibirCandidato(msg.candidato);
+      break;
+
+    case 'camara-colgar':
+      _log('MIDIVJ mandó colgar — motivo de MIDIVJ: "' + (msg.motivo || 'sin especificar') + '"');
+      detenerCamara({ avisar: false, motivo: null });   // ya nos avisaron, no hay que reenviar nada
+      toast('MIDIVJ terminó la transmisión' + (msg.motivo ? ' (' + msg.motivo + ')' : ''));
+      break;
+
+    case 'toast':
+      toast(msg.texto);
+      break;
+  }
+}
+
+function mostrarBloqueo(slot, ocupados) {
+  $('bloqueo').classList.add('vis');
+  const libres = [];
+  for (let s = 1; s <= C.maxCamaras; s++) if (!ocupados.includes(s)) libres.push(s);
+  $('bloqueo-txt').textContent = libres.length
+    ? `La cámara ${slot || '?'} ya está en uso por otro teléfono. Elige una libre:`
+    : `No quedan cámaras libres (máximo ${C.maxCamaras}). Espera a que alguien se desconecte y vuelve a intentar.`;
+  const cont = $('bloqueo-slots');
+  cont.innerHTML = '';
+  for (let s = 1; s <= C.maxCamaras; s++) {
+    const ocupado = ocupados.includes(s);
+    const b = document.createElement('button');
+    b.textContent = 'CÁMARA ' + s + (ocupado ? ' · ocupada' : '');
+    b.disabled = ocupado;
+    b.style.opacity = ocupado ? '.4' : '';
+    b.onclick = () => {
+      slotPedido = s;
+      try { localStorage.setItem('midivj-camara-slot', String(s)); } catch (_) {}
+      C.bloqueado = false;
+      $('bloqueo').classList.remove('vis');
+      conectar();
+    };
+    cont.appendChild(b);
+  }
+  if (!libres.length) {
+    const b = document.createElement('button');
+    b.textContent = '↻ REINTENTAR';
+    b.onclick = () => { C.bloqueado = false; $('bloqueo').classList.remove('vis'); conectar(); };
+    cont.appendChild(b);
+  }
+}
+
+/* ── Estado / UI ──────────────────────────────────────── */
+
+function pintarEstado() {
+  const banner = $('banner');
+  const app = C.appConectada ? '' : ' · MIDIVJ no está conectada';
+  banner.className = C.estado === 'transmitiendo' ? 'transmitiendo' : C.estado === 'error' ? 'error' : '';
+  $('previa-wrap').classList.toggle('transmitiendo', C.estado === 'transmitiendo');
+  $('btn-detener').classList.toggle('vis', C.estado === 'transmitiendo' || C.estado === 'pidiendo');
+
+  if (C.estado === 'pidiendo') {
+    banner.textContent = 'Conectando la cámara…';
+    $('estado').textContent = 'sala ' + SALA + app;
+  } else if (C.estado === 'transmitiendo') {
+    banner.textContent = 'Transmitiendo a MIDIVJ';
+    $('estado').textContent = 'sala ' + SALA + ' · cámara ' + (C.slot || '') + app;
+  } else if (C.estado === 'error') {
+    $('estado').textContent = 'sala ' + SALA + app;
+  } else {
+    banner.textContent = 'Conectado. Esperando que MIDIVJ pida esta cámara.';
+    $('estado').textContent = 'sala ' + SALA + app;
+  }
+}
+
+/* ── WebRTC ───────────────────────────────────────────── */
+
+async function iniciarTransmision() {
+  if (C.estado === 'pidiendo' || C.estado === 'transmitiendo') return;   // ya en curso
+  C.abandonado = false;
+  C.estado = 'pidiendo';
+  pintarEstado();
+  _log('MIDIVJ pidió esta cámara — pidiendo permiso de video');
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+  } catch (e) {
+    C.estado = 'error';
+    pintarEstado();
+    _log('⚠ getUserMedia falló: ' + e.name + ' — ' + e.message);
+    enviar({ type: 'camara-error', motivo: e.name === 'NotAllowedError' ? 'permiso denegado' : e.message });
+    toast('No se pudo abrir la cámara: ' + e.message);
+    return;
+  }
+
+  if (C.abandonado) {
+    /* MIDIVJ ya se rindió (timeout) mientras esperábamos el permiso: no
+       tiene sentido seguir armando la conexión con nadie del otro lado. */
+    _log('MIDIVJ ya había cancelado el pedido mientras esperábamos el permiso — se suelta la cámara sin avisar');
+    stream.getTracks().forEach(t => t.stop());
+    C.estado = 'esperando';
+    pintarEstado();
+    return;
+  }
+
+  C.stream = stream;
+  $('previa').srcObject = stream;
+
+  const trackLocal = stream.getVideoTracks()[0];
+  _log('cámara local abierta', trackLocal && { label: trackLocal.label, readyState: trackLocal.readyState });
+  if (trackLocal) {
+    trackLocal.onended = () => {
+      /* El hardware/SO cortó la cámara por su cuenta: pantalla bloqueada,
+         otra app la tomó, batería crítica, etc. — no es un problema de red
+         ni de MIDIVJ. */
+      _log('⚠ el track LOCAL de la cámara terminó por sí solo (track.onended) — el sistema/navegador cortó la cámara (pantalla bloqueada, otra app la tomó, etc.)');
+      detenerCamara({ avisar: true, motivo: 'la cámara del teléfono se cortó sola (bloqueo de pantalla, otra app, etc.)' });
+    };
+    trackLocal.onmute   = () => _log('cámara local silenciada (sin frames por un instante)');
+    trackLocal.onunmute = () => _log('cámara local activa de nuevo');
+  }
+
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  C.pc = pc;
+  C.candidatosPendientes = [];
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+  pc.onicecandidate = ev => {
+    if (ev.candidate) enviar({ type: 'rtc-candidato', candidato: ev.candidate });
+  };
+
+  pc.oniceconnectionstatechange = () => _log('ICE → ' + pc.iceConnectionState);
+
+  let timerDesconexion = 0;
+  pc.onconnectionstatechange = () => {
+    _log('conexión → ' + pc.connectionState);
+    if (pc.connectionState === 'connected') {
+      clearTimeout(timerDesconexion);
+      C.estado = 'transmitiendo';
+      pintarEstado();
+    } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      detenerCamara({ avisar: true, motivo: 'RTCPeerConnection en estado "' + pc.connectionState + '"' });
+    } else if (pc.connectionState === 'disconnected') {
+      clearTimeout(timerDesconexion);
+      timerDesconexion = setTimeout(() => {
+        if (pc.connectionState === 'disconnected') {
+          _log('siguió "disconnected" 8 s sin recuperarse — se da por caída');
+          detenerCamara({ avisar: true, motivo: 'RTCPeerConnection "disconnected" por más de 8s sin recuperarse' });
+        }
+      }, 8000);
+    }
+  };
+
+  try {
+    const oferta = await pc.createOffer();
+    await pc.setLocalDescription(oferta);
+    enviar({ type: 'rtc-oferta', sdp: oferta.sdp });
+    _log('oferta enviada, esperando respuesta de MIDIVJ');
+  } catch (e) {
+    _log('⚠ error creando la oferta: ' + e.name + ' — ' + e.message);
+    toast('Error negociando la conexión: ' + e.message);
+    detenerCamara({ avisar: true, motivo: 'error creando la oferta: ' + e.message });
+  }
+}
+
+async function recibirRespuesta(sdp) {
+  if (!C.pc || !sdp) return;
+  try {
+    await C.pc.setRemoteDescription({ type: 'answer', sdp });
+    for (const candidato of C.candidatosPendientes) await C.pc.addIceCandidate(candidato).catch(() => {});
+    C.candidatosPendientes = [];
+  } catch (_) {}
+}
+
+async function recibirCandidato(candidato) {
+  if (!candidato) return;
+  if (C.pc && C.pc.remoteDescription) await C.pc.addIceCandidate(candidato).catch(() => {});
+  else C.candidatosPendientes.push(candidato);
+}
+
+/* Único punto de apagado local. `motivo` queda en la consola y, si
+   corresponde avisar, viaja a MIDIVJ para que su propio log diga por qué
+   colgó este teléfono en vez de un genérico "se cortó". */
+function detenerCamara({ avisar, motivo }) {
+  _log('apagando cámara — motivo: ' + (motivo || 'sin especificar') + (avisar ? ' — avisando a MIDIVJ' : ' — sin avisar a MIDIVJ'));
+  if (C.estado === 'pidiendo' && !C.stream) C.abandonado = true;   // getUserMedia sigue pendiente
+  if (C.stream) { C.stream.getTracks().forEach(t => t.stop()); C.stream = null; }
+  $('previa').srcObject = null;
+  if (C.pc) { C.pc.onconnectionstatechange = null; C.pc.oniceconnectionstatechange = null; C.pc.close(); C.pc = null; }
+  C.candidatosPendientes = [];
+  const habiaSesion = C.estado !== 'esperando';
+  C.estado = 'esperando';
+  pintarEstado();
+  if (avisar && habiaSesion) enviar({ type: 'camara-colgar', motivo });
+}
+
+function enviar(payload) {
+  if (C.ws && C.ws.readyState === 1) C.ws.send(JSON.stringify(payload));
+}
+
+$('btn-detener').onclick = () => detenerCamara({ avisar: true, motivo: 'botón DETENER en el teléfono' });
+
+/* ── Utilidades ───────────────────────────────────────── */
+
+let toastTimer = 0;
+function toast(texto) {
+  const el = $('toast');
+  el.textContent = texto;
+  el.classList.add('vis');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('vis'), 2400);
+}
+
+/* Mantener la pantalla encendida mientras transmite */
+async function mantenerPantalla() {
+  try {
+    if ('wakeLock' in navigator) {
+      const lock = await navigator.wakeLock.request('screen');
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') mantenerPantalla();
+      }, { once: true });
+      return lock;
+    }
+  } catch (_) {}
+}
+
+/* Evita el zoom por doble toque en iOS */
+document.addEventListener('dblclick', ev => ev.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', ev => ev.preventDefault());
+
+/* Mejor esfuerzo: en móvil no está garantizado que esto llegue a correr.
+   El respaldo real es que el relay detecta el cierre del socket y avisa
+   a MIDIVJ por su cuenta (ver leaveRoom() en midivj-relay.js). */
+addEventListener('pagehide', () => detenerCamara({ avisar: true, motivo: 'la pestaña se cerró o pasó a segundo plano (pagehide)' }));
+addEventListener('beforeunload', () => detenerCamara({ avisar: true, motivo: 'la página se está cerrando (beforeunload)' }));
+
+/* Sólo diagnóstico: no apaga nada, pero deja rastro de si el teléfono se
+   bloqueó o cambió de app justo antes de que la cámara se cortara — en
+   iOS Safari en particular, eso corta la cámara por su cuenta (se vería
+   como el aviso de trackLocal.onended, arriba). */
+document.addEventListener('visibilitychange', () => {
+  _log('visibilitychange → ' + document.visibilityState + ' (estado actual: ' + C.estado + ')');
+});
+
+conectar();
+mantenerPantalla();
+pintarEstado();
+</script>
+</body>
+</html>
