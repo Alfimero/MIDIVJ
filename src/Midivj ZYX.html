@@ -1769,12 +1769,29 @@ function resolveMediaLibraryEntry(ref) {
   }
   return matches[0];
 }
+/* Clave de la fuente que suena (t._srcKey). Las claves de MEDIOS son por
+   nombre: si la fuente principal es OTRO archivo con el mismo nombre que una
+   entrada de MEDIOS, no deben compartir clave (si no, los clips de esa
+   entrada sonarían con la fuente principal y onMeta les recortaría el out).
+   Se recalcula cada vez que cambian la fuente o MEDIOS. Es sólo de
+   ejecución: mediaRef, lo que se guarda en la sesión, no cambia. */
+function sameFileObj(a, b) { return !!a && !!b && a.size === b.size && a.lastModified === b.lastModified; }
+function syncSrcKey(t) {
+  if (t.sourceType !== 'file' || !t.mediaRef || !t._srcFile) return;
+  const base = mediaRefKey(t.mediaRef);
+  if (t._srcKey !== base && !t._srcKey.startsWith(base + '#')) return;   // la clave es de otra carga en curso
+  const e = t.playlist.find(x => mediaRefKey(x.mediaRef) === base);
+  t._srcKey = (e && e.file && !sameFileObj(e.file, t._srcFile))
+    ? base + '#' + t._srcFile.size + '-' + t._srcFile.lastModified
+    : base;
+}
 function loadTrackFileObject(track, file, relativePath='') {
   revokeTrackObjectURL(track);
   const url = URL.createObjectURL(file);
   track._objectURL = url;
   startLoad(track, file.name, url, buildFileMediaRef(file, relativePath));
   track._srcFile = file;   // para no ofrecer ⇄ con el mismo archivo que ya suena
+  syncSrcKey(track);
 }
 async function restoreProjectMedia(projectData) {
   const pTracks = projectData?.tracks || [];
@@ -1858,6 +1875,7 @@ async function restoreProjectMedia(projectData) {
       }
     }
     if (track.playlist.length) warmPlaylist(track);
+    syncSrcKey(track);   // con las entradas ya resueltas
   }
 
   if (!totalRefs) {
@@ -1907,13 +1925,6 @@ function replaceTrackSource(t, file, relativePath='') {
   if (t.sourceType === 'browser') closeBrowserWindow(t.i, true);
   if (t.activeClip) deactivateClip(t);
   loadTrackFileObject(t, file, relativePath);
-  /* Un archivo con el mismo nombre que una entrada de MEDIOS de OTRO archivo
-     no debe pasar por esa entrada: si compartieran clave, sus clips sonarían
-     con este archivo y onMeta les recortaría el out. La marca es sólo de
-     ejecución (mediaRef, lo que se guarda, no cambia). */
-  const e = t.playlist.find(x => mediaRefKey(x.mediaRef) === t._srcKey);
-  if (e && e.file && !(e.file.size === file.size && e.file.lastModified === file.lastModified))
-    t._srcKey += '#' + file.size + '-' + file.lastModified;
 }
 /* ⇄ de la lista MEDIOS / aviso tras agregar: usar esa entrada como fuente */
 function useMediaEntryAsSource(trackIdx, id) {
@@ -1965,6 +1976,7 @@ function addTrackMedia(t, files) {
       objectURL: null,
     });
   });
+  syncSrcKey(t);   // una entrada nueva con el nombre de la fuente puede ser otro archivo
 }
 function loadFromURL() {
   const u = document.getElementById('vid-url').value.trim();
@@ -3463,6 +3475,7 @@ function removePlaylistEntry(trackIdx, id) {
   const [entry] = t.playlist.splice(idx, 1);
   if (entry.objectURL && entry.objectURL !== t._url) URL.revokeObjectURL(entry.objectURL);   // la que suena sigue en uso
   unlinkPlaylistClips(t, [id]);
+  syncSrcKey(t);
   renderClips(); renderTL(); renderTrackInfo();
 }
 
@@ -3474,6 +3487,7 @@ function clearPlaylist(trackIdx) {
   t.playlist.forEach(e => { if (e.objectURL && e.objectURL !== t._url) URL.revokeObjectURL(e.objectURL); });
   t.playlist = [];
   unlinkPlaylistClips(t, entryIds);
+  syncSrcKey(t);
   renderClips(); renderTL(); renderTrackInfo();
 }
 
@@ -4799,7 +4813,14 @@ function tlArrangeSequence() {
      cambia nada (p. ej. un segundo clic) no se pisa el ↶ anterior. */
   const moved = new Map();
   let cur = items[0].videoOffset || 0;
-  items.forEach(t => { const old = t.videoOffset || 0, nu = clampOffset(cur); cur += trackExtent(t); if (Math.abs(nu - old) > 1e-6) moved.set(t, [old, nu]); });   // tolerancia: el imán puede dejar diferencias de 1e-14
+  items.forEach(t => {
+    const old = t.videoOffset || 0, nu = clampOffset(cur);
+    /* tolerancia: el imán puede dejar diferencias de 1e-14; si la pista ya está
+       en su sitio, la cadena sigue desde su posición real (el mismo borde que
+       usa el imán), así no se acumula el ruido */
+    if (Math.abs(nu - old) > 1e-6) moved.set(t, [old, nu]); else cur = old;
+    cur += trackExtent(t);
+  });
   if (!moved.size) { setSt('st-active', 'SECUENCIA: ya están en secuencia', 'act'); return; }
   moved.forEach(([, nu], t) => { t.videoOffset = nu; });
   TL.lastArrange = moved;   // por pista, no por posición (◂ ▸ las reordena)
@@ -4809,7 +4830,7 @@ function tlArrangeSequence() {
 function tlUndoArrange() {
   if (!TL.lastArrange) return;
   /* Vuelve cada pista a su lugar anterior, salvo que se haya movido a mano después */
-  TL.lastArrange.forEach(([old, nu], t) => { if ((t.videoOffset || 0) === nu) t.videoOffset = old; });
+  TL.lastArrange.forEach(([old, nu], t) => { if (Math.abs((t.videoOffset || 0) - nu) < 1e-6) t.videoOffset = old; });
   TL.lastArrange = null;
   const u = document.getElementById('seq-undo'); if (u) u.style.display = 'none';
   renderTrackInfo(); renderTL();
