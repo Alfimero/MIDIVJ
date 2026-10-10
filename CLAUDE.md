@@ -22,7 +22,7 @@ active
 - —
 
 ### Pendientes
-- —
+- Verificar sincronía entre la copia local (PC del usuario) y GitHub. Al 2026-10-10, `origin/main` está en `360a00d` (merge del PR #2, último commit de contenido `c64f357`, 2026-09-13). Falta que el usuario ejecute `git fetch` + `git status` en su PC; desde la sesión en la nube no hay acceso a su equipo.
 
 ### Repositorio
 - GitHub: https://github.com/Alfimero/MIDIVJ
