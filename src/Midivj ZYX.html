@@ -66,6 +66,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--ui);font-size:14px
 .pnl-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:6px;}
 .pnl-body::-webkit-scrollbar{width:3px;}
 .pnl-body::-webkit-scrollbar-thumb{background:var(--border2);}
+/* Contenedor único con scroll vertical para info de pista + clips: al hacer
+   zoom en el navegador, el panel de parámetros ya no empuja los clips fuera
+   de la vista — todo el lateral se desplaza con una barra visible. */
+.pnl-scroll{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:scroll;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:var(--border2) var(--surface);}
+.pnl-scroll::-webkit-scrollbar{width:8px;}
+.pnl-scroll::-webkit-scrollbar-track{background:var(--surface);}
+.pnl-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
+.pnl-scroll::-webkit-scrollbar-thumb:hover{background:var(--text3);}
+.pnl-scroll > .pnl-body{overflow:visible;}
 
 /* ── TRACK TABS ── */
 #track-tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;}
@@ -74,6 +83,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--ui);font-size:14px
 
 /* ── TRACK INFO ── */
 #track-info{padding:6px 9px 5px;border-bottom:1px solid var(--border);flex-shrink:0;}
+/* Secciones colapsables del panel de pista (TRANSFORM, PROCESADOR, PLAYLIST, CÁMARA) */
+.ti-sec{margin-top:6px;padding-top:6px;border-top:1px solid var(--border2);}
+.ti-sec-hdr{user-select:none;}
+.ti-sec-arrow{font-family:var(--mono);font-size:9px;color:var(--text3);width:10px;flex-shrink:0;cursor:pointer;}
+.ti-sec-nm{flex:1 1 auto;font-weight:700;color:var(--text2);cursor:pointer;}
+.ti-sec-hdr:hover .ti-sec-arrow,.ti-sec-hdr:hover .ti-sec-nm{color:var(--bright);}
+.ti-sec-body{display:none;}
+.ti-sec.open .ti-sec-body{display:block;}
 .ti-row{display:flex;align-items:center;gap:5px;margin-bottom:4px;}
 .ti-name{font-family:var(--mono);font-size:9px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .ti-dur{font-family:var(--mono);font-size:8px;color:var(--text3);}
@@ -137,6 +154,13 @@ input[type=range].opasl{flex:1;height:3px;accent-color:var(--accent);cursor:poin
 input[type=range].epsl{flex:1;height:3px;accent-color:var(--hot);cursor:pointer;min-width:0;}
 input[type=color].epcol{width:28px;height:18px;border:1px solid var(--border2);background:none;cursor:pointer;padding:0;}
 .ep-note{font-family:var(--mono);font-size:8px;color:var(--text3);font-style:italic;}
+.ep-lbl.wide{width:68px;}
+.ep-link{background:none;border:1px solid var(--border2);color:var(--text3);font-size:9px;line-height:1;padding:1px 4px;cursor:pointer;flex-shrink:0;}
+.ep-link:hover{border-color:var(--accent);color:var(--accent);}
+.ep-link.on{border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.12);}
+.ep-row.linked .ep-lbl{color:var(--accent);}
+select.epsel{flex:1;min-width:0;background:var(--panel);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:8px;padding:2px 3px;outline:none;}
+select.epsel:focus{border-color:var(--accent);}
 
 /* ── BANKS ── */
 #bank-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:5px 6px;display:flex;flex-direction:column;gap:4px;flex-shrink:0;}
@@ -525,9 +549,11 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <!-- LEFT: Tracks + Clips -->
   <div class="pnl">
     <div id="track-tabs"></div>
-    <div id="track-info"></div>
-    <div class="pnl-body" id="clips-list">
-      <div id="clips-empty" style="padding:22px 6px;font-family:var(--mono);font-size:9px;color:var(--text3);text-align:center;line-height:2.2;">Sin clips.<br>Carga un video y<br>presiona + NUEVO CLIP.</div>
+    <div class="pnl-scroll" id="left-scroll">
+      <div id="track-info"></div>
+      <div class="pnl-body" id="clips-list">
+        <div id="clips-empty" style="padding:22px 6px;font-family:var(--mono);font-size:9px;color:var(--text3);text-align:center;line-height:2.2;">Sin clips.<br>Carga un video y<br>presiona + NUEVO CLIP.</div>
+      </div>
     </div>
     <div id="clips-foot">
       <button class="hbtn" style="flex:1;font-size:10px;padding:5px;" onclick="addClip()">+ CLIP</button>
@@ -625,9 +651,11 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 </div>
 
 <!-- HIDDEN -->
-<input type="file" id="finput"  accept="video/*" style="display:none" onchange="loadT1(event)">
-<input type="file" id="tfinput" accept="video/*" style="display:none" onchange="loadActiveTrack(event)">
-<input type="file" id="tplinput" accept="video/*" multiple style="display:none" onchange="onPlaylistFilesChosen(event)">
+<input type="file" id="finput"  accept="video/*,image/*" style="display:none" onchange="loadT1(event)">
+<input type="file" id="tfinput" accept="video/*" multiple style="display:none" onchange="onTrackMediaChosen(event,'video')">
+<input type="file" id="tgalinput" accept="image/*" multiple style="display:none" onchange="onTrackMediaChosen(event,'image')">
+<input type="file" id="tlayimg" accept="image/*" style="display:none" onchange="onLayerFileChosen(event,'image')">
+<input type="file" id="tlayvid" accept="video/*" style="display:none" onchange="onLayerFileChosen(event,'video')">
 <input type="file" id="mdirinput" webkitdirectory multiple style="display:none" onchange="openProjectFolder(event)">
 <input type="file" id="pfileinput" accept=".vjp,.json" style="display:none" onchange="openProjectFile(event)">
 
@@ -657,7 +685,7 @@ const EFX_DEFS = [
      Empieza encendida (con valores identidad = sin distorsión) para que
      mover un slider tenga efecto inmediato, sin tener que activarla antes. */
   {id:'e16',name:'TRANSFORM',type:'xform',   midi:null,on:true, mode:'toggle',
-    x:0, y:0, scaleX:1, scaleY:1, rotation:0,
+    x:0, y:0, scaleX:1, scaleY:1, rotation:0, depth:0, pinLink:[],
     pin: { tl:[0,0], tr:[0,0], bl:[0,0], br:[0,0] } },
   {id:'e1', name:'FLASH',    type:'flash',   midi:null,on:false,mode:'hold',   intensity:.9},
   {id:'e2', name:'GLITCH',   type:'glitch',  midi:null,on:false,mode:'hold',   amount:.6},
@@ -712,6 +740,28 @@ const ft = t => isNaN(t)||t<0 ? '0:00.0' : Math.floor(t/60)+':'+(t%60).toFixed(1
 /* ── TIMELINE STATE ── */
 const TL = { zoom:1, viewStart:0 };
 const N_TRACKS = 8;
+
+/* Parámetros del PROCESADOR DE VIDEO por pista (el motor está más abajo,
+   junto a CONFIG. DE CÁMARA). Definidos acá porque makeTrack() los necesita. */
+const VPROC_PARAMS = [
+  {key:'gain',       lbl:'Ganancia',     min:0,    max:4,   step:.02, fmt:'scale2', def:1, tip:'Multiplica la señal (como la ganancia de una cámara)'},
+  {key:'brightness', lbl:'Brillo',       min:-1,   max:1,   step:.01, fmt:'signed', def:0, tip:'Suma/resta luz pareja a toda la imagen'},
+  {key:'contrast',   lbl:'Contraste',    min:0,    max:3,   step:.01, fmt:'scale2', def:1, tip:'Separación entre luces y sombras'},
+  {key:'gamma',      lbl:'Gamma',        min:.2,   max:3,   step:.01, fmt:'raw2',   def:1, tip:'Curva de medios tonos (>1 aclara medios, <1 los oscurece)'},
+  {key:'wb',         lbl:'Bal. blancos', min:-1,   max:1,   step:.01, fmt:'wb',     def:0, tip:'Balance de blancos: − frío (azul) · + cálido (naranja)'},
+  {key:'backlight',  lbl:'Contraluz',    min:0,    max:1,   step:.01, fmt:'pct',    def:0, tip:'Compensación de luz de fondo: levanta sombras sin quemar luces'},
+  {key:'hue',        lbl:'Matiz',        min:-180, max:180, step:1,   fmt:'deg',    def:0, tip:'Rotación de matiz'},
+  {key:'saturation', lbl:'Saturación',   min:0,    max:3,   step:.01, fmt:'scale2', def:1, tip:'0 = blanco y negro'},
+  {key:'sharpness',  lbl:'Nitidez',      min:0,    max:3,   step:.05, fmt:'pct',    def:0, tip:'Realce de bordes (máscara de enfoque)'},
+];
+function vprocDefault() {
+  const o = { on:false };
+  VPROC_PARAMS.forEach(p => o[p.key] = p.def);
+  return o;
+}
+function vprocIsIdentity(v) {
+  return VPROC_PARAMS.every(p => Math.abs((v[p.key] ?? p.def) - p.def) < 1e-6);
+}
 const TL_TH  = 22;   // px per track row (smaller to fit 8 rows)
 const TL_PAD = 36;   // left label pad
 const TL_RP  = 6;    // right pad
@@ -836,6 +886,7 @@ function canRunBackgroundCapture(track) {
   return !!(
     track.loaded &&
     track.sourceType === 'file' &&
+    track.mediaKind !== 'image' &&
     track._url &&
     !track.activeClip &&
     !S.masterPlaying &&
@@ -844,7 +895,7 @@ function canRunBackgroundCapture(track) {
 }
 
 function scheduleFullVideoCapture(track, delay=1500) {
-  if (!track || track.sourceType !== 'file' || !track._url) return;
+  if (!track || track.sourceType !== 'file' || track.mediaKind === 'image' || !track._url) return;
   if (track._allFramesStatus !== 'none') return;
   if (track.dur > GLOBAL_MAX) {
     track._allFramesStatus = 'toolong';
@@ -864,9 +915,77 @@ function scheduleFullVideoCapture(track, delay=1500) {
   }, delay);
 }
 
+/* Transform identidad — mismo literal para pista, capas, bancos y proyectos */
+function xformDefault(extra = {}) {
+  return { x:0, y:0, scaleX:1, scaleY:1, rotation:0, depth:0, pinLink:[], ...extra,
+    pin:{ tl:[0,0], tr:[0,0], bl:[0,0], br:[0,0], ...(extra.pin||{}) } };
+}
+
+/* ═══════════════════════════════════════════════════════
+   IMAGEN FIJA — canvas que se comporta como <video>
+   Expone currentTime / paused / play() / pause() / duration / readyState /
+   videoWidth / videoHeight / src y emite 'loadedmetadata' y 'timeupdate',
+   que es todo lo que el motor de clips y el render loop consultan de un
+   <video>. Al ser un canvas real, drawImage()/texImage2D() lo aceptan.
+═══════════════════════════════════════════════════════ */
+const STILL_MIN_DUR = 60;   // ventana mínima (s) de una imagen en el timeline
+function mkStill() {
+  const c = document.createElement('canvas');
+  c.width = 1280; c.height = 720;
+  const cx = c.getContext('2d');
+  let _t = 0, _paused = true, _last = 0, _timer = null, _img = null, _src = '';
+  const tick = () => {
+    const now = performance.now();
+    _t += (now - _last) / 1000 * (c.playbackRate || 1);
+    _last = now;
+    c.dispatchEvent(new Event('timeupdate'));
+  };
+  Object.defineProperties(c, {
+    currentTime: { get() { return _t; }, set(v) { _t = Math.max(0, +v || 0); } },
+    paused:      { get() { return _paused; } },
+    ended:       { get() { return false; } },
+    readyState:  { get() { return _img ? 4 : 0; } },
+    videoWidth:  { get() { return _img ? _img.naturalWidth  : 0; } },
+    videoHeight: { get() { return _img ? _img.naturalHeight : 0; } },
+    src: {
+      get() { return _src; },
+      set(v) {
+        _src = v || ''; _img = null; _t = 0;
+        if (!_src) { cx.clearRect(0, 0, c.width, c.height); return; }
+        const im = new Image();
+        im.onload = () => {
+          if (_src !== v) return;          // ya se cargó otra cosa mientras tanto
+          _img = im;
+          c.width = im.naturalWidth || 1280; c.height = im.naturalHeight || 720;
+          cx.drawImage(im, 0, 0);
+          c.dispatchEvent(new Event('loadedmetadata'));
+          c.dispatchEvent(new Event('canplay'));
+        };
+        im.onerror = () => { if (_src === v) c.dispatchEvent(new Event('error')); };
+        im.src = _src;
+      },
+    },
+  });
+  c.duration = STILL_MIN_DUR; c.muted = true; c.loop = false; c.playbackRate = 1; c.preload = 'auto';
+  c.play  = () => { if (_paused) { _paused = false; _last = performance.now(); _timer = setInterval(tick, 40); } return Promise.resolve(); };
+  c.pause = () => { _paused = true; if (_timer) { clearInterval(_timer); _timer = null; } };
+  c.load  = () => {};
+  return c;
+}
+
 /* ═══════════════════════════════════════════════════════
    TRACKS — create 4 independent video players
 ═══════════════════════════════════════════════════════ */
+/* vidA/vidB alternan cuál está "activo" (seamless loop swap, prebuffer de
+   playlist) pero el audio nativo vive en el <video> — sólo uno de los dos
+   puede sonar a la vez. Sin esto, el que quede activo tras un swap puede
+   quedar silenciado (vidB nace muted) o sonando los dos, según cuál haya
+   sido: siempre hay que mover el mute junto con _activeVid. */
+function swapActiveVid(t) {
+  t._activeVid = t._activeVid==='A' ? 'B' : 'A';
+  t.vid.muted = false;
+  t.vidBuf.muted = true;
+}
 function makeTrack(i) {
   function mkVid() {
     const v = document.createElement('video');
@@ -893,27 +1012,44 @@ function makeTrack(i) {
   revVid.muted = true;
   revVid.preload = 'auto';
 
+  /* Imagen fija (GALERÍA): un canvas que se comporta como <video> para que
+     el motor de clips (loop/once/chain/transiciones) no distinga. */
+  const still = mkStill();
+
   const t = {
     i, id:'t'+(i+1), name:'TRACK '+(i+1),
     acc: TRACK_ACC[i],
-    vidA, vidB, liveVid, revVid,
+    vidA, vidB, liveVid, revVid, still,
     _activeVid: 'A',   // 'A' or 'B'
-    get vid()    { return this._activeVid==='A' ? this.vidA : this.vidB; },
+    mediaKind:'video', // 'video' | 'image' — qué hay cargado en la pista (sourceType 'file')
+    get vid()    { if (this.mediaKind==='image') return this.still; return this._activeVid==='A' ? this.vidA : this.vidB; },
     get vidBuf() { return this._activeVid==='A' ? this.vidB : this.vidA; },
     loaded:false, dur:0, loadedName:'—', _url:'',
     clips:[], groups:[], activeClip:null,
     mediaRef:null, _objectURL:null,
-    /* Playlist: ordered list of extra video files that can join to a single
-       video already loaded via the normal 🎬 VIDEO flow, one auto-clip each. */
+    /* Lista de medios de la pista (videos e imágenes): cada entrada genera
+       un clip encadenado con ⚡ GENERAR CLIPS. Los 🎬 VIDEO / 🖼 GALERÍA
+       agregan aquí; el primero se carga en la pista si estaba vacía. */
     playlist:[], playlistLoop:false,
+    galleryDur:5,          // segundos por imagen al generar clips de galería
+    browserURL:'',         // 🌐 NAVEGADOR: última URL abierta
+    _navWin:null,          // ventana emergente del navegador (se captura como pantalla)
     _srcKey:'',                                   // normalized key of the source currently in vidA/vidB
     _plBufKey:null, _plBufUrl:null, _plBufMediaRef:null, // cross-source prebuffer bookkeeping
     _plPrebuffered:false, _pendingClip:null,
     opacity:1, visible:true,
-    xform: { x:0, y:0, scaleX:1, scaleY:1, rotation:0,
-      pin: { tl:[0,0], tr:[0,0], bl:[0,0], br:[0,0] } },  // transform independiente de esta pista (pin = corner-pin/profundidad libre)
+    xform: xformDefault(),  // transform de la capa MEDIA (pin = corner-pin/profundidad libre; pinLink = esquinas vinculadas entre sí al arrastrar)
+    _eraseMask:null,       // canvas offscreen con lo pintado por el BORRADOR (pincel libre) — no se guarda con el proyecto
+    _cropRect:null,        // {x0,y0,x1,y1} recorte de CORTAR (0..1, espacio de la pista) — no se guarda con el proyecto
+    /* Pila de capas (abajo → arriba). 'media' es la fuente principal de
+       siempre (motor de clips); el resto son capas estáticas: color,
+       imagen, video en loop, en vivo. Ver "CAPAS POR PISTA". */
+    layers: [ { id:'media', kind:'media', on:true } ],
+    selLayerId:'media',    // capa que editan TRANSFORM DE PISTA y la caja interactiva (sólo si layersLinked=false)
+    layersLinked:true,     // true = todas las capas comparten t.xform (el color marca dónde va todo); false = transform por capa
+    vproc: vprocDefault(),  // procesador de video (brillo/contraste/matiz/… por pista, ver PROCESADOR DE VIDEO)
     videoOffset:0,         // seconds offset of video start in timeline
-    sourceType:'file',     // 'file' | 'display' | 'capture'
+    sourceType:'file',     // 'file' | 'display' | 'capture' | 'phone' | 'browser'
     _stream:null,          // MediaStream for display/capture sources
     _pendingName:'', _onceEnded:false,
     prebuffering:false,
@@ -949,9 +1085,11 @@ function makeTrack(i) {
     const c = t.activeClip; if (!c) return;
     const ct = src.currentTime;
     const dur = c.transDur ?? 0.5;
+    /* Una imagen fija no tiene reversa: sus clips REV/PING corren como NORMAL */
+    const isStill = t.mediaKind === 'image';
 
     /* ── Pingpong: flip from forward to reverse at clip.out ── */
-    if (c.loopMode === 'pingpong' && t.pingDir === 1) {
+    if (c.loopMode === 'pingpong' && t.pingDir === 1 && !isStill) {
       if (ct >= c.out - 0.08) {
         t.pingDir = -1;
         src.pause();
@@ -961,7 +1099,7 @@ function makeTrack(i) {
       return; // skip normal loop handling while in pingpong
     }
 
-    if (c.loopMode !== 'normal') return; // reverse handled by rVFC
+    if (c.loopMode !== 'normal' && !isStill) return; // reverse handled by rVFC
 
     /* ── Auto TransOut: trigger N seconds before clip.out ── */
     if (!t._transOutStarted && c.transOut !== 'none') {
@@ -973,10 +1111,15 @@ function makeTrack(i) {
     }
 
     /* ── Seamless prebuffer ── */
-    if (!t.prebuffering && ct >= c.out - 0.85 && ct < c.out && c.playMode==='loop') {
+    if (!isStill && !t.prebuffering && ct >= c.out - 0.85 && ct < c.out && c.playMode==='loop') {
       t.prebuffering = true;
       const buf = t.vidBuf;
-      if (buf.src !== t._url) buf.src = t._url;
+      /* buf tiene preload="none": sin un load() explícito, el navegador no
+         arranca a bajar datos con sólo asignar .src, así que nunca llega a
+         readyState>=2 a tiempo — el swap de abajo jamás se cumple y el loop
+         cae siempre al re-seek in-place, que es el que corta/desincroniza
+         el audio en cada vuelta. */
+      if (buf.src !== t._url) { buf.src = t._url; buf.load(); }
       buf.currentTime = c.in;
     }
 
@@ -990,9 +1133,11 @@ function makeTrack(i) {
       const needKey = nr ? clipSourceKey(nr.clip) : null;
       if (needKey && needKey !== t._srcKey) {
         const entry = resolvePlaylistEntryFile(t, nr.clip.srcRef);
-        if (entry) {
+        /* Sólo videos: una imagen carga al instante y no pasa por vidA/vidB */
+        if (entry && !isImageRef(entry.mediaRef)) {
           if (!entry.objectURL) entry.objectURL = URL.createObjectURL(entry.file);
           t.vidBuf.src = entry.objectURL;
+          t.vidBuf.load();   // preload="none": sin esto no arranca a bajar datos solo
           t.vidBuf.currentTime = nr.clip.in || 0;
           t._plBufKey = needKey; t._plBufUrl = entry.objectURL; t._plBufMediaRef = entry.mediaRef;
         }
@@ -1005,7 +1150,7 @@ function makeTrack(i) {
         /* Do the video swap */
         if (t.prebuffering && t.vidBuf.readyState >= 2) {
           src.pause();
-          t._activeVid = t._activeVid==='A' ? 'B' : 'A';
+          swapActiveVid(t);
           t.vid.play();
           t.prebuffering = false;
         } else {
@@ -1043,11 +1188,12 @@ function makeTrack(i) {
     }
   });
 
-  vidA.addEventListener('loadedmetadata', () => {
-    t.loaded = true; t.dur = vidA.duration;
+  const onMeta = (src) => {
+    if (src !== t.vid) return;   // metadata de un elemento que ya no es la fuente activa
+    t.loaded = true; t.dur = src.duration;
     t.loadedName = t._pendingName || 'video';
     if (i === 0) {
-      if (!S.outRes.locked) { cvs.width = vidA.videoWidth || 1280; cvs.height = vidA.videoHeight || 720; }
+      if (!S.outRes.locked) { cvs.width = src.videoWidth || 1280; cvs.height = src.videoHeight || 720; }
       syncOutCanvasBuffers();
       document.getElementById('load-ov').classList.add('hide');
     }
@@ -1057,11 +1203,13 @@ function makeTrack(i) {
          its out-point rewritten by an unrelated video's duration. */
       const csk = clipSourceKey(c);
       if (csk && csk !== t._srcKey) return;
-      if (!c.out||c.out>vidA.duration) c.out=vidA.duration;
+      if (c.srcLive) return;   // clips de fuente en vivo no dependen de la duración
+      if (!c.out||c.out>src.duration) c.out=src.duration;
     });
     if (t.activeClip) t.vid.play().catch(()=>{});
     else syncTracksToMaster();
     renderAll();
+    if (t.mediaKind === 'image') return;  // una imagen fija no necesita caches de reversa
     /* Prepare reverse caches only when the browser is idle */
     scheduleFullVideoCapture(t);
     /* Pre-generate HQ reversed files for any clip already in REV/PING mode */
@@ -1070,7 +1218,10 @@ function makeTrack(i) {
         scheduleReverseGen(t, c);
       }
     });
-  });
+  };
+  vidA.addEventListener('loadedmetadata', () => onMeta(vidA));
+  still.addEventListener('loadedmetadata', () => onMeta(still));
+  still.addEventListener('timeupdate', () => onTU(still));
 
   return t;
 }
@@ -1331,11 +1482,24 @@ function revokeTrackObjectURL(track) {
   try { URL.revokeObjectURL(track._objectURL); } catch(_) {}
   track._objectURL = null;
 }
+/* ── Tipo de medio (video | image) — se decide por MIME o extensión ── */
+const IMG_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i;
+function isImageFile(file) {
+  if (!file) return false;
+  if (file.type) return file.type.startsWith('image/');
+  return IMG_EXT_RE.test(file.name || '');
+}
+function isImageRef(ref) {
+  if (!ref) return false;
+  if (ref.mediaKind) return ref.mediaKind === 'image';
+  return IMG_EXT_RE.test(ref.fileName || ref.name || ref.url || '');
+}
 function buildURLMediaRef(name, url) {
   const isBlob = /^blob:/i.test(url || '');
   return {
     sourceType:'file',
     kind:isBlob ? 'blob' : 'url',
+    mediaKind: IMG_EXT_RE.test(name || '') ? 'image' : 'video',
     name:name || 'video',
     fileName:name || 'video',
     url:isBlob ? '' : url,
@@ -1346,6 +1510,7 @@ function buildFileMediaRef(file, relativePath='') {
   return {
     sourceType:'file',
     kind:'folder-file',
+    mediaKind: isImageFile(file) ? 'image' : 'video',
     name:file?.name || 'video',
     fileName:file?.name || 'video',
     relativePath: rel,
@@ -1357,6 +1522,7 @@ function serializeMediaRef(ref) {
   const out = {
     sourceType:'file',
     kind:ref.kind || 'url',
+    mediaKind: isImageRef(ref) ? 'image' : 'video',
     name:ref.name || ref.fileName || 'video',
     fileName:ref.fileName || ref.name || 'video',
   };
@@ -1474,6 +1640,7 @@ async function applyProjectData(d) {
   const refs = (d.tracks || []).flatMap(td => [
     td.media || td.mediaRef || null,
     ...(td.playlist || []).map(pe => pe.media || null),
+    ...(td.layers || []).map(l => l.media || null),
   ]).filter(r => r && r.sourceType === 'file');
   const missing = refs.filter(r => !resolveMediaLibraryEntry(r));
   if (missing.length) {
@@ -1482,7 +1649,7 @@ async function applyProjectData(d) {
     const askFolder = !MEDIA.library
       ? '\n\n¿Seleccionar primero la carpeta de medios?'
       : (hint ? `\n\nCarpeta esperada: "${hint}". ¿Seleccionar otra carpeta de medios?` : '\n\n¿Seleccionar otra carpeta de medios?');
-    const proceed = confirm(`Faltan ${missing.length} de ${refs.length} video(s)${MEDIA.library ? ' en "'+MEDIA.library.rootName+'"' : ''}:\n${names}${askFolder}\n\n(Cancelar = elegir carpeta de medios · Aceptar = abrir sin esos videos)`);
+    const proceed = confirm(`Faltan ${missing.length} de ${refs.length} medio(s)${MEDIA.library ? ' en "'+MEDIA.library.rootName+'"' : ''}:\n${names}${askFolder}\n\n(Cancelar = elegir carpeta de medios · Aceptar = abrir sin esos videos)`);
     if (!proceed) { MEDIA.pendingProjectData = d; document.getElementById('mdirinput').click(); return; }
   }
 
@@ -1493,8 +1660,17 @@ async function applyProjectData(d) {
       S.tracks[i].groups=(td.groups||[]);
       if(td.opacity!==undefined) S.tracks[i].opacity=td.opacity;
       if(td.videoOffset!==undefined) S.tracks[i].videoOffset=td.videoOffset;
-      if(td.xform) S.tracks[i].xform={ x:0,y:0,scaleX:1,scaleY:1,rotation:0, ...td.xform,
-        pin:{ tl:[0,0],tr:[0,0],bl:[0,0],br:[0,0], ...(td.xform.pin||{}) } };
+      if(td.xform) S.tracks[i].xform=xformDefault(td.xform);
+      /* Capas: se desechan las actuales (streams, URLs) y se reconstruyen */
+      S.tracks[i].layers.forEach(l => { if (l.kind!=='media') disposeLayer(l); });
+      S.tracks[i].layers = (td.layers && td.layers.length ? td.layers : [{id:'media',kind:'media',on:true}]).map(ld =>
+        ld.kind==='media' ? { id:'media', kind:'media', on:ld.on!==false }
+        : newLayer(ld.kind, { id:ld.id, name:ld.name, on:ld.on!==false, opacity:ld.opacity??1, color:ld.color||'#ff2d55',
+            xform:xformDefault(ld.xform||{}), liveType:ld.liveType||null, browserURL:ld.browserURL||'', mediaRef:ld.media||null }));
+      if (!S.tracks[i].layers.some(l=>l.kind==='media')) S.tracks[i].layers.unshift({ id:'media', kind:'media', on:true });
+      S.tracks[i].selLayerId = td.selLayerId && S.tracks[i].layers.some(l=>l.id===td.selLayerId) ? td.selLayerId : 'media';
+      S.tracks[i].layersLinked = td.layersLinked !== false;
+      S.tracks[i].vproc = { ...vprocDefault(), ...(td.vproc||{}) };
       S.tracks[i].mediaRef = td.media || td.mediaRef || null;
       (S.tracks[i].playlist||[]).forEach(e => { if (e.objectURL) URL.revokeObjectURL(e.objectURL); });
       S.tracks[i].playlist = (td.playlist||[]).map(pe => ({
@@ -1502,6 +1678,8 @@ async function applyProjectData(d) {
         mediaRef: pe.media || null, file:null, relativePath:pe.media?.relativePath||'', objectURL:null,
       }));
       S.tracks[i].playlistLoop = !!td.playlistLoop;
+      S.tracks[i].galleryDur = td.galleryDur || 5;
+      S.tracks[i].browserURL = td.browserURL || '';
     }});
   } else if (d.clips) {
     S.tracks[0].clips = d.clips.map(migrateClip);
@@ -1586,9 +1764,23 @@ async function restoreProjectMedia(projectData) {
     unresolved.push({ track, ref:track.mediaRef });
   }
 
-  /* Playlist entries: resolve File handles against the media library, but
-     don't load anything — they're only used lazily when their auto-clip
-     is actually triggered (see resolvePlaylistEntryFile/triggerClipWithLoad). */
+  /* Capas de archivo (imagen / video en loop): se cargan desde la biblioteca */
+  for (let i = 0; i < Math.min(pTracks.length, S.tracks.length); i++) {
+    for (const l of S.tracks[i].layers) {
+      if (l.kind !== 'image' && l.kind !== 'video') continue;
+      if (!l.mediaRef) continue;
+      totalRefs++;
+      const libEntry = resolveMediaLibraryEntry(l.mediaRef);
+      if (libEntry) { loadLayerFile(l, libEntry.file); restored++; }
+      else unresolved.push({ track:S.tracks[i], ref:l.mediaRef });
+    }
+  }
+
+  /* Playlist entries: resolve File handles against the media library. Each
+     clip still only actually *decodes* into vidA/vidB lazily on its first
+     trigger (see resolvePlaylistEntryFile/triggerClipWithLoad) — but we
+     kick off a background byte-read (warmPlaylist) below so that first
+     trigger isn't also paying cold disk-read latency. */
   for (let i = 0; i < Math.min(pTracks.length, S.tracks.length); i++) {
     const track = S.tracks[i];
     for (const entry of track.playlist) {
@@ -1603,6 +1795,7 @@ async function restoreProjectMedia(projectData) {
         unresolved.push({ track, ref: entry.mediaRef });
       }
     }
+    if (track.playlist.length) warmPlaylist(track);
   }
 
   if (!totalRefs) {
@@ -1623,10 +1816,39 @@ function loadT1(ev) {
   loadTrackFileObject(S.tracks[0], f);
   ev.target.value = '';
 }
-function loadActiveTrack(ev) {
-  const f = ev.target.files[0]; if (!f) return;
-  loadTrackFileObject(S.tracks[S.ati], f);
+/* 🎬 VIDEO / 🖼 GALERÍA: uno o varios archivos → todos van a la lista de
+   medios de la pista activa; el primero se carga en la pista si aún no
+   tiene nada (así elegir un solo video sigue funcionando como siempre). */
+function onTrackMediaChosen(ev, kind) {
+  const files = Array.from(ev.target.files || []);
   ev.target.value = '';
+  if (!files.length) return;
+  const t = S.tracks[S.ati];
+  const accepted = files.filter(f => kind === 'image' ? isImageFile(f) : !isImageFile(f));
+  if (!accepted.length) return;
+  addTrackMedia(t, accepted);
+  if (!t.loaded || t.sourceType !== 'file') loadTrackFileObject(t, accepted[0]);
+  renderTrackInfo();
+  probePlaylistDurations(t);
+  warmPlaylist(t);
+}
+function addTrackMedia(t, files) {
+  const have = new Set(t.playlist.map(e => mediaRefKey(e.mediaRef)));
+  files.forEach(file => {
+    const mediaRef = buildFileMediaRef(file);
+    const key = mediaRefKey(mediaRef);
+    if (have.has(key)) return;   // ya está en la lista
+    have.add(key);
+    t.playlist.push({
+      id: 'pe'+Date.now()+Math.random().toString(36).slice(2,7),
+      name: file.name,
+      file,
+      relativePath: file.webkitRelativePath || '',
+      mediaRef,
+      dur: isImageFile(file) ? (t.galleryDur || 5) : 0,
+      objectURL: null,
+    });
+  });
 }
 function loadFromURL() {
   const u = document.getElementById('vid-url').value.trim();
@@ -1636,7 +1858,7 @@ function dzo(e, ov) { e.preventDefault(); document.getElementById('dzone').class
 function onDrop(e) {
   e.preventDefault(); dzo(e, false);
   const f = e.dataTransfer.files[0];
-  if (f && f.type.startsWith('video/')) loadTrackFileObject(S.tracks[0], f);
+  if (f && (f.type.startsWith('video/') || isImageFile(f))) loadTrackFileObject(S.tracks[0], f);
 }
 function startLoad(track, name, url, mediaRef=null) {
   /* Stop live stream if switching to file */
@@ -1650,16 +1872,81 @@ function startLoad(track, name, url, mediaRef=null) {
   track.mediaRef = serializeMediaRef(mediaRef || buildURLMediaRef(name, url));
   track._srcKey = mediaRefKey(track.mediaRef);
   track._activeVid = 'A';
+  track.vidA.muted = false; track.vidB.muted = true;   // una carga nueva siempre entra por vidA
   track.prebuffering = false;
   track._plBufKey = track._plBufUrl = track._plBufMediaRef = null;
   track._plPrebuffered = false;
-  track.vidA.src = url;
-  track.vidA.load();
-  track.vidB.src = '';
+  track.still.pause();
+  track.vidA.pause(); track.vidB.pause();
+  if (isImageRef(track.mediaRef)) {
+    /* Imagen fija: el canvas-video reemplaza a vidA/vidB. Su "duración" es
+       la ventana del timeline — nunca menor que los clips que la usan, para
+       que el clamp de loadedmetadata no los recorte. */
+    track.mediaKind = 'image';
+    const outs = track.clips.filter(c => { const k = clipSourceKey(c); return (!k || k === track._srcKey) && !c.srcLive; }).map(c => c.out || 0);
+    track.still.duration = Math.max(STILL_MIN_DUR, track.galleryDur || 0, ...outs);
+    track.vidA.src = ''; track.vidB.src = '';
+    track.still.src = url;
+  } else {
+    track.mediaKind = 'video';
+    track.still.src = '';
+    track.vidA.src = url;
+    track.vidA.load();
+    track.vidB.src = '';
+  }
 }
-function loadTrackVideo() { document.getElementById('tfinput').click(); }
+function loadTrackVideo()   { document.getElementById('tfinput').click(); }
+function loadTrackGallery() { document.getElementById('tgalinput').click(); }
 
-async function loadTrackDisplay(trackIdx) {
+/* ── 🌐 NAVEGADOR: una URL en una ventana aparte, capturada como pantalla.
+   El navegador no permite dibujar un iframe en un canvas, así que la
+   página se abre en una ventana emergente y se captura con getDisplayMedia.
+   Son dos pasos porque window.open() consume el gesto de usuario que
+   getDisplayMedia exige: 1) abrir la ventana, 2) 📡 CAPTURAR. ── */
+function navHost(url) { try { return new URL(url).host || url; } catch(_) { return url || ''; } }
+function loadTrackBrowser(trackIdx, layerId=null) {
+  const t = S.tracks[trackIdx];
+  const l = layerId ? layerOf(t, layerId) : null;
+  const holder = l || t;   // la capa o la pista guardan su propia URL/ventana
+  let url = prompt('URL para la fuente NAVEGADOR de '+t.name+(l?' (capa)':'')+':', holder.browserURL || 'https://');
+  if (url === null) return;
+  url = url.trim();
+  if (!url || url === 'https://') return;
+  if (!/^[a-z]+:\/\//i.test(url)) url = 'https://' + url;
+  holder.browserURL = url;
+  if (l) { if (l._navWin && !l._navWin.closed) { try { l._navWin.close(); } catch(_) {} } }
+  else closeBrowserWindow(trackIdx, true);
+  const w = window.open(url, 'midivj-nav-'+trackIdx+(l?'-'+l.id:''), 'popup=yes,width=1280,height=720');
+  if (!w) { alert('El navegador bloqueó la ventana emergente. Permite pop-ups para MIDIVJ y vuelve a intentar.'); return; }
+  holder._navWin = w;
+  renderTrackInfo();
+}
+async function captureBrowserWindow(trackIdx, layerId=null) {
+  const t = S.tracks[trackIdx];
+  const l = layerId ? layerOf(t, layerId) : null;
+  setSt('st-active', 'Elige la ventana del navegador…', 'ok');
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate:{ ideal:30 } },
+      audio: false,
+      selfBrowserSurface: 'exclude',
+      surfaceSwitching:   'include',
+    });
+    _applyStreamTo(t, layerId, stream, 'browser', navHost((l||t).browserURL));
+  } catch(e) {
+    setSt('st-active', '—', '');
+    if (e.name === 'NotAllowedError') return;
+    alert('Error capturando la ventana del navegador:\n'+e.name+': '+e.message);
+  }
+}
+function closeBrowserWindow(trackIdx, silent=false) {
+  const t = S.tracks[trackIdx];
+  if (t._navWin && !t._navWin.closed) { try { t._navWin.close(); } catch(_) {} }
+  t._navWin = null;
+  if (!silent) renderTrackInfo();
+}
+
+async function loadTrackDisplay(trackIdx, layerId=null) {
   const t = S.tracks[trackIdx];
 
   /* Warn user that the tab will briefly pause while Chrome shows the picker */
@@ -1672,7 +1959,7 @@ async function loadTrackDisplay(trackIdx) {
       selfBrowserSurface: 'exclude',
       surfaceSwitching:   'include',
     });
-    _applyStream(t, stream, 'display', 'Pantalla capturada');
+    _applyStreamTo(t, layerId, stream, 'display', 'Pantalla capturada');
   } catch(e) {
     setSt('st-active', '—', '');
     if (e.name === 'NotAllowedError') return; // user cancelled
@@ -1684,7 +1971,7 @@ async function loadTrackDisplay(trackIdx) {
   }
 }
 
-async function loadTrackCapture(trackIdx) {
+async function loadTrackCapture(trackIdx, layerId=null) {
   const t = S.tracks[trackIdx];
 
   /* Step 1: enumerate devices. If no labels yet, we need permission first.
@@ -1748,7 +2035,7 @@ async function loadTrackCapture(trackIdx) {
         video: { deviceId: {exact:deviceId} }, audio:false
       });
     }
-    _applyStream(t, stream, 'capture', deviceLabel);
+    _applyStreamTo(t, layerId, stream, 'capture', deviceLabel);
   } catch(e) {
     permStream?.getTracks().forEach(tr=>tr.stop());
     if (e.name==='NotAllowedError') return;
@@ -1760,6 +2047,23 @@ async function loadTrackCapture(trackIdx) {
   }
 }
 
+/* Destino de un stream en vivo: la pista (fuente principal) o una capa */
+function _applyStreamTo(track, layerId, stream, type, label) {
+  const l = layerId ? layerOf(track, layerId) : null;
+  if (!l) { _applyStream(track, stream, type, label); return; }
+  stopLayerStream(l);
+  if (!l._el) { const v = mkVidLayer(); l._el = v; }
+  l._stream = stream; l.liveType = type; l.name = label; l.on = true;
+  l._el.srcObject = stream;
+  l._el.play().catch(()=>{});
+  stream.getVideoTracks()[0].onended = () => { stopLayerStream(l); if (S.tracks[S.ati] === track) renderTrackInfo(); };
+  if (S.tracks[S.ati] === track) renderTrackInfo();
+}
+function mkVidLayer() {
+  const v = document.createElement('video');
+  v.muted = true; v.autoplay = true; v.playsInline = true; v.style.display = 'none';
+  document.body.appendChild(v); return v;
+}
 function _applyStream(track, stream, type, label) {
   stopTrackStream(track);
   revokeTrackObjectURL(track);
@@ -1778,8 +2082,10 @@ function _applyStream(track, stream, type, label) {
   lv.srcObject = stream;
   lv.muted     = true;
   lv.play().catch(()=>{});
+  track._camDefaults = null;   // la config de cámara toma sus "valores originales" de este stream nuevo
+  track._camCons = null;       // y arranca sin restricciones acumuladas
 
-  lv.onloadedmetadata = () => {
+  const onDims = () => {
     if (track.i === 0) {
       if (!S.outRes.locked) { cvs.width = lv.videoWidth || 1280; cvs.height = lv.videoHeight || 720; }
       syncOutCanvasBuffers();
@@ -1787,6 +2093,9 @@ function _applyStream(track, stream, type, label) {
     }
     renderTrackInfo();
   };
+  lv.onloadedmetadata = onDims;
+  /* Cambiar la resolución desde CONFIG. DE CÁMARA dispara 'resize' en el <video> */
+  lv.onresize = onDims;
 
   stream.getVideoTracks()[0].onended = () => {
     /* El navegador puede dar por terminado el track sin que el
@@ -1809,10 +2118,12 @@ function stopTrackStream(track) {
   /* Only clear liveVid — never touch vidA/vidB */
   track.liveVid.srcObject = null;
   track.liveVid.onloadedmetadata = null;
+  track.liveVid.onresize = null;
 }
 
 function stopTrackSource(trackIdx) {
   const t = S.tracks[trackIdx];
+  if (t.sourceType === 'browser') closeBrowserWindow(trackIdx, true);
   stopTrackStream(t);
   revokeTrackObjectURL(t);
   t._sourceKey++;
@@ -1858,6 +2169,7 @@ function _syncMasterFromClips() {
   if (_seekFrozen) return; // user is dragging — don't override their seek
   for (const t of S.tracks) {
     if (!t.activeClip || !t.loaded) continue;
+    if (t.sourceType !== 'file') continue;   // fuente en vivo: no tiene tiempo propio
     const displayT = t._displayTime !== null ? t._displayTime : t.vid.currentTime;
     S.masterTime = displayT + (t.videoOffset || 0);
     return;
@@ -2056,6 +2368,7 @@ function triggerOn(midiId, vel) {
 function triggerOff(midiId) {
   for (const t of S.tracks) {
     const c = t.clips.find(x => x.midi === midiId);
+    if (c && c.layerId) { if (c.trigMode==='hold') { const l = layerOf(t, c.layerId); if (l) { l.on = false; if (S.tracks[S.ati]===t) renderTrackInfo(); } } continue; }
     /* Lock clips ignore noteOff — they loop until explicitly replaced */
     if (c && c.trigMode==='hold' && !c.isLock && t.activeClip===c) deactivateClip(t);
   }
@@ -2128,6 +2441,9 @@ function migrateClip(raw) {
     blackoutDur:raw.blackoutDur !== undefined ? raw.blackoutDur : 0,
     srcRef:         raw.srcRef         || null, // playlist media override, null = track's loaded video
     playlistEntryId:raw.playlistEntryId|| null, // links an auto-generated clip back to its playlist entry
+    srcLive:        !!raw.srcLive,              // clip-interruptor de fuente en vivo (pantalla/captura/cámara/navegador)
+    srcLiveType:    raw.srcLiveType    || null,
+    layerId:        raw.layerId        || null, // clip-interruptor de una capa (ver CAPAS POR PISTA)
   };
 }
 
@@ -2174,6 +2490,13 @@ function toggleExcl() {
    playlist clip whose file isn't currently loaded on the track routes
    through the async load-then-activate path instead. */
 function trigClip(track, clip) {
+  /* Clip-interruptor de capa: sólo cambia layer.on, nunca es activeClip */
+  if (clip.layerId) {
+    const l = layerOf(track, clip.layerId); if (!l) return;
+    l.on = clip.trigMode === 'toggle' ? !l.on : true;
+    if (S.tracks[S.ati] === track) renderTrackInfo();
+    return;
+  }
   const needKey = clipSourceKey(clip);
   if (needKey && needKey !== track._srcKey) { triggerClipWithLoad(track, clip); return; }
   trigClipLoaded(track, clip);
@@ -2197,7 +2520,7 @@ async function triggerClipWithLoad(track, clip) {
   track._pendingClip = clip;
   const expectSrcKey = needKey;
   startLoad(track, entry.name, entry.objectURL, entry.mediaRef);
-  await onceEvent(track.vidA, 'loadedmetadata');
+  await onceEvent(track.vid, 'loadedmetadata');   // vidA o el canvas de imagen fija
 
   /* Race guard: user triggered something else while this was loading. */
   if (track._srcKey !== expectSrcKey || track._pendingClip !== clip) return;
@@ -2208,10 +2531,12 @@ async function triggerClipWithLoad(track, clip) {
 function promoteBufferToActive(track) {
   track._sourceKey++;
   resetTrackCaches(track);
+  track.mediaKind = 'video';   // el prebuffer sólo se usa entre videos
+  track.still.pause();
   track._url = track._plBufUrl;
   track.mediaRef = track._plBufMediaRef;
   track._srcKey = track._plBufKey;
-  track._activeVid = track._activeVid==='A' ? 'B' : 'A';
+  swapActiveVid(track);
   track._plBufKey = track._plBufUrl = track._plBufMediaRef = null;
 }
 
@@ -2241,7 +2566,10 @@ function trigClipLoaded(track, clip) {
     track._revFrames   = null;   // clear stale reverse frame buffer
     stopHQReverse(track);        // reset any HQ reverse playback state
 
-    if (clip.loopMode === 'reverse') {
+    if (track.sourceType !== 'file') {
+      /* Fuente en vivo: el clip sólo enciende/apaga la fuente (ver render
+         loop) — vidA/vidB pueden tener un video viejo, no se tocan. */
+    } else if (clip.loopMode === 'reverse' && track.mediaKind !== 'image') {
       if (hqRevReady(track, clip)) {
         startHQReverse(track);                 // native full-quality reverse
       } else {
@@ -2251,8 +2579,8 @@ function trigClipLoaded(track, clip) {
       }
     } else {
       track.vid.currentTime = clip.in;
-      if (track.vid.paused) track.vid.play();
-      if (clip.loopMode === 'pingpong') ensureReverse(track, clip);
+      if (track.vid.paused) track.vid.play().catch?.(()=>{});
+      if (clip.loopMode === 'pingpong' && track.mediaKind !== 'image') ensureReverse(track, clip);
     }
 
     /* TransIn: plays over the new clip as it starts */
@@ -2340,7 +2668,7 @@ function setLoopMode(id, m) {
   const r=findClip(id); if(!r) return;
   const prev = r.clip.loopMode;
   r.clip.loopMode=m;
-  if ((m==='reverse'||m==='pingpong') && r.track.sourceType==='file' && r.track._url) {
+  if ((m==='reverse'||m==='pingpong') && r.track.sourceType==='file' && r.track.mediaKind!=='image' && r.track._url) {
     /* HQ: generate the reversed file (full res/fps) at idle */
     if ((r.clip.out - r.clip.in) <= HQ_REV_MAX) scheduleReverseGen(r.track, r.clip);
     /* Low-res fallback prep — used only until the HQ file is ready */
@@ -2408,6 +2736,7 @@ function renderTabs() {
 function swapTrack(a, b) {
   if (b<0||b>N_TRACKS-1) return;
   [S.tracks[a], S.tracks[b]] = [S.tracks[b], S.tracks[a]];
+  S.tracks[a].i = a; S.tracks[b].i = b;   // .i debe seguir reflejando la posición actual (botones y notificaciones lo usan como índice)
   if (S.ati===a) S.ati=b; else if (S.ati===b) S.ati=a;
   renderAll();
 }
@@ -2423,7 +2752,19 @@ function renderTrackInfo() {
                : '';
 
   /* Source type icons */
-  const srcIco = t.sourceType==='display'?'🖥':t.sourceType==='phone'?'📱':t.sourceType==='capture'?'📷':'🎬';
+  const srcIco = t.sourceType==='file' ? (t.mediaKind==='image'?'🖼':'🎬') : srcIcon(t.sourceType);
+  const navWin = t._navWin && !t._navWin.closed ? t._navWin : null;
+  const layNavRows = t.layers.filter(l => l.kind==='live' && l._navWin && !l._navWin.closed && !l._stream).map(l => `
+<div class="ti-row" style="gap:4px;">
+  <span class="ti-name" style="color:var(--yellow);" title="${escHtml(l.browserURL)}">🌐 capa ${escHtml(navHost(l.browserURL))} — ventana abierta</span>
+  <button class="hbtn save" style="font-size:8px;padding:2px 6px;" onclick="captureBrowserWindow(${idx},'${l.id}')" title="Elige la ventana del navegador en el selector de pantalla">📡 CAPTURAR</button>
+</div>`).join('');
+  const navRow = layNavRows + (navWin && t.sourceType !== 'browser' ? `
+<div class="ti-row" style="gap:4px;">
+  <span class="ti-name" style="color:var(--yellow);" title="${escHtml(t.browserURL)}">🌐 ${escHtml(navHost(t.browserURL))} — ventana abierta</span>
+  <button class="hbtn save" style="font-size:8px;padding:2px 6px;" onclick="captureBrowserWindow(${idx})" title="Elige la ventana del navegador en el selector de pantalla">📡 CAPTURAR</button>
+  <button class="hbtn" style="font-size:8px;padding:2px 6px;border-color:var(--hot);color:var(--hot);" onclick="closeBrowserWindow(${idx})" title="Cerrar la ventana">✕</button>
+</div>` : '');
 
   const camSes = CAM.sesiones.get(idx);
   const camEsperando = camSes && camSes.estado !== 'lista'
@@ -2431,38 +2772,36 @@ function renderTrackInfo() {
 
   document.getElementById('track-info').innerHTML = `
 <div class="ti-row">
-  <span class="ti-name">${t.loaded ? (t.sourceType==='display'?'🖥 ':t.sourceType==='phone'?'📱 ':t.sourceType==='capture'?'📷 ':'🎬 ')+t.loadedName : 'Sin fuente'}</span>
+  <span class="ti-name">${t.loaded ? srcIco+' '+t.loadedName : 'Sin fuente'}</span>
   <span class="ti-dur">${t.loaded&&t.dur?ft(t.dur):(t.loaded?'∞':'—')}</span>
   ${camEsperando}
   ${(t.loaded&&t.sourceType!=='file')||camSes?`<button class="hbtn" style="font-size:8px;padding:2px 6px;border-color:var(--hot);color:var(--hot);" onclick="stopTrackSource(${idx})">✕</button>`:''}
 </div>
 <div class="ti-row" style="gap:3px;flex-wrap:wrap;">
-  <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackVideo()" title="Cargar archivo de video">🎬 VIDEO</button>
+  <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackVideo()" title="Cargar uno o varios videos (van a la lista de medios; el primero se carga si la pista está vacía)">🎬 VIDEO</button>
+  <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackGallery()" title="Cargar una o varias imágenes (galería): cada una genera un clip de N segundos">🖼 GALERÍA</button>
+  <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackBrowser(${idx})" title="Abrir una URL en una ventana y capturarla como fuente">🌐 NAVEGADOR</button>
   <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackDisplay(${idx})" title="Capturar pestaña o ventana del navegador">🖥 PANTALLA</button>
   <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackCapture(${idx})" title="Capturadora de video / cámara (Elgato, AVerMedia, webcam, etc.)">📷 CAPTURA</button>
-  <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="toggleCamara(${idx})" title="Cámara de un teléfono conectado por /camara">📱 CÁMARA</button>
+  <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="toggleCamara(${idx})" title="Cámara de un teléfono conectado por /camara (sólo como fuente principal)">📱 CÁMARA</button>
+  <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="addLayer(${idx},'color')" title="Fondo de color: pinta toda la salida con un tono homogéneo (capa debajo de la fuente principal; transformable para mapping)">🎨 COLOR</button>
 </div>
 <div style="font-family:var(--mono);font-size:7px;color:var(--text3);padding:2px 0;">
-  🖥 = otra ventana/pestaña · 📷 = cámara o capturadora USB · 📱 = cámara de teléfono
-</div>
-<div class="opa-row">
-  <span class="opa-lbl">OPAC</span>
-  <input type="range" class="opasl" min="0" max="1" step=".05" value="${t.opacity}"
-    oninput="S.tracks[S.ati].opacity=+this.value;document.getElementById('opa-v').textContent=Math.round(S.tracks[S.ati].opacity*100)+'%'">
-  <span class="opa-lbl" id="opa-v">${Math.round(t.opacity*100)}%</span>
-</div>
+  🎬/🖼 = archivos (varios a la vez) · 🌐 = URL en ventana aparte · 🖥 = otra ventana/pestaña · 📷 = cámara o capturadora USB · 📱 = cámara de teléfono · 🎨 = fondo de color
+</div>${navRow}
+${renderLayersPanel(t)}
+${buildCamCfgHTML(t, idx)}
 <div class="opa-row" title="Desplazamiento del video en el timeline. Shift+arrastra en el timeline.">
   <span class="opa-lbl">OFFSET</span>
-  <input type="range" class="opasl" min="0" max="3600" step="1" value="${Math.round(t.videoOffset||0)}"
+  <input type="range" class="opasl" min="0" max="3600" step="1" value="${Math.round(t.videoOffset||0)}" data-def="0"
     oninput="S.tracks[S.ati].videoOffset=+this.value;document.getElementById('off-v').textContent=ft(+this.value);renderTL();">
   <span class="opa-lbl" id="off-v">${ft(t.videoOffset||0)}</span>
   <button class="hbtn" style="font-size:8px;padding:1px 6px;" onclick="S.tracks[S.ati].videoOffset=0;renderTrackInfo();renderTL();">0</button>
 </div>
-<div class="ti-row" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border2);">
-  <span class="ti-name" style="flex:none;font-weight:700;color:var(--text2);">⛶ TRANSFORM DE PISTA</span>
-  <button class="hbtn" style="font-size:8px;padding:1px 6px;margin-left:auto;" onclick="resetTrackXform(${idx})" title="Volver esta pista a su posición/tamaño original">RESET</button>
-</div>
-<div class="ti-row" style="gap:4px;">
+${tiSec('xform', `⛶ TRANSFORM · <span style="color:var(--yellow)">${t.layersLinked!==false ? 'TODAS LAS CAPAS' : escHtml(layerLabel(t, curLayer(t)))}</span>`,
+  `<button class="hbtn${t.layersLinked!==false?' on':''}" style="font-size:8px;padding:1px 6px;margin-left:auto;" onclick="toggleLayersLinked(${idx})" title="${t.layersLinked!==false?'Vinculado: la transformación mueve todas las capas de la pista juntas (clic para transformar cada capa por separado)':'Suelto: cada capa tiene su propia transformación (clic para vincular todas)'}">🔗 CAPAS</button>
+  <button class="hbtn" style="font-size:8px;padding:1px 6px;" onclick="resetTrackXform(${idx})" title="Volver esta pista a su posición/tamaño original">RESET</button>`,
+  `<div class="ti-row" style="gap:4px;">
   <button class="hbtn${xovMode==='track'?' on':''}" id="txov-btn" style="font-size:8px;padding:3px 7px;flex:1;" onclick="toggleTrackBoxEdit()"
     title="Muestra una caja sobre el video: arrastrá una esquina para escalar, la manija de afuera para rotar, y Shift+arrastrá una esquina para deformar libremente (profundidad)">${xovMode==='track'?'👁 OCULTAR CAJA':'▦ EDITAR EN CANVAS'}</button>
   <button class="hbtn${trackGridOn?' on':''}" id="tgrid-btn" style="font-size:8px;padding:3px 7px;" onclick="toggleTrackGrid()"
@@ -2470,42 +2809,259 @@ function renderTrackInfo() {
 </div>
 <div class="efx-params open" style="padding:6px 0 0;">
   ${buildTrackXformHTML(t)}
+</div>`)}
+${tiSec('mask', '🩹 BORRADOR / CORTE',
+  `<button class="hbtn" style="font-size:8px;padding:1px 6px;margin-left:auto;" onclick="clearEraseMask(${idx})" title="Limpiar todo lo tapado por el borrador en esta pista">🧹 LIMPIAR</button>
+  <button class="hbtn" style="font-size:8px;padding:1px 6px;" onclick="clearCropRect(${idx})" title="Quitar el corte y volver a ver el cuadro completo">↺ QUITAR CORTE</button>`,
+  `<div class="ti-row" style="gap:4px;">
+  <button class="hbtn${paintMode==='erase'?' on':''}" id="erase-btn" style="font-size:8px;padding:3px 7px;flex:1;" onclick="togglePaintMode('erase')"
+    title="Dibujá con el mouse sobre el video para tapar (ocultar) esa zona, como una goma de borrar">🩹 BORRADOR</button>
+  <button class="hbtn${paintMode==='cut'?' on':''}" id="cut-btn" style="font-size:8px;padding:3px 7px;flex:1;" onclick="togglePaintMode('cut')"
+    title="Arrastrá un rectángulo sobre el video: sólo queda visible lo de adentro. Click sin arrastrar = quita el corte">✂ CORTAR</button>
 </div>
+<div class="opa-row" id="erase-brush-row" style="${paintMode==='erase'?'':'display:none;'}" title="Tamaño del pincel del borrador">
+  <span class="opa-lbl">PINCEL</span>
+  <input type="range" class="opasl" min="5" max="150" step="1" value="${eraseBrushSize}" data-def="40"
+    oninput="eraseBrushSize=+this.value;document.getElementById('brush-v').textContent=this.value;">
+  <span class="opa-lbl" id="brush-v">${eraseBrushSize}</span>
+</div>
+<div style="font-family:var(--mono);font-size:7px;color:var(--text3);padding:2px 0;">
+  🩹 Pincel libre para tapar detalles sueltos · ✂ Recorte rectangular fijo (encuadre). Se ven en vivo sobre el canvas; no se guardan con el proyecto.
+</div>`)}
+${tiSec('vproc', '🎚 PROCESADOR DE VIDEO',
+  `<button class="hbtn${t.vproc.on?' on':''}" id="vproc-btn" style="font-size:8px;padding:1px 6px;margin-left:auto;" onclick="toggleVproc(${idx})" title="Activar/desactivar el procesado de imagen de esta pista (los sliders lo encienden solos al moverlos)">${t.vproc.on?'ON':'OFF'}</button>
+  <button class="hbtn" style="font-size:8px;padding:1px 6px;" onclick="resetVproc(${idx})" title="Volver todos los parámetros a su valor neutro">RESET</button>`,
+  `<div class="efx-params open" id="vproc-params" style="padding:6px 0 0;${t.vproc.on?'':'opacity:.5;'}">
+  ${buildVprocHTML(t)}
+</div>`)}
 ${capLbl ? `<div style="padding:1px 0;">${capLbl}</div>` : ''}
 ${renderPlaylistPanel(t)}`;
   syncXov();
 }
 
-/* ── Playlist panel: ordered list of extra videos for this track,
-   joined consecutively via auto-generated once-mode clips. ── */
+/* ── Secciones colapsables del panel de pista ──
+   El estado vive fuera del DOM porque renderTrackInfo() reconstruye el
+   innerHTML; se persiste en localStorage para que sobreviva recargas.
+   Los botones del encabezado (RESET, ON/OFF…) no disparan el colapso:
+   sólo la flecha y el título. */
+const TI_SEC_KEY = 'midivj-ti-sec-closed';
+const tiSecClosed = new Set((() => { try { return JSON.parse(localStorage.getItem(TI_SEC_KEY) || '[]'); } catch (_) { return []; } })());
+function toggleTiSec(key) {
+  if (tiSecClosed.has(key)) tiSecClosed.delete(key); else tiSecClosed.add(key);
+  try { localStorage.setItem(TI_SEC_KEY, JSON.stringify([...tiSecClosed])); } catch (_) {}
+  renderTrackInfo();
+}
+/* `open`/`toggle` opcionales: permiten que una sección use su propio estado
+   (p. ej. CONFIG. DE CÁMARA, que sólo consulta al driver cuando está abierta). */
+function tiSec(key, title, hdrExtras, body, opts = {}) {
+  const open   = opts.open   !== undefined ? opts.open   : !tiSecClosed.has(key);
+  const toggle = opts.toggle || `toggleTiSec('${key}')`;
+  return `<div class="ti-sec${open?' open':''}" data-sec="${key}">
+  <div class="ti-row ti-sec-hdr">
+    <span class="ti-sec-arrow" onclick="${toggle}">${open?'▾':'▸'}</span>
+    <span class="ti-name ti-sec-nm" onclick="${toggle}" title="${open?'Colapsar':'Expandir'} sección">${title}</span>
+    ${hdrExtras || ''}
+  </div>
+  <div class="ti-sec-body">${body}</div>
+</div>`;
+}
+
+/* ── Panel de MEDIOS: lista ordenada de videos e imágenes de la pista,
+   encadenados consecutivamente vía clips 'once' autogenerados. ── */
 function renderPlaylistPanel(t) {
   const idx = S.ati;
+  const live = t.loaded && t.sourceType !== 'file';
+  const nImg = t.playlist.filter(e => isImageRef(e.mediaRef)).length;
   const rows = t.playlist.map((e,i) => `
     <div class="ti-row" style="gap:4px;">
       <span class="ti-dur" style="width:14px;">${i+1}</span>
-      <span class="ti-name" title="${e.relativePath||e.name}">${e.name}</span>
-      <span class="ti-dur">${e.dur?ft(e.dur):'—'}</span>
+      <span class="ti-name" title="${e.relativePath||e.name}">${isImageRef(e.mediaRef)?'🖼':'🎬'} ${e.name}</span>
+      <span class="ti-dur" title="${e._warming?'Cacheando en segundo plano para que reaccione al instante…':(e._warmed?'Lista para disparar al instante':'')}">${e.dur?ft(e.dur):'—'}${e._warming?' ⏳':''}</span>
       <button class="hbtn" style="font-size:8px;padding:1px 5px;" ${i===0?'disabled':''} onclick="movePlaylistEntry(${idx},'${e.id}',-1)" title="Subir">↑</button>
       <button class="hbtn" style="font-size:8px;padding:1px 5px;" ${i===t.playlist.length-1?'disabled':''} onclick="movePlaylistEntry(${idx},'${e.id}',1)" title="Bajar">↓</button>
       <button class="hbtn" style="font-size:8px;padding:1px 5px;border-color:var(--hot);color:var(--hot);" onclick="removePlaylistEntry(${idx},'${e.id}')" title="Quitar">✕</button>
     </div>`).join('');
 
-  return `
-<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border2);">
-  <div class="ti-row" style="gap:3px;flex-wrap:wrap;">
-    <span class="ti-name" style="flex:none;font-weight:700;color:var(--text2);">🎞 PLAYLIST</span>
-    <button class="hbtn" style="font-size:9px;padding:3px 7px;margin-left:auto;" onclick="document.getElementById('tplinput').click()" title="Agregar varios videos a la playlist de este track">+ VIDEOS</button>
-    <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="clearPlaylist(${idx})" title="Vaciar la playlist">🗑 VACIAR</button>
-  </div>
-  ${t.playlist.length ? rows : '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">Sin videos en la lista.</div>'}
-  <div class="ti-row" style="gap:6px;margin-top:4px;">
+  return tiSec('playlist', `🎞 MEDIOS${t.playlist.length?` <span class="ti-dur">(${t.playlist.length})</span>`:''}`,
+  `<button class="hbtn" style="font-size:9px;padding:3px 7px;margin-left:auto;" onclick="loadTrackVideo()" title="Agregar videos a la lista">+ 🎬</button>
+    <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackGallery()" title="Agregar imágenes a la lista">+ 🖼</button>
+    <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="clearPlaylist(${idx})" title="Vaciar la lista">🗑 VACIAR</button>`,
+  `${t.playlist.length ? rows : '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">Sin medios en la lista.</div>'}
+  ${live ? `<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">${srcIcon(t.sourceType)} Fuente en vivo: <b>${escHtml(t.loadedName)}</b> → GENERAR CLIPS crea un clip-interruptor (toggle) para mostrarla/ocultarla.</div>` : ''}
+  <div class="ti-row" style="gap:6px;margin-top:4px;flex-wrap:wrap;">
     <label style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:8px;color:var(--text3);cursor:pointer;">
       <input type="checkbox" ${t.playlistLoop?'checked':''} onchange="S.tracks[${idx}].playlistLoop=this.checked">
-      🔁 LOOP PLAYLIST
+      🔁 LOOP
     </label>
-    <button class="hbtn save" style="font-size:9px;padding:3px 7px;margin-left:auto;" onclick="generatePlaylistClips(${idx})" title="Crea/actualiza un clip por cada video de la lista, encadenados en orden" ${t.playlist.length?'':'disabled'}>⚡ GENERAR CLIPS</button>
+    ${nImg ? `<label style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:8px;color:var(--text3);" title="Duración de cada imagen de la galería al generar clips">
+      🖼 SEG/IMG <input type="number" min="0.1" step="0.5" value="${t.galleryDur}" style="width:38px;background:var(--panel);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:8px;padding:1px 3px;" onchange="setGalleryDur(${idx},this.value)">
+    </label>` : ''}
+    <button class="hbtn save" style="font-size:9px;padding:3px 7px;margin-left:auto;" onclick="generateSourceClips(${idx})" title="Crea/actualiza un clip por cada medio de la lista (encadenados en orden), uno para la fuente en vivo si la hay y un interruptor por cada capa" ${(t.playlist.length||live||t.layers.length>1)?'':'disabled'}>⚡ GENERAR CLIPS</button>
+  </div>`);
+}
+/* ═══════════════════════════════════════════════════════
+   CAPAS POR PISTA — pila de fuentes dibujadas de abajo hacia arriba.
+   'media' es la fuente principal (motor de clips); las demás son capas
+   estáticas con ON/OFF, opacidad y transform propios:
+     color  → tono homogéneo (fondo / mapping)
+     image  → imagen fija (canvas de mkStill)
+     video  → video en loop, mudo, sin clips
+     live   → pantalla / captura / navegador con su propio <video>
+═══════════════════════════════════════════════════════ */
+const LAYER_ICO = { media:'🎞', color:'🎨', image:'🖼', video:'🎬', live:'🖥' };
+function layerLabel(t, l) {
+  if (!l || l.kind === 'media') return '🎞 '+(t.loaded ? t.loadedName : 'MEDIA');
+  const ico = l.kind === 'live' ? srcIcon(l.liveType) : LAYER_ICO[l.kind];
+  return ico+' '+(l.name || l.kind.toUpperCase());
+}
+function renderLayersPanel(t) {
+  const idx = S.ati;
+  const rows = [...t.layers].reverse().map(l => {
+    const i   = t.layers.indexOf(l);
+    const sel = t.selLayerId === l.id;
+    const isMedia = l.kind === 'media';
+    const opa = isMedia ? t.opacity : (l.opacity ?? 1);
+    const liveOff = l.kind === 'live' && !l._stream;
+    return `<div class="ti-row" style="gap:3px;${sel?'background:rgba(255,204,0,.08);outline:1px solid var(--yellow);':''}padding:1px 2px;">
+      <button class="hbtn" style="font-size:8px;padding:1px 4px;" ${i===t.layers.length-1?'disabled':''} onclick="moveLayer(${idx},'${l.id}',1)" title="Subir (más al frente)">↑</button>
+      <button class="hbtn" style="font-size:8px;padding:1px 4px;" ${i===0?'disabled':''} onclick="moveLayer(${idx},'${l.id}',-1)" title="Bajar (más al fondo)">↓</button>
+      <input type="checkbox" ${l.on?'checked':''} onchange="toggleLayer(${idx},'${l.id}',this.checked)" title="Mostrar/ocultar capa" style="margin:0;">
+      <span class="ti-name" style="cursor:pointer;${sel?'color:var(--yellow);':''}${liveOff?'opacity:.5;':''}" onclick="selectLayer(${idx},'${l.id}')" title="${escHtml(l.kind==='live'&&l.browserURL?l.browserURL:layerLabel(t,l))} — clic: editar su TRANSFORM">${escHtml(layerLabel(t, l))}${liveOff?' <span class="ti-dur">(sin señal)</span>':''}</span>
+      ${l.kind==='color' ? `<input type="color" value="${l.color}" oninput="setLayerColor(${idx},'${l.id}',this.value)" title="Tono" style="width:22px;height:16px;padding:0;border:1px solid var(--border2);background:none;cursor:pointer;">` : ''}
+      ${liveOff ? `<button class="hbtn save" style="font-size:8px;padding:1px 5px;" onclick="captureLayerLive(${idx},'${l.id}')" title="Volver a capturar esta fuente">📡</button>` : ''}
+      <input type="range" class="opasl" style="width:44px;" min="0" max="1" step=".05" value="${opa}" data-def="1" oninput="setLayerOpacity(${idx},'${l.id}',this.value)" title="Opacidad ${Math.round(opa*100)}%">
+      ${isMedia ? '<span style="width:18px;"></span>' : `<button class="hbtn" style="font-size:8px;padding:1px 5px;border-color:var(--hot);color:var(--hot);" onclick="removeLayer(${idx},'${l.id}')" title="Quitar capa">✕</button>`}
+    </div>`;
+  }).join('');
+  const b = (lbl, fn, title) => `<button class="hbtn" style="font-size:8px;padding:2px 5px;" onclick="${fn}" title="${title}">${lbl}</button>`;
+  return tiSec('layers', `🧅 CAPAS${t.layers.length>1?` <span class="ti-dur">(${t.layers.length})</span>`:''}`, '',
+  `<div class="ti-row" style="gap:3px;flex-wrap:wrap;margin-bottom:3px;">
+    ${b('+ 🎨', `addLayer(${idx},'color')`, 'Fondo de color')}
+    ${b('+ 🖼', `document.getElementById('tlayimg').click()`, 'Imagen fija')}
+    ${b('+ 🎬', `document.getElementById('tlayvid').click()`, 'Video en loop (sin clips)')}
+    ${b('+ 🖥', `addLiveLayer(${idx},'display')`, 'Pantalla / ventana')}
+    ${b('+ 📷', `addLiveLayer(${idx},'capture')`, 'Cámara / capturadora')}
+    ${b('+ 🌐', `addLiveLayer(${idx},'browser')`, 'URL en ventana aparte')}
   </div>
-</div>`;
+  ${rows}
+  <div style="font-family:var(--mono);font-size:7px;color:var(--text3);padding:2px 0;">Arriba = al frente. ${t.layersLinked!==false ? 'TRANSFORM mueve todas las capas juntas (🔗 CAPAS para soltarlas).' : 'Clic en el nombre para editar el TRANSFORM de esa capa.'} ⚡ GENERAR CLIPS crea un interruptor MIDI por capa.</div>`);
+}
+function newLayer(kind, extra = {}) {
+  return { id:'ly'+Date.now()+Math.random().toString(36).slice(2,6), kind, name:kind.toUpperCase(), on:true, opacity:1,
+    color:'#ff2d55', xform:xformDefault(), mediaRef:null, liveType:null, browserURL:'',
+    _el:null, _stream:null, _objectURL:null, _navWin:null, ...extra };
+}
+/* Un fondo (color) entra debajo de la capa media; lo demás, arriba de todo */
+function addLayer(trackIdx, kind, extra = {}) {
+  const t = S.tracks[trackIdx];
+  const l = newLayer(kind, extra);
+  if (kind === 'color') { const mi = t.layers.findIndex(x => x.kind === 'media'); t.layers.splice(Math.max(0, mi), 0, l); }
+  else t.layers.push(l);
+  t.selLayerId = l.id;
+  document.getElementById('load-ov').classList.add('hide');   // una capa ya es algo que ver
+  renderTrackInfo(); syncXov();
+  return l;
+}
+function removeLayer(trackIdx, id) {
+  const t = S.tracks[trackIdx];
+  const i = t.layers.findIndex(l => l.id === id);
+  if (i < 0 || t.layers[i].kind === 'media') return;
+  const [l] = t.layers.splice(i, 1);
+  disposeLayer(l);
+  if (t.selLayerId === id) t.selLayerId = 'media';
+  /* clips-interruptor de esta capa */
+  const removedIds = new Set(t.clips.filter(c => c.layerId === id).map(c => c.id));
+  if (removedIds.size) {
+    t.clips = t.clips.filter(c => !removedIds.has(c.id));
+    allClips().forEach(c => { if (removedIds.has(c.nextClipId)) c.nextClipId = null; });
+    if (S.selClipId && removedIds.has(S.selClipId)) S.selClipId = null;
+  }
+  renderClips(); renderTL(); renderTrackInfo(); syncXov();
+}
+function disposeLayer(l) {
+  stopLayerStream(l);
+  if (l._navWin && !l._navWin.closed) { try { l._navWin.close(); } catch(_) {} }
+  l._navWin = null;
+  if (l._el && l._el.tagName === 'VIDEO') { try { l._el.pause(); l._el.removeAttribute('src'); l._el.load(); l._el.remove(); } catch(_) {} }
+  if (l._objectURL) { try { URL.revokeObjectURL(l._objectURL); } catch(_) {} l._objectURL = null; }
+  l._el = null;
+}
+function stopLayerStream(l) {
+  if (l._stream) { l._stream.getTracks().forEach(tr => tr.stop()); l._stream = null; }
+  if (l._el && l._el.srcObject) l._el.srcObject = null;
+}
+function moveLayer(trackIdx, id, dir) {
+  const t = S.tracks[trackIdx];
+  const i = t.layers.findIndex(l => l.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= t.layers.length) return;
+  [t.layers[i], t.layers[j]] = [t.layers[j], t.layers[i]];
+  renderTrackInfo();
+}
+function toggleLayer(trackIdx, id, on) {
+  const l = layerOf(S.tracks[trackIdx], id); if (!l) return;
+  l.on = on === undefined ? !l.on : !!on;
+  if (S.ati === trackIdx) renderTrackInfo();
+}
+function selectLayer(trackIdx, id) {
+  const t = S.tracks[trackIdx];
+  t.selLayerId = id;
+  renderTrackInfo(); syncXov();
+}
+function setLayerOpacity(trackIdx, id, v) {
+  const t = S.tracks[trackIdx];
+  const l = layerOf(t, id); if (!l) return;
+  if (l.kind === 'media') t.opacity = +v; else l.opacity = +v;
+}
+function setLayerColor(trackIdx, id, color) {
+  const l = layerOf(S.tracks[trackIdx], id); if (!l) return;
+  l.color = color;
+}
+/* Capas de archivo: imagen fija o video en loop */
+function onLayerFileChosen(ev, kind) {
+  const f = ev.target.files[0]; ev.target.value = '';
+  if (!f) return;
+  const l = addLayer(S.ati, kind, { name:f.name, mediaRef:buildFileMediaRef(f) });
+  loadLayerFile(l, f);
+}
+function loadLayerFile(l, file) {
+  if (l._objectURL) { try { URL.revokeObjectURL(l._objectURL); } catch(_) {} }
+  l._objectURL = URL.createObjectURL(file);
+  l.name = file.name;
+  if (l.kind === 'image') {
+    if (!l._el) l._el = mkStill();
+    l._el.src = l._objectURL;
+  } else {
+    if (!l._el) {
+      const v = document.createElement('video');
+      v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto';
+      v.style.display = 'none'; document.body.appendChild(v);
+      l._el = v;
+    }
+    l._el.src = l._objectURL;
+    l._el.play().catch(()=>{});
+  }
+  if (S.tracks[S.ati].layers.includes(l)) renderTrackInfo();
+}
+/* Capas en vivo — reutilizan los flujos de la fuente principal enrutando
+   el stream a la capa (ver _applyStreamTo). */
+function addLiveLayer(trackIdx, liveType) {
+  const l = addLayer(trackIdx, 'live', { liveType, name: liveType==='display'?'PANTALLA':liveType==='capture'?'CAPTURA':'NAVEGADOR' });
+  captureLayerLive(trackIdx, l.id);
+}
+function captureLayerLive(trackIdx, id) {
+  const l = layerOf(S.tracks[trackIdx], id); if (!l) return;
+  if (l.liveType === 'display') loadTrackDisplay(trackIdx, id);
+  else if (l.liveType === 'capture') loadTrackCapture(trackIdx, id);
+  else if (l.liveType === 'browser') { if (l._navWin && !l._navWin.closed) captureBrowserWindow(trackIdx, id); else loadTrackBrowser(trackIdx, id); }
+}
+function setGalleryDur(trackIdx, v) {
+  const t = S.tracks[trackIdx];
+  const d = Math.max(0.1, parseFloat(v) || 5);
+  t.galleryDur = d;
+  t.playlist.forEach(e => { if (isImageRef(e.mediaRef)) e.dur = d; });
+  if (t.mediaKind === 'image') t.still.duration = Math.max(t.still.duration, d);
+  renderTrackInfo();
 }
 
 /* ── Transform independiente por pista — posición/escala/rotación por
@@ -2518,51 +3074,92 @@ function renderPlaylistPanel(t) {
 function trackXformSliderParams() {
   return efxParams({type:'xform'});
 }
+/* La capa que editan los sliders de TRANSFORM y la caja interactiva */
+function layerOf(t, id) { return t.layers.find(l => l.id === id) || null; }
+function curLayer(t)    { return layerOf(t, t.selLayerId) || t.layers[0]; }
+function curXform(t)    { if (t.layersLinked !== false) return t.xform; const l = curLayer(t); return l && l.kind !== 'media' ? l.xform : t.xform; }
+function layerXform(t, l) { return t.layersLinked !== false || !l || l.kind === 'media' ? t.xform : l.xform; }
+function toggleLayersLinked(idx) {
+  const t = S.tracks[idx];
+  t.layersLinked = t.layersLinked === false;
+  renderTrackInfo(); syncXov();
+}
 function buildTrackXformHTML(t) {
+  const xf = curXform(t);
+  const linked = !!xf.scaleLink;
   return trackXformSliderParams().map(p => {
-    const cur = t.xform[p.key] !== undefined ? t.xform[p.key] : p.def;
+    const cur = xf[p.key] !== undefined ? xf[p.key] : p.def;
     const disp = EFX_FMT[p.fmt] ? EFX_FMT[p.fmt](cur) : cur;
-    return `<div class="ep-row" data-pkey="${p.key}">
+    const isScale = p.link === 'scale';
+    /* El botón 🔗 va en la fila de Escala X; vincula X e Y para moverlas a la vez */
+    const linkBtn = p.key === 'scaleX'
+      ? `<button class="ep-link${linked?' on':''}" onclick="toggleTrackScaleLink(${t.i})" title="Vincular Escala X e Y (se mueven juntas)">🔗</button>` : '';
+    return `<div class="ep-row${isScale && linked ? ' linked' : ''}" data-pkey="${p.key}">
       <span class="ep-lbl">${p.lbl}</span>
-      <input type="range" class="epsl" min="${p.min}" max="${p.max}" step="${p.step}" value="${cur}"
+      <input type="range" class="epsl" min="${p.min}" max="${p.max}" step="${p.step}" value="${cur}" data-def="${p.def}"
         oninput="trackXformInput('${p.key}',this.value,'${p.fmt}')">
-      <span class="ep-val">${disp}</span>
+      <span class="ep-val">${disp}</span>${linkBtn}
     </div>`;
   }).join('');
 }
 function trackXformInput(key, rawVal, fmt) {
   const t = S.tracks[S.ati];
+  const xf = curXform(t);
   const val = +rawVal;
-  t.xform[key] = val;
-  const label = document.querySelector(`#track-info [data-pkey="${key}"] .ep-val`);
-  if (label) label.textContent = EFX_FMT[fmt] ? EFX_FMT[fmt](val) : val;
+  xf[key] = val;
+  setSliderRow('#track-info', key, val, fmt);
+  /* Escalas vinculadas: la otra sigue a la que se movió */
+  const other = xf.scaleLink ? xformLinkedKey(key) : null;
+  if (other) { xf[other] = val; setSliderRow('#track-info', other, val, fmt); }
   syncXov();
 }
 function resetTrackXform(idx) {
-  S.tracks[idx].xform = { x:0, y:0, scaleX:1, scaleY:1, rotation:0, pin:{ tl:[0,0], tr:[0,0], bl:[0,0], br:[0,0] } };
+  const t = S.tracks[idx];
+  const xf0 = curXform(t);
+  const scaleLink = !!xf0.scaleLink, pinLink = [...(xf0.pinLink||[])];   // vínculos = preferencia de UI, no un valor: se conservan
+  const fresh = xformDefault({ scaleLink, pinLink });
+  const l = curLayer(t);
+  if (t.layersLinked === false && l && l.kind !== 'media') l.xform = fresh; else t.xform = fresh;
   renderTrackInfo();
   syncXov();
 }
 
-function onPlaylistFilesChosen(ev) {
-  const files = Array.from(ev.target.files || []);
-  ev.target.value = '';
-  if (!files.length) return;
-  const t = S.tracks[S.ati];
-  files.forEach(file => {
-    t.playlist.push({
-      id: 'pe'+Date.now()+Math.random().toString(36).slice(2,7),
-      name: file.name,
-      file,
-      relativePath: file.webkitRelativePath || '',
-      mediaRef: buildFileMediaRef(file),
-      dur: 0,
-      objectURL: null,
-    });
-  });
-  renderTrackInfo();
-  probePlaylistDurations(t);
+/* ── Vínculo Escala X ↔ Y (pista y efecto global TRANSFORM) ── */
+function xformLinkedKey(key) { return key === 'scaleX' ? 'scaleY' : key === 'scaleY' ? 'scaleX' : null; }
+/* Actualiza slider + etiqueta de una fila de parámetro sin reconstruir el panel */
+function setSliderRow(scope, key, val, fmt) {
+  const row = document.querySelector(`${scope} [data-pkey="${key}"]`);
+  if (!row) return;
+  const inp = row.querySelector('input[type=range]'); if (inp) inp.value = val;
+  const lbl = row.querySelector('.ep-val'); if (lbl) lbl.textContent = EFX_FMT[fmt] ? EFX_FMT[fmt](val) : val;
 }
+function toggleTrackScaleLink(idx) {
+  const xf = curXform(S.tracks[idx]);
+  xf.scaleLink = !xf.scaleLink;
+  if (xf.scaleLink) xf.scaleY = xf.scaleX;   // al vincular, Y adopta X para arrancar parejas
+  renderTrackInfo();
+  syncXov();
+}
+function toggleEfxScaleLink(id) {
+  const e = S.efxs.find(x => x.id === id); if (!e) return;
+  e.scaleLink = !e.scaleLink;
+  if (e.scaleLink) e.scaleY = e.scaleX ?? 1;
+  const panel = document.querySelector(`[data-eid="${id}"] .efx-params`);
+  if (panel) panel.innerHTML = buildParamHTML(e);
+  if (xovMode === 'global') syncXov();
+}
+
+/* ── Doble clic sobre cualquier slider de parámetros = volver a su valor
+   por defecto (atributo data-def). Delegado en document para cubrir
+   paneles que se reconstruyen (pista, efectos, cámara, procesador). ── */
+document.addEventListener('dblclick', ev => {
+  const inp = ev.target?.closest?.('input[type=range][data-def]');
+  if (!inp) return;
+  ev.preventDefault();
+  inp.value = inp.dataset.def;
+  inp.dispatchEvent(new Event('input',  { bubbles:true }));
+  inp.dispatchEvent(new Event('change', { bubbles:true }));
+});
 
 /* Sequentially reads duration metadata for playlist entries that don't
    have it yet, via a single shared hidden &lt;video&gt;. */
@@ -2575,6 +3172,7 @@ async function probePlaylistDurations(track) {
     document.body.appendChild(probe);
   }
   for (const entry of track.playlist) {
+    if (isImageRef(entry.mediaRef)) { if (!entry.dur) entry.dur = track.galleryDur || 5; continue; }
     if (entry.dur || !entry.file) continue;
     if (!entry.objectURL) entry.objectURL = URL.createObjectURL(entry.file);
     probe.src = entry.objectURL;
@@ -2582,6 +3180,34 @@ async function probePlaylistDurations(track) {
     catch(_) {}
     if (S.tracks[S.ati] === track) renderTrackInfo();
   }
+}
+
+/* ── Playlist pre-warm: read each video's bytes once in the background so
+   the OS/browser disk cache is already hot before the clip is ever
+   triggered. Playlist clips are loaded lazily on first trigger (see
+   triggerClipWithLoad) — without warming, that first MIDI hit pays the
+   full disk-read latency right there, which for large files or a slow/
+   external drive shows up as a multi-second delay before the pad reacts.
+   Best-effort: failures are silently ignored, never blocks the UI. ── */
+async function warmPlaylistEntry(track, entry) {
+  if (entry._warmed || entry._warming || !entry.file || isImageRef(entry.mediaRef)) return;
+  entry._warming = true;
+  try {
+    const reader = entry.file.stream().getReader();
+    while (!(await reader.read()).done) {}
+    entry._warmed = true;
+  } catch(_) { /* best-effort */ }
+  finally {
+    entry._warming = false;
+    if (S.tracks[S.ati] === track) renderTrackInfo();
+  }
+}
+function warmPlaylist(track, concurrency = 2) {
+  const queue = track.playlist.filter(e => e.file && !isImageRef(e.mediaRef) && !e._warmed && !e._warming);
+  if (!queue.length) return;
+  let next = 0;
+  const worker = async () => { while (next < queue.length) await warmPlaylistEntry(track, queue[next++]); };
+  for (let i = 0; i < Math.min(concurrency, queue.length); i++) worker();
 }
 
 function movePlaylistEntry(trackIdx, id, dir) {
@@ -2638,12 +3264,13 @@ function clearPlaylist(trackIdx) {
    playlist, only preserving each entry's learned MIDI note. */
 async function generatePlaylistClips(trackIdx) {
   const t = S.tracks[trackIdx];
-  if (!t.playlist.length) { alert('La playlist está vacía.'); return; }
+  if (!t.playlist.length) { alert('La lista de medios está vacía.'); return; }
 
   await probePlaylistDurations(t);
   if (t.playlist.some(e => !e.dur)) {
-    alert('No se pudo leer la duración de algún video de la playlist. Revisa los archivos.');
+    alert('No se pudo leer la duración de algún video de la lista. Revisa los archivos.');
   }
+  warmPlaylist(t);
 
   const plGroupId = 'pl-'+t.id;
   let group = t.groups.find(g => g.id === plGroupId);
@@ -2678,6 +3305,70 @@ async function generatePlaylistClips(trackIdx) {
   t.clips.push(...newClips);
   clipSeq = allClips().length + 1;
   renderClips(); renderTL(); renderTrackInfo();
+}
+
+/* ── ⚡ GENERAR CLIPS unificado: clips para la lista de medios (videos e
+   imágenes) y, si la pista tiene una fuente en vivo (pantalla / captura /
+   cámara / navegador), un clip-interruptor para esa fuente. ── */
+const LIVE_CLIP_OUT = 36000;   // "sin fin": la fuente en vivo no tiene duración
+function generateSourceClips(trackIdx) {
+  const t = S.tracks[trackIdx];
+  const live = t.loaded && t.sourceType !== 'file';
+  const extraLayers = t.layers.filter(l => l.kind !== 'media');
+  if (!live && !t.playlist.length && !extraLayers.length) { alert('Esta pista no tiene medios, capas ni fuente en vivo.'); return; }
+  if (live) generateLiveClip(t);
+  if (extraLayers.length) generateLayerClips(t);
+  if (t.playlist.length) generatePlaylistClips(trackIdx);
+  else { renderClips(); renderTL(); renderTrackInfo(); }
+}
+/* Un clip por fuente en vivo (srcLive). Mientras la pista tenga clips de
+   este tipo, la fuente sólo se ve cuando uno está activo: sirve de
+   interruptor MIDI (toggle) con transiciones de entrada/salida. */
+function generateLiveClip(t) {
+  const grpId = 'live-'+t.id;
+  let group = t.groups.find(g => g.id === grpId);
+  if (!group) {
+    group = { id: grpId, name: 'FUENTE', color: GRP_COLORS[t.groups.length % GRP_COLORS.length], collapsed:false };
+    t.groups.push(group);
+    grpOpen.add(group.id);
+  }
+  const prev = t.clips.find(c => c.srcLive && c.groupId === grpId);
+  const ico = srcIcon(t.sourceType);
+  if (prev) { prev.name = ico+' '+t.loadedName; prev.srcLiveType = t.sourceType; return; }
+  t.clips.push({
+    id:'c'+Date.now()+'L', name: ico+' '+t.loadedName, in:0, out: LIVE_CLIP_OUT,
+    midi:null, midiOrigen:null, color: CLIP_COLS[t.clips.length % CLIP_COLS.length],
+    playMode:'loop', trigMode:'toggle', nextClipId:null, isLock:false,
+    groupId: grpId, loopMode:'normal', transIn:'none', transOut:'none', transDur:0.5,
+    onEnd:'stop', blackoutDur:0, srcRef:null, playlistEntryId:null,
+    srcLive:true, srcLiveType:t.sourceType,
+  });
+  clipSeq = allClips().length + 1;
+}
+/* Un clip-interruptor por capa extra (grupo CAPAS); conserva el MIDI aprendido */
+function generateLayerClips(t) {
+  const grpId = 'layers-'+t.id;
+  let group = t.groups.find(g => g.id === grpId);
+  if (!group) {
+    group = { id: grpId, name: 'CAPAS', color: GRP_COLORS[t.groups.length % GRP_COLORS.length], collapsed:false };
+    t.groups.push(group);
+    grpOpen.add(group.id);
+  }
+  t.layers.filter(l => l.kind !== 'media').forEach((l, i) => {
+    const prev = t.clips.find(c => c.layerId === l.id);
+    if (prev) { prev.name = layerLabel(t, l); return; }
+    t.clips.push({
+      id:'c'+Date.now()+'y'+i, name: layerLabel(t, l), in:0, out: LIVE_CLIP_OUT,
+      midi:null, midiOrigen:null, color: CLIP_COLS[t.clips.length % CLIP_COLS.length],
+      playMode:'loop', trigMode:'toggle', nextClipId:null, isLock:false,
+      groupId: grpId, loopMode:'normal', transIn:'none', transOut:'none', transDur:0.5,
+      onEnd:'stop', blackoutDur:0, srcRef:null, playlistEntryId:null, layerId:l.id,
+    });
+  });
+  clipSeq = allClips().length + 1;
+}
+function srcIcon(type) {
+  return type==='display'?'🖥':type==='phone'?'📱':type==='capture'?'📷':type==='browser'?'🌐':'🎬';
 }
 
 function buildNextOpts(excludeId) {
@@ -3117,6 +3808,10 @@ const EFX_FMT = {
   deg:   v => Math.round(+v)+'°',
   axis:  v => (+v)===1 ? '↕ ARRIBA/ABAJO' : '↔ IZQUIERDA/DERECHA',
   raw:   v => +v,
+  scale2:v => (+v).toFixed(2)+'×',
+  raw2:  v => (+v).toFixed(2),
+  signed:v => ((+v)>0?'+':'')+Math.round(+v*100)+'%',   // −100%…+100%
+  wb:    v => (+v)===0 ? '0' : ((+v)>0?'+':'')+Math.round(+v*100),   // − frío · + cálido
 };
 
 /* Parameter schema per effect type */
@@ -3141,9 +3836,10 @@ function efxParams(e) {
     case 'xform':  return [
       {key:'x',         lbl:'Pos X',       min:-800, max:800, step:5,   fmt:'px',    def:0},
       {key:'y',         lbl:'Pos Y',       min:-800, max:800, step:5,   fmt:'px',    def:0},
-      {key:'scaleX',    lbl:'Escala X',    min:.1,   max:3,   step:.02, fmt:'scale', def:1},
-      {key:'scaleY',    lbl:'Escala Y',    min:.1,   max:3,   step:.02, fmt:'scale', def:1},
+      {key:'scaleX',    lbl:'Escala X',    min:.1,   max:3,   step:.02, fmt:'scale', def:1, link:'scale'},
+      {key:'scaleY',    lbl:'Escala Y',    min:.1,   max:3,   step:.02, fmt:'scale', def:1, link:'scale'},
       {key:'rotation',  lbl:'Rotación',    min:-180, max:180, step:1,   fmt:'deg',   def:0},
+      {key:'depth',     lbl:'Profundidad', min:-1,   max:1,   step:.02, fmt:'signed',def:0},
     ];
     default: return [];
   }
@@ -3160,6 +3856,9 @@ function efxParamInput(id, key, rawVal, fmt) {
     if (fmt==='color') { label.textContent='■ '+val; label.style.color=val; }
     else label.textContent = EFX_FMT[fmt] ? EFX_FMT[fmt](val) : val;
   }
+  /* TRANSFORM con escalas vinculadas: la otra sigue a la que se movió */
+  const other = e.type==='xform' && e.scaleLink ? xformLinkedKey(key) : null;
+  if (other) { e[other] = val; setSliderRow(`[data-eid="${id}"]`, other, val, fmt); }
   /* Live side-effects */
   if (e.type==='slowmo' && e.on) S.tracks.forEach(t=>{ if(t.loaded) t.vid.playbackRate=val; });
   if (e.type==='xform' && xovMode==='global') syncXov();
@@ -3188,11 +3887,14 @@ function buildParamHTML(e) {
       </div>`;
     }
     const disp = EFX_FMT[p.fmt] ? EFX_FMT[p.fmt](cur) : cur;
-    return `<div class="ep-row" data-pkey="${p.key}">
+    const linked = p.link === 'scale' && !!e.scaleLink;
+    const linkBtn = p.key === 'scaleX'
+      ? `<button class="ep-link${e.scaleLink?' on':''}" onclick="toggleEfxScaleLink('${e.id}')" title="Vincular Escala X e Y (se mueven juntas)">🔗</button>` : '';
+    return `<div class="ep-row${linked?' linked':''}" data-pkey="${p.key}">
       <span class="ep-lbl">${p.lbl}</span>
-      <input type="range" class="epsl" min="${p.min}" max="${p.max}" step="${p.step}" value="${cur}"
+      <input type="range" class="epsl" min="${p.min}" max="${p.max}" step="${p.step}" value="${cur}" data-def="${p.def}"
         oninput="efxParamInput('${e.id}','${p.key}',this.value,'${p.fmt}')">
-      <span class="ep-val">${disp}</span>
+      <span class="ep-val">${disp}</span>${linkBtn}
     </div>`;
   }).join('');
 }
@@ -3408,9 +4110,12 @@ function renderTL() {
       if (isLk) tlCtx.setLineDash([3,2]);
       tlCtx.strokeRect(x1, rowY+3, w, TL_TH-6); tlCtx.setLineDash([]);
 
-      /* Drag handles for selected clip */
+      /* Drag handles for selected clip — reuse tlIn/tlOut so handles line up
+         with the box above (playlist clips are laid out sequentially via
+         plDispIn, not at vo+cIn — using vo+cIn here made handles overflow
+         onto the wrong clip whenever c.in wasn't the display position) */
       if (isSel) {
-        const hx1 = toPx(vo + cIn), hx2 = toPx(vo + cOut);
+        const hx1 = toPx(tlIn), hx2 = toPx(tlOut);
         tlCtx.fillStyle = c.color;
         if (hx1>=TL_PAD) tlCtx.fillRect(hx1-3, rowY+2, 6, TL_TH-4);
         if (hx2<=W-TL_RP) tlCtx.fillRect(hx2-3, rowY+2, 6, TL_TH-4);
@@ -3499,6 +4204,20 @@ tlCvs.addEventListener('mousedown', e => {
   const t0   = toT(x);
   const vo   = track.videoOffset || 0;
 
+  /* Playlist clips are laid out sequentially on screen (see renderTL) —
+     mirror that layout here so hit-testing/handles match what's drawn.
+     Without this, every auto-generated clip hit-tests at vo+c.in (which is
+     always 0 for playlist entries), so they all collide at the same spot
+     and editing one cascades into the others via the shared cursor. */
+  let plCursor = 0;
+  const plDispIn = new Map();
+  track.clips.filter(c=>c.playlistEntryId).forEach(c => {
+    plDispIn.set(c.id, plCursor);
+    plCursor += Math.max(0, c.out - c.in);
+  });
+  const clipTlIn  = c => vo + (c.playlistEntryId!=null ? plDispIn.get(c.id) : c.in);
+  const clipTlOut = c => clipTlIn(c) + (c.out - c.in);
+
   /* ── Shift + click video block → move videoOffset ── */
   if (e.shiftKey && track.loaded) {
     const vx1 = toPx(vo), vx2 = toPx(vo + track.dur);
@@ -3513,11 +4232,15 @@ tlCvs.addEventListener('mousedown', e => {
     const sr = findClip(S.selClipId);
     if (sr && sr.track === track) {
       const c = sr.clip;
-      const hx1 = toPx(vo + c.in), hx2 = toPx(vo + c.out);
-      if (Math.abs(x - hx1) < 9) { tlDrag = {type:'in',  c, track}; return; }
-      if (Math.abs(x - hx2) < 9) { tlDrag = {type:'out', c, track}; return; }
-      /* Alt+drag inside body = move */
-      if (e.altKey && x > hx1 + 9 && x < hx2 - 9) {
+      const tlIn = clipTlIn(c), tlOut = clipTlOut(c);
+      const hx1 = toPx(tlIn), hx2 = toPx(tlOut);
+      const dispOffset = tlIn - vo - c.in;
+      if (Math.abs(x - hx1) < 9) { tlDrag = {type:'in',  c, track, dispOffset}; return; }
+      if (Math.abs(x - hx2) < 9) { tlDrag = {type:'out', c, track, dispOffset}; return; }
+      /* Alt+drag inside body = move — playlist clips are ordered by the
+         nextClipId chain, not by in/out, so moving them isn't meaningful
+         and would corrupt their trim points */
+      if (e.altKey && !c.playlistEntryId && x > hx1 + 9 && x < hx2 - 9) {
         /* Store clip data by value (not reference) to survive DOM rebuilds */
         tlDrag = { type:'move', clipId:c.id, track,
           startT:t0, origIn:c.in, origOut:c.out,
@@ -3529,10 +4252,10 @@ tlCvs.addEventListener('mousedown', e => {
 
   /* ── Click on any clip body → select only (no drag, no seek) ── */
   for (const c of track.clips) {
-    const tlIn = vo + c.in, tlOut = vo + c.out;
+    const tlIn = clipTlIn(c), tlOut = clipTlOut(c);
     if (t0 >= tlIn && t0 <= tlOut) {
       /* Alt+drag → start move immediately even if unselected */
-      if (e.altKey) {
+      if (e.altKey && !c.playlistEntryId) {
         S.selClipId = c.id;
         tlDrag = { type:'move', clipId:c.id, track,
           startT:t0, origIn:c.in, origOut:c.out,
@@ -3568,11 +4291,18 @@ tlCvs.addEventListener('mousemove', e => {
 
   if (tlDrag.type === 'in') {
     const vo = tlDrag.track.videoOffset || 0;
-    tlDrag.c.in = Math.max(0, Math.min(ts - vo, tlDrag.c.out - .05));
+    const local = ts - vo - (tlDrag.dispOffset||0);
+    tlDrag.c.in = Math.max(0, Math.min(local, tlDrag.c.out - .05));
     renderClips();
   } else if (tlDrag.type === 'out') {
     const vo = tlDrag.track.videoOffset || 0;
-    tlDrag.c.out = Math.max(tlDrag.c.in + .05, Math.min(ts - vo, tlDrag.track.dur || maxDur()));
+    const local = ts - vo - (tlDrag.dispOffset||0);
+    /* Playlist clips trim their OWN source file — bound by that file's
+       duration, not by track T1's loaded video (tlDrag.track.dur) */
+    const srcDur = tlDrag.c.playlistEntryId!=null
+      ? (tlDrag.track.playlist?.find(pe=>pe.id===tlDrag.c.playlistEntryId)?.dur ?? local)
+      : (tlDrag.track.dur || maxDur());
+    tlDrag.c.out = Math.max(tlDrag.c.in + .05, Math.min(local, srcDur));
     renderClips();
   } else if (tlDrag.type === 'move') {
     /* Preview only — resolve clip by id to survive DOM rebuilds */
@@ -3643,7 +4373,7 @@ function applyXform(W, H) {
   if (!xf) return;
   const rect   = trackXformRect(0, 0, W, H, xf);
   const rot    = (xf.rotation||0) * Math.PI/180;
-  const pinned = trackHasPin(xf.pin);
+  const pinned = trackHasPin(xf);
   const identity = !rot && !pinned && !globalGridOn && rect.dx===0 && rect.dy===0
     && Math.abs(rect.dw-W)<.01 && Math.abs(rect.dh-H)<.01;
   if (identity) return;
@@ -3710,12 +4440,25 @@ function trackQuadCorners(dx, dy, dw, dh, txf) {
   const rot = (txf?.rotation || 0) * Math.PI / 180;
   const cos = Math.cos(rot), sin = Math.sin(rot);
   const rp = (x, y) => ({ x: cx + (x - cx) * cos - (y - cy) * sin, y: cy + (x - cx) * sin + (y - cy) * cos });
-  const base = { tl: rp(dx, dy), tr: rp(dx + dw, dy), bl: rp(dx, dy + dh), br: rp(dx + dw, dy + dh) };
+  /* Profundidad: keystone simétrico del borde superior, aplicado en el
+     espacio local ANTES de rotar — así gira junto con la pista si también
+     tiene rotación, en vez de siempre "recibir" contra el mundo. */
+  const depth = Math.max(-1, Math.min(1, txf?.depth || 0));
+  const kx = depth * dw * 0.4;
+  const base = {
+    tl: rp(dx + kx,      dy),
+    tr: rp(dx + dw - kx, dy),
+    bl: rp(dx,           dy + dh),
+    br: rp(dx + dw,      dy + dh),
+  };
   const pin = txf?.pin || {};
   const add = (p, k) => { const o = pin[k] || [0, 0]; return { x: p.x + (o[0] || 0), y: p.y + (o[1] || 0) }; };
   return { tl: add(base.tl, 'tl'), tr: add(base.tr, 'tr'), bl: add(base.bl, 'bl'), br: add(base.br, 'br') };
 }
-function trackHasPin(pin) {
+function trackHasPin(txf) {
+  if (!txf) return false;
+  if (txf.depth) return true;
+  const pin = txf.pin;
   if (!pin) return false;
   return ['tl', 'tr', 'bl', 'br'].some(k => pin[k] && (pin[k][0] || pin[k][1]));
 }
@@ -3742,12 +4485,28 @@ function affineFrom3Points(u0,v0,x0,y0, u1,v1,x1,y1, u2,v2,x2,y2) {
   const f = (u0*(v1*y2-v2*y1) - v0*(u1*y2-u2*y1) + y0*(u1*v2-u2*v1)) / den;
   return [a,b,c,d,e,f];
 }
+/* Empuja cada vértice ~0.75px hacia afuera del centroide del triángulo de
+   destino. El recorte (ctx.clip) antialiasea cada triángulo por separado, así
+   que sin este margen los triángulos vecinos no encajan pixel a pixel y dejan
+   una línea fina (la grilla diagonal que se ve sobre el video con corner-pin
+   activo). El mapeo de textura (m) se calcula con los vértices reales, sólo
+   el borde de recorte se agranda un poco — el solape no se nota. */
+function inflateTriangle(x0,y0,x1,y1,x2,y2, pad) {
+  const cx = (x0+x1+x2)/3, cy = (y0+y1+y2)/3;
+  const grow = (x, y) => {
+    const vx = x-cx, vy = y-cy, len = Math.hypot(vx,vy) || 1;
+    const k = 1 + pad/len;
+    return [cx + vx*k, cy + vy*k];
+  };
+  return [grow(x0,y0), grow(x1,y1), grow(x2,y2)];
+}
 function drawTriangleWarped(img, sx0,sy0,sx1,sy1,sx2,sy2, dx0,dy0,dx1,dy1,dx2,dy2) {
   const m = affineFrom3Points(sx0,sy0,dx0,dy0, sx1,sy1,dx1,dy1, sx2,sy2,dx2,dy2);
   if (!m) return;
+  const [[gx0,gy0],[gx1,gy1],[gx2,gy2]] = inflateTriangle(dx0,dy0,dx1,dy1,dx2,dy2, 1.5);
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(dx0,dy0); ctx.lineTo(dx1,dy1); ctx.lineTo(dx2,dy2); ctx.closePath();
+  ctx.moveTo(gx0,gy0); ctx.lineTo(gx1,gy1); ctx.lineTo(gx2,gy2); ctx.closePath();
   ctx.clip();
   ctx.setTransform(m[0],m[1],m[2],m[3],m[4],m[5]);
   ctx.drawImage(img, 0, 0);
@@ -3771,15 +4530,41 @@ function drawQuadWarped(img, w, h, quad) {
   }
 }
 
+/* Aplica CORTE (recorte rectangular — conserva sólo lo de adentro) y
+   BORRADOR (pincel libre — agujerea lo pintado) sobre el buffer bctx de
+   w×h. Se llama después de dibujar el video ahí y antes de componer el
+   buffer en el lienzo principal, así vale tanto para el camino con
+   rotación/corner-pin como para el que sólo necesita el buffer por la
+   máscara (ver drawTrackWarped). */
+function applyTrackMask(bctx, w, h, mask) {
+  if (!mask) return;
+  if (mask.crop) {
+    const { x0, y0, x1, y1 } = mask.crop;
+    bctx.save();
+    bctx.globalCompositeOperation = 'destination-in';
+    bctx.fillStyle = '#fff';
+    bctx.fillRect(x0*w, y0*h, (x1-x0)*w, (y1-y0)*h);
+    bctx.restore();
+  }
+  if (mask.erase) {
+    bctx.save();
+    bctx.globalCompositeOperation = 'destination-out';
+    bctx.drawImage(mask.erase, 0, 0, w, h);
+    bctx.restore();
+  }
+}
+
 /* Dibuja una pista con su propia rotación y corner-pin (además del pan/
-   escala ya resuelto en dx,dy,dw,dh). Sin rotación ni pin cae en drawVid
+   escala ya resuelto en dx,dy,dw,dh), y opcionalmente el CORTE/BORRADOR
+   de la pista (mask). Sin rotación, pin, grilla ni máscara cae en drawVid
    normal — el camino barato de siempre, sin costo extra. Con sólo rotación
    (sin pin) usa ctx.rotate nativo, exacto y barato. El warp por grilla sólo
    entra en juego cuando alguna esquina se movió (corner-pin / profundidad). */
-function drawTrackWarped(vid, dx, dy, dw, dh, txf, mH, mV, showGrid) {
+function drawTrackWarped(vid, dx, dy, dw, dh, txf, mH, mV, showGrid, mask) {
   const rot    = (txf?.rotation || 0) * Math.PI / 180;
-  const pinned = trackHasPin(txf?.pin);
-  if (!rot && !pinned && !showGrid) { drawVid(vid, dx, dy, dw, dh, mH, mV); return; }
+  const pinned = trackHasPin(txf);
+  const hasMask = mask && (mask.crop || mask.erase);
+  if (!rot && !pinned && !showGrid && !hasMask) { drawVid(vid, dx, dy, dw, dh, mH, mV); return; }
 
   const w = Math.max(1, Math.round(dw)), h = Math.max(1, Math.round(dh));
   if (trackXfBuf.width !== w || trackXfBuf.height !== h) { trackXfBuf.width = w; trackXfBuf.height = h; }
@@ -3791,6 +4576,7 @@ function drawTrackWarped(vid, dx, dy, dw, dh, txf, mH, mV, showGrid) {
   else          { trackXfCtx.drawImage(vid, 0, 0, w, h); }
   trackXfCtx.restore();
   if (showGrid) drawGridOverlay(trackXfCtx, w, h);
+  applyTrackMask(trackXfCtx, w, h, mask);
 
   if (!pinned) {
     ctx.save();
@@ -3824,9 +4610,9 @@ let lastZd = { zdx:0, zdy:0, zdw:1280, zdh:720 };
 /* El efecto global TRANSFORM siempre existe en S.efxs (EFX_DEFS lo crea) */
 const efxXform = () => S.efxs.find(e => e.type === 'xform');
 
-function xovXf()       { return xovMode === 'track' ? S.tracks[S.ati]?.xform : xovMode === 'global' ? efxXform() : null; }
+function xovXf()       { return xovMode === 'track' ? (S.tracks[S.ati] ? curXform(S.tracks[S.ati]) : null) : xovMode === 'global' ? efxXform() : null; }
 function xovBaseRect() { return xovMode === 'track' ? [lastZd.zdx, lastZd.zdy, lastZd.zdw, lastZd.zdh] : [0, 0, cvs.width, cvs.height]; }
-function xovReady()    { if (xovMode === 'track') { const t = S.tracks[S.ati]; return !!(t && t.loaded); } return xovMode === 'global'; }
+function xovReady()    { if (xovMode === 'track') { const t = S.tracks[S.ati]; if (!t) return false; const l = curLayer(t); return l && l.kind !== 'media' ? true : !!t.loaded; } return xovMode === 'global'; }
 
 function toggleTrackBoxEdit()  { xovMode = xovMode === 'track'  ? null : 'track';  syncXov(); }
 function toggleGlobalBoxEdit() { xovMode = xovMode === 'global' ? null : 'global'; syncXov(); }
@@ -3908,6 +4694,7 @@ function syncXov() {
   poly.addEventListener('mousedown', e => txStartDrag(e, 'move', null));
   svg.appendChild(poly);
 
+  const pinLink = xf.pinLink || [];
   for (const [key, p] of [['tl',quad.tl],['tr',quad.tr],['bl',quad.bl],['br',quad.br]]) {
     /* manija de rotar: un poco afuera de la esquina, sobre la diagonal desde el centro */
     const ox = p.x - cx, oy = p.y - cy, len = Math.hypot(ox, oy) || 1;
@@ -3921,7 +4708,33 @@ function syncXov() {
     const ch = txovEl('circle', { cx:p.x, cy:p.y, r:r1, fill:col, stroke:'#0a0a14', 'stroke-width':sw*.6, style:'cursor:nwse-resize;pointer-events:all;' });
     ch.addEventListener('mousedown', e => txStartDrag(e, e.shiftKey ? 'pin' : 'scale', key));
     svg.appendChild(ch);
+
+    /* manija de vínculo: marca esta esquina para que se mueva junto con las
+       demás marcadas (1, 2 o 3 esquinas) al arrastrar con Shift una de ellas
+       — hacia el centro, no estorba la manija de escalar/pin. */
+    const linked = pinLink.includes(key);
+    const lp = { x: p.x - ox/len*rotOff*.7, y: p.y - oy/len*rotOff*.7 };
+    const sq = txovEl('rect', {
+      x: lp.x - r2, y: lp.y - r2, width: r2*2, height: r2*2,
+      fill: linked ? col : 'rgba(10,10,20,.55)', stroke: col, 'stroke-width': sw*.6,
+      style: 'cursor:pointer;pointer-events:all;'
+    });
+    sq.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); toggleCornerLink(key); });
+    sq.appendChild(txovEl('title', {})).textContent = 'Vincular esquina (mover junto con las otras marcadas)';
+    svg.appendChild(sq);
   }
+}
+
+/* Marca/desmarca una esquina para el vínculo múltiple — con 2 o 3 esquinas
+   marcadas, arrastrar con Shift cualquiera de ellas mueve a las demás por
+   el mismo delta (ver mousemove, modo 'pin'). Con 0 o 1 marcada no cambia
+   nada: cada esquina se sigue moviendo de forma independiente. */
+function toggleCornerLink(key) {
+  const xf = xovXf(); if (!xf) return;
+  if (!xf.pinLink) xf.pinLink = [];
+  const i = xf.pinLink.indexOf(key);
+  if (i >= 0) xf.pinLink.splice(i, 1); else xf.pinLink.push(key);
+  syncXov();
 }
 
 /* Convierte un evento de mouse a coordenadas de canvas (mismo espacio que
@@ -3950,6 +4763,7 @@ function txStartDrag(evt, mode, corner) {
   const restQuad = mode === 'pin'
     ? trackQuadCorners(rect.dx, rect.dy, rect.dw, rect.dh, { ...xf, pin:{tl:[0,0],tr:[0,0],bl:[0,0],br:[0,0]} })
     : null;
+  const pin0 = xf.pin || {};
   txDrag = {
     mode, corner, cx, cy,
     halfW: (rect.dw / (xf.scaleX || 1)) / 2,
@@ -3960,6 +4774,13 @@ function txStartDrag(evt, mode, corner) {
     startX: xf.x || 0, startY: xf.y || 0,
     startMouse: mp,
     restCorner: restQuad ? restQuad[corner] : null,
+    /* Snapshot del pin de las 4 esquinas al empezar a arrastrar — así, si
+       ésta está vinculada a otras (xf.pinLink), se les puede aplicar el
+       mismo delta sin importar de qué offset partía cada una. */
+    startPin: mode === 'pin' ? {
+      tl: [...(pin0.tl || [0,0])], tr: [...(pin0.tr || [0,0])],
+      bl: [...(pin0.bl || [0,0])], br: [...(pin0.br || [0,0])],
+    } : null,
   };
 }
 
@@ -3977,14 +4798,31 @@ window.addEventListener('mousemove', e => {
     const cos = Math.cos(-txDrag.rot), sin = Math.sin(-txDrag.rot);
     const dx0 = mp.x - txDrag.cx, dy0 = mp.y - txDrag.cy;
     const lx = dx0*cos - dy0*sin, ly = dx0*sin + dy0*cos;
-    xf.scaleX = Math.max(.05, (lx * sign[0]) / txDrag.halfW);
-    xf.scaleY = Math.max(.05, (ly * sign[1]) / txDrag.halfH);
+    const sx = Math.max(.05, (lx * sign[0]) / txDrag.halfW);
+    const sy = Math.max(.05, (ly * sign[1]) / txDrag.halfH);
+    if (xf.scaleLink) { xf.scaleX = xf.scaleY = Math.max(.05, (sx + sy) / 2); }   // vinculadas: proporcional
+    else { xf.scaleX = sx; xf.scaleY = sy; }
   } else if (txDrag.mode === 'rotate') {
     const angle = Math.atan2(mp.y - txDrag.cy, mp.x - txDrag.cx);
     xf.rotation = txDrag.startRotation + (angle - txDrag.startAngle) * 180/Math.PI;
   } else if (txDrag.mode === 'pin') {
     if (!xf.pin) xf.pin = { tl:[0,0], tr:[0,0], bl:[0,0], br:[0,0] };
-    xf.pin[txDrag.corner] = [mp.x - txDrag.restCorner.x, mp.y - txDrag.restCorner.y];
+    const newOff = [mp.x - txDrag.restCorner.x, mp.y - txDrag.restCorner.y];
+    xf.pin[txDrag.corner] = newOff;
+    /* Esquinas vinculadas (2 o 3 marcadas, ésta incluida): se mueven por el
+       mismo delta que ésta desde que empezó el arrastre, cada una desde su
+       propio punto de partida — así el grupo se desplaza en bloque sin
+       perder la forma relativa que ya tenían entre sí. */
+    const group = xf.pinLink && xf.pinLink.length > 1 && xf.pinLink.includes(txDrag.corner) ? xf.pinLink : null;
+    if (group) {
+      const start = txDrag.startPin[txDrag.corner] || [0,0];
+      const delta = [newOff[0]-start[0], newOff[1]-start[1]];
+      group.forEach(k => {
+        if (k === txDrag.corner) return;
+        const base = txDrag.startPin[k] || [0,0];
+        xf.pin[k] = [base[0]+delta[0], base[1]+delta[1]];
+      });
+    }
   } else return;
 
   syncXov();
@@ -4007,6 +4845,466 @@ function syncXformSliders(xf) {
 }
 
 new ResizeObserver(() => syncXov()).observe(document.getElementById('vid-area'));
+
+/* ═══════════════════════════════════════════════════════
+   BORRADOR / CORTE — tapan partes del video de la pista activa.
+   BORRADOR es un pincel libre: dibujás con el mouse y esa zona se vuelve
+   transparente. CORTAR es un recorte rectangular fijo: arrastrás una
+   caja y sólo queda visible lo de adentro (el resto se oculta). Las dos
+   actúan sobre la capa MEDIA en el espacio de t.xform (sin rotación ni
+   corner-pin — mismo límite que ya tiene el efecto RGB SPLIT) y se
+   componen en drawTrackWarped()/applyTrackMask(). Viven sólo en memoria:
+   no se guardan con el proyecto (ver _eraseMask/_cropRect en makeTrack). ══*/
+let paintMode = null;   // null | 'erase' | 'cut'
+let paintDrag = null;
+let eraseBrushSize = 40;
+const ERASE_MASK_W = 640, ERASE_MASK_H = 360;
+const clamp01 = v => Math.max(0, Math.min(1, v));
+
+function ensureEraseMask(t) {
+  if (!t._eraseMask) {
+    const c = document.createElement('canvas');
+    c.width = ERASE_MASK_W; c.height = ERASE_MASK_H;
+    t._eraseMask = c;
+  }
+  return t._eraseMask;
+}
+function togglePaintMode(mode) {
+  paintMode = paintMode === mode ? null : mode;
+  if (paintMode) { xovMode = null; syncXov(); }   // sólo una herramienta de mouse a la vez sobre el canvas
+  document.getElementById('erase-btn')?.classList.toggle('on', paintMode==='erase');
+  document.getElementById('cut-btn')?.classList.toggle('on', paintMode==='cut');
+  const row = document.getElementById('erase-brush-row');
+  if (row) row.style.display = paintMode==='erase' ? '' : 'none';
+}
+function clearEraseMask(idx) {
+  const t = S.tracks[idx];
+  if (t?._eraseMask) t._eraseMask.getContext('2d').clearRect(0,0,ERASE_MASK_W,ERASE_MASK_H);
+}
+function clearCropRect(idx) {
+  const t = S.tracks[idx]; if (t) t._cropRect = null;
+}
+
+function canvasPointFromEvent(e) {
+  const box = cvs.getBoundingClientRect();
+  if (!box.width || !box.height) return null;
+  return { x:(e.clientX-box.left)*(cvs.width/box.width), y:(e.clientY-box.top)*(cvs.height/box.height) };
+}
+/* Rect en pantalla de la capa MEDIA de la pista (mismo cálculo que usa
+   drawTrackMedia) → UV 0..1 del punto del mouse dentro de ese rect.
+   Siempre la capa MEDIA, sin importar qué capa esté seleccionada para el
+   transform: borrador/corte tapan "el video", no una capa cualquiera. */
+function trackMediaUV(t, p) {
+  const rect = trackXformRect(lastZd.zdx, lastZd.zdy, lastZd.zdw, lastZd.zdh, t.xform);
+  if (!rect.dw || !rect.dh) return null;
+  return { u:(p.x-rect.dx)/rect.dw, v:(p.y-rect.dy)/rect.dh, rect };
+}
+function paintDot(mctx, x, y, r)  { mctx.beginPath(); mctx.arc(x,y,r,0,Math.PI*2); mctx.fill(); }
+function paintLine(mctx, x0,y0,x1,y1, r) {
+  mctx.lineCap='round'; mctx.lineWidth=r*2; mctx.strokeStyle='#fff'; mctx.fillStyle='#fff';
+  mctx.beginPath(); mctx.moveTo(x0,y0); mctx.lineTo(x1,y1); mctx.stroke();
+  paintDot(mctx, x1,y1, r);
+}
+
+cvs.addEventListener('mousedown', e => {
+  if (!paintMode) return;
+  const t = S.tracks[S.ati]; if (!t) return;
+  const p = canvasPointFromEvent(e); if (!p) return;
+  const uv = trackMediaUV(t, p); if (!uv) return;
+  e.preventDefault();
+  if (paintMode === 'erase') {
+    const mask = ensureEraseMask(t);
+    const mctx = mask.getContext('2d');
+    const r = Math.max(1, eraseBrushSize * (ERASE_MASK_W / uv.rect.dw));
+    const pt = { x:uv.u*ERASE_MASK_W, y:uv.v*ERASE_MASK_H };
+    mctx.fillStyle = '#fff'; paintDot(mctx, pt.x, pt.y, r);
+    paintDrag = { mode:'erase', t, mctx, r, last:pt };
+  } else {
+    t._cropRect = null;   // arrastre nuevo: empieza de cero
+    paintDrag = { mode:'cut', t, start:{ u:clamp01(uv.u), v:clamp01(uv.v) } };
+  }
+});
+window.addEventListener('mousemove', e => {
+  if (!paintDrag) return;
+  const p = canvasPointFromEvent(e); if (!p) return;
+  const uv = trackMediaUV(paintDrag.t, p); if (!uv) return;
+  if (paintDrag.mode === 'erase') {
+    const pt = { x:uv.u*ERASE_MASK_W, y:uv.v*ERASE_MASK_H };
+    paintLine(paintDrag.mctx, paintDrag.last.x, paintDrag.last.y, pt.x, pt.y, paintDrag.r);
+    paintDrag.last = pt;
+  } else {
+    const { u:u0, v:v0 } = paintDrag.start, u1 = clamp01(uv.u), v1 = clamp01(uv.v);
+    paintDrag.t._cropRect = { x0:Math.min(u0,u1), y0:Math.min(v0,v1), x1:Math.max(u0,u1), y1:Math.max(v0,v1) };
+  }
+});
+window.addEventListener('mouseup', () => {
+  if (paintDrag?.mode === 'cut') {
+    const r = paintDrag.t._cropRect;
+    if (r && (r.x1-r.x0 < .01 || r.y1-r.y0 < .01)) paintDrag.t._cropRect = null;   // click sin arrastre = sin corte
+  }
+  paintDrag = null;
+});
+
+/* ═══════════════════════════════════════════════════════
+   PROCESADOR DE VIDEO POR PISTA
+   Corrección de imagen en tiempo real (ganancia, brillo, contraste,
+   gamma, balance de blancos, compensación de contraluz, matiz,
+   saturación, nitidez) aplicada a la fuente de cada pista ANTES del
+   transform y de los efectos. Es software (WebGL, un shader), así que
+   funciona igual con archivos, pantalla, capturadora o cámara de
+   teléfono — a diferencia de CONFIG. DE CÁMARA, que manda al driver.
+═══════════════════════════════════════════════════════ */
+function buildVprocHTML(t) {
+  const v = t.vproc || vprocDefault();
+  return VPROC_PARAMS.map(p => {
+    const cur = v[p.key] !== undefined ? v[p.key] : p.def;
+    const disp = EFX_FMT[p.fmt] ? EFX_FMT[p.fmt](cur) : cur;
+    return `<div class="ep-row" data-pkey="${p.key}">
+      <span class="ep-lbl wide" title="${p.tip}">${p.lbl}</span>
+      <input type="range" class="epsl" min="${p.min}" max="${p.max}" step="${p.step}" value="${cur}" data-def="${p.def}"
+        oninput="vprocInput(${t.i},'${p.key}',this.value,'${p.fmt}')">
+      <span class="ep-val">${disp}</span>
+    </div>`;
+  }).join('');
+}
+function vprocInput(idx, key, rawVal, fmt) {
+  const t = S.tracks[idx];
+  t.vproc[key] = +rawVal;
+  setSliderRow('#vproc-params', key, +rawVal, fmt);
+  /* Mover un slider enciende el procesador solo — mismo criterio que TRANSFORM */
+  if (!t.vproc.on) { t.vproc.on = true; syncVprocBtn(t); }
+}
+function syncVprocBtn(t) {
+  const b = document.getElementById('vproc-btn');
+  if (b) { b.classList.toggle('on', t.vproc.on); b.textContent = t.vproc.on ? 'ON' : 'OFF'; }
+  const p = document.getElementById('vproc-params');
+  if (p) p.style.opacity = t.vproc.on ? '' : '.5';
+}
+function toggleVproc(idx) {
+  const t = S.tracks[idx];
+  t.vproc.on = !t.vproc.on;
+  syncVprocBtn(t);
+}
+function resetVproc(idx) {
+  const t = S.tracks[idx];
+  t.vproc = { ...vprocDefault(), on: t.vproc.on };
+  VPROC_PARAMS.forEach(p => setSliderRow('#vproc-params', p.key, p.def, p.fmt));
+}
+
+/* Un solo contexto WebGL compartido: procesa la fuente al tamaño nativo y
+   copia el resultado a un canvas 2D por pista (es lo que consume drawImage). */
+let vprocGL = null;   // null = sin crear · false = WebGL no disponible · objeto = listo
+function vprocInit() {
+  if (vprocGL !== null) return vprocGL;
+  const cvsGL = document.createElement('canvas');
+  const gl = cvsGL.getContext('webgl', { premultipliedAlpha:false, preserveDrawingBuffer:false, antialias:false, depth:false, stencil:false });
+  if (!gl) { vprocGL = false; console.warn('Procesador de video: WebGL no disponible'); return false; }
+  const VS = 'attribute vec2 a; varying vec2 v; void main(){ v = a*.5+.5; gl_Position = vec4(a,0.,1.); }';
+  const FS = `
+    precision mediump float;
+    varying vec2 v;
+    uniform sampler2D u_tex;
+    uniform vec2  u_px;
+    uniform float u_gain, u_bri, u_con, u_gamma, u_wb, u_bl, u_hue, u_sat, u_sharp;
+    /* Matiz/saturación rotando el plano IQ del espacio YIQ */
+    vec3 hueSat(vec3 c, float h, float s) {
+      const mat3 toYIQ = mat3(0.299, 0.596, 0.211,  0.587, -0.274, -0.523,  0.114, -0.322, 0.312);
+      const mat3 toRGB = mat3(1.0, 1.0, 1.0,  0.956, -0.272, -1.106,  0.621, -0.647, 1.703);
+      vec3 yiq = toYIQ * c;
+      float a = atan(yiq.z, yiq.y) + h;
+      float l = length(yiq.yz) * s;
+      yiq.yz = vec2(cos(a), sin(a)) * l;
+      return toRGB * yiq;
+    }
+    void main() {
+      vec3 c = texture2D(u_tex, v).rgb;
+      if (u_sharp > 0.0) {
+        vec3 n = texture2D(u_tex, v + vec2(0.0, -u_px.y)).rgb;
+        vec3 s = texture2D(u_tex, v + vec2(0.0,  u_px.y)).rgb;
+        vec3 e = texture2D(u_tex, v + vec2( u_px.x, 0.0)).rgb;
+        vec3 w = texture2D(u_tex, v + vec2(-u_px.x, 0.0)).rgb;
+        c += (c - (n + s + e + w) * 0.25) * u_sharp;        /* máscara de enfoque */
+      }
+      c *= u_gain;                                            /* ganancia */
+      c *= vec3(1.0 + u_wb*0.35, 1.0 + u_wb*0.05, 1.0 - u_wb*0.35);   /* balance de blancos */
+      c = mix(c, 1.0 - (1.0 - c) * (1.0 - c), u_bl);          /* contraluz: levanta sombras/medios */
+      c = (c - 0.5) * u_con + 0.5 + u_bri;                    /* contraste + brillo */
+      c = clamp(c, 0.0, 1.0);
+      c = pow(c, vec3(1.0 / u_gamma));                        /* gamma */
+      c = hueSat(c, u_hue, u_sat);                            /* matiz + saturación */
+      gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+    }`;
+  const mk = (type, code) => {
+    const s = gl.createShader(type); gl.shaderSource(s, code); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.warn('Procesador de video: shader', gl.getShaderInfoLog(s)); return null; }
+    return s;
+  };
+  const vs = mk(gl.VERTEX_SHADER, VS), fs = mk(gl.FRAGMENT_SHADER, FS);
+  if (!vs || !fs) { vprocGL = false; return false; }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { vprocGL = false; console.warn('Procesador de video: link', gl.getProgramInfoLog(prog)); return false; }
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const a = gl.getAttribLocation(prog, 'a');
+  gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  const u = {};
+  ['u_px','u_gain','u_bri','u_con','u_gamma','u_wb','u_bl','u_hue','u_sat','u_sharp'].forEach(n => u[n] = gl.getUniformLocation(prog, n));
+  vprocGL = { cvs: cvsGL, gl, tex, u };
+  return vprocGL;
+}
+function vprocSrcDims(src) {
+  return [ src.videoWidth || src.naturalWidth || src.width || 0,
+           src.videoHeight || src.naturalHeight || src.height || 0 ];
+}
+/* Devuelve la fuente tal cual si el procesador está apagado o en neutro
+   (costo cero), o el canvas procesado de la pista si hay algo que aplicar. */
+function vprocApply(t, src) {
+  const v = t.vproc;
+  if (!v || !v.on || vprocIsIdentity(v)) return src;
+  const G = vprocInit(); if (!G) return src;
+  const [w, h] = vprocSrcDims(src);
+  if (!w || !h) return src;
+  const { cvs: cvsGL, gl, tex, u } = G;
+  if (cvsGL.width !== w || cvsGL.height !== h) { cvsGL.width = w; cvsGL.height = h; }
+  gl.viewport(0, 0, w, h);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src); }
+  catch (e) { return src; }   // p.ej. frame aún no decodificado
+  gl.uniform2f(u.u_px, 1 / w, 1 / h);
+  gl.uniform1f(u.u_gain,  v.gain);
+  gl.uniform1f(u.u_bri,   v.brightness);
+  gl.uniform1f(u.u_con,   v.contrast);
+  gl.uniform1f(u.u_gamma, Math.max(.05, v.gamma));
+  gl.uniform1f(u.u_wb,    v.wb);
+  gl.uniform1f(u.u_bl,    v.backlight);
+  gl.uniform1f(u.u_hue,   v.hue * Math.PI / 180);
+  gl.uniform1f(u.u_sat,   v.saturation);
+  gl.uniform1f(u.u_sharp, v.sharpness);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  if (!t._vprocOut) { t._vprocOut = document.createElement('canvas'); t._vprocOutCtx = t._vprocOut.getContext('2d'); }
+  const o = t._vprocOut;
+  if (o.width !== w || o.height !== h) { o.width = w; o.height = h; }
+  t._vprocOutCtx.drawImage(cvsGL, 0, 0);
+  return o;
+}
+
+/* ═══════════════════════════════════════════════════════
+   CONFIGURACIÓN DE CÁMARA / CAPTURADORA
+   Controles del driver (resolución, fps, zoom, foco, exposición, balance
+   de blancos, etc.) vía MediaStreamTrack.getCapabilities/applyConstraints.
+   Sólo aparece en pistas con fuente 📷 CAPTURA: se enumera lo que la
+   cámara/capturadora expone y se muestra tal cual — cada dispositivo trae
+   una lista distinta. La abertura no la expone ningún navegador.
+═══════════════════════════════════════════════════════ */
+let camCfgOpen = false;
+const CAM_RES_PRESETS = [[640,360],[640,480],[960,540],[1280,720],[1920,1080],[2560,1440],[3840,2160]];
+const CAM_FPS_PRESETS = [15,24,25,30,50,60];
+/* Etiqueta por control y, para los manuales, el modo que exige el driver */
+const CAM_CTRL = {
+  zoom:                  {lbl:'Zoom'},
+  focusMode:             {lbl:'Modo foco'},
+  focusDistance:         {lbl:'Foco',           needs:['focusMode','manual']},
+  exposureMode:          {lbl:'Modo exposic.'},
+  exposureTime:          {lbl:'Exposición',     needs:['exposureMode','manual']},
+  exposureCompensation:  {lbl:'Comp. exposic.'},
+  iso:                   {lbl:'ISO',            needs:['exposureMode','manual']},
+  whiteBalanceMode:      {lbl:'Modo bal. bl.'},
+  colorTemperature:      {lbl:'Temp. color',    needs:['whiteBalanceMode','manual'], unit:'K'},
+  brightness:            {lbl:'Brillo'},
+  contrast:              {lbl:'Contraste'},
+  saturation:            {lbl:'Saturación'},
+  sharpness:             {lbl:'Nitidez'},
+  backlightCompensation: {lbl:'Comp. contraluz'},
+  pan:                   {lbl:'Pan'},
+  tilt:                  {lbl:'Tilt'},
+  torch:                 {lbl:'Linterna'},
+};
+const CAM_MODE_LBL = { none:'apagado', manual:'manual', 'single-shot':'una vez', continuous:'automático' };
+/* Capacidades que no son controles de imagen (se manejan aparte o no aplican) */
+const CAM_SKIP = new Set(['width','height','aspectRatio','frameRate','deviceId','groupId','facingMode','resizeMode','displaySurface','logicalSurface','cursor']);
+
+function camTrackOf(t) { return t?._stream?.getVideoTracks?.()[0] || null; }
+function toggleCamCfg() { camCfgOpen = !camCfgOpen; renderTrackInfo(); }
+function camFmt(v, key) {
+  const n = +v;
+  if (key === 'colorTemperature') return Math.round(n) + 'K';
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+function camStatusText(st) {
+  if (!st || !st.width) return '';
+  return `Actual: ${st.width}×${st.height}${st.frameRate ? ' @ ' + Math.round(st.frameRate) + ' fps' : ''}`;
+}
+
+function buildCamCfgHTML(t, idx) {
+  if (t.sourceType !== 'capture') return '';
+  const mt = camTrackOf(t); if (!mt) return '';
+  const sec = body => tiSec('cam', '⚙ CONFIG. DE CÁMARA', '', body, { open: camCfgOpen, toggle: 'toggleCamCfg()' });
+  if (!camCfgOpen) return sec('');
+
+  let caps = {}, st = {};
+  try { caps = mt.getCapabilities?.() || {}; } catch (e) {}
+  try { st   = mt.getSettings?.()     || {}; } catch (e) {}
+  /* "Valores originales" = la configuración con la que abrió el stream */
+  if (!t._camDefaults) t._camDefaults = { ...st };
+  const defs = t._camDefaults;
+  const rows = [];
+
+  /* Dispositivo (la lista se llena async con enumerateDevices) */
+  rows.push(`<div class="ep-row"><span class="ep-lbl wide">Dispositivo</span>
+    <select class="epsel" id="cam-dev" onchange="camSwitchDevice(${idx},this.value)"><option value="">${escHtml(t.loadedName)}</option></select></div>`);
+
+  /* Resolución + fps: presets acotados a lo que declara el dispositivo */
+  const maxW = caps.width?.max || 99999, maxH = caps.height?.max || 99999, maxF = caps.frameRate?.max || 999;
+  const res = CAM_RES_PRESETS.filter(([w, h]) => w <= maxW && h <= maxH);
+  if (st.width && !res.some(([w, h]) => w === st.width && h === st.height)) res.push([st.width, st.height]);
+  res.sort((a, b) => a[0]*a[1] - b[0]*b[1]);
+  const curRes = `${st.width}x${st.height}`;
+  const fpsList = CAM_FPS_PRESETS.filter(f => f <= maxF + .5);
+  const curFps = st.frameRate ? Math.round(st.frameRate) : null;
+  if (curFps && !fpsList.includes(curFps)) { fpsList.push(curFps); fpsList.sort((a, b) => a - b); }
+  rows.push(`<div class="ep-row"><span class="ep-lbl wide">Resolución</span>
+    <select class="epsel" onchange="camApplyRes(${idx},this.value,null)">${res.map(([w, h]) => `<option value="${w}x${h}"${`${w}x${h}`===curRes?' selected':''}>${w}×${h}</option>`).join('')}</select>
+    <select class="epsel" style="flex:0 0 58px;" onchange="camApplyRes(${idx},null,this.value)" title="Cuadros por segundo">${fpsList.map(f => `<option value="${f}"${f===curFps?' selected':''}>${f} fps</option>`).join('')}</select></div>`);
+  rows.push(`<div class="ep-row"><span class="ep-note" id="cam-st">${camStatusText(st)}</span></div>`);
+
+  /* Controles del driver, en el orden de CAM_CTRL y después el resto alfabético */
+  const order = Object.keys(CAM_CTRL);
+  const keys = Object.keys(caps).filter(k => !CAM_SKIP.has(k))
+    .sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b); });
+  let any = false;
+  for (const k of keys) {
+    const cap = caps[k], lbl = CAM_CTRL[k]?.lbl || k, cur = st[k];
+    if (Array.isArray(cap)) {
+      if (!cap.length) continue;
+      if (cap.every(x => typeof x === 'boolean')) {
+        if (cap.length < 2) continue;   // sólo un valor posible = no es ajustable
+        rows.push(`<div class="ep-row" data-ckey="${k}"><span class="ep-lbl wide" title="${k}">${lbl}</span>
+          <label style="flex:1;display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:8px;color:var(--text3);cursor:pointer;">
+            <input type="checkbox" ${cur?'checked':''} onchange="camApply(${idx},'${k}',this.checked)"><span class="cam-bool">${cur?'ON':'OFF'}</span></label></div>`);
+      } else {
+        rows.push(`<div class="ep-row" data-ckey="${k}"><span class="ep-lbl wide" title="${k}">${lbl}</span>
+          <select class="epsel" onchange="camApply(${idx},'${k}',this.value)">${cap.map(m => `<option value="${m}"${m===cur?' selected':''}>${CAM_MODE_LBL[m]||m}</option>`).join('')}</select></div>`);
+      }
+      any = true;
+    } else if (cap && typeof cap === 'object' && 'min' in cap && 'max' in cap) {
+      if (!(cap.max > cap.min)) continue;
+      const step = cap.step || (cap.max - cap.min) / 100;
+      const val  = cur !== undefined ? cur : cap.min;
+      const def  = defs[k] !== undefined ? defs[k] : val;
+      rows.push(`<div class="ep-row" data-ckey="${k}"><span class="ep-lbl wide" title="${k}">${lbl}</span>
+        <input type="range" class="epsl" min="${cap.min}" max="${cap.max}" step="${step}" value="${val}" data-def="${def}"
+          oninput="camApplyNum(${idx},'${k}',this.value)">
+        <span class="ep-val">${camFmt(val, k)}</span></div>`);
+      any = true;
+    }
+  }
+  if (!any) rows.push('<div class="ep-row"><span class="ep-note">Este dispositivo no expone controles de imagen al navegador — usá el PROCESADOR DE VIDEO de abajo.</span></div>');
+  rows.push('<div class="ep-row"><span class="ep-note">Doble clic en un slider = valor inicial. Abertura: no la expone el navegador (queda en el driver).</span></div>');
+
+  setTimeout(() => camFillDevices(t), 0);
+  return sec(`<div class="efx-params open" id="cam-cfg" style="padding:6px 0 0;">${rows.join('')}</div>`);
+}
+
+async function camFillDevices(t) {
+  const sel = document.getElementById('cam-dev'); if (!sel) return;
+  let devs = [];
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (e) { return; }
+  if (!document.body.contains(sel) || !devs.length) return;
+  const curId = camTrackOf(t)?.getSettings?.()?.deviceId;
+  sel.innerHTML = devs.map((d, i) =>
+    `<option value="${d.deviceId}"${d.deviceId===curId?' selected':''}>${escHtml(d.label || 'Dispositivo ' + (i+1))}</option>`).join('');
+}
+
+/* Cambiar de dispositivo sin pasar por el prompt: cierra el stream actual y abre el nuevo */
+async function camSwitchDevice(idx, deviceId) {
+  const t = S.tracks[idx]; if (!deviceId) return;
+  if (camTrackOf(t)?.getSettings?.()?.deviceId === deviceId) return;
+  let label = 'Dispositivo';
+  try { label = (await navigator.mediaDevices.enumerateDevices()).find(d => d.deviceId === deviceId)?.label || label; } catch (e) {}
+  stopTrackStream(t);
+  await new Promise(r => setTimeout(r, 300));   // dejar que se libere la cámara anterior
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{ deviceId:{ exact:deviceId } }, audio:false });
+    _applyStream(t, stream, 'capture', label);
+  } catch (e) {
+    alert('No se pudo abrir el dispositivo:\n' + e.name + '\n' + e.message);
+    stopTrackSource(idx);
+  }
+}
+
+/* applyConstraints REEMPLAZA el set completo de restricciones, así que se
+   acumula todo lo aplicado en t._camCons y se manda siempre junto. Los
+   controles de imagen van en 'advanced' (best-effort: lo que el driver no
+   acepta se descarta sin tirar el resto). */
+function camCons(t) { return t._camCons || (t._camCons = { basic:{}, adv:{} }); }
+function camBuildConstraints(t) {
+  const c = camCons(t);
+  const adv = Object.entries(c.adv).map(([k, v]) => ({ [k]: v }));
+  if (!adv.length) return { ...c.basic };
+  return { ...c.basic, advanced: [ { ...c.adv }, ...adv ] };   // set completo primero, luego uno por uno de respaldo
+}
+async function camPush(t) {
+  const mt = camTrackOf(t); if (!mt) return;
+  const q = t._camQ || (t._camQ = { busy:false, dirty:false });
+  q.dirty = true;
+  if (q.busy) return;           // ya hay un applyConstraints en vuelo: al terminar reenvía lo último
+  q.busy = true;
+  while (q.dirty) {
+    q.dirty = false;
+    try { await mt.applyConstraints(camBuildConstraints(t)); }
+    catch (e) { console.warn('Cámara: applyConstraints', e); setSt('st-active', 'Cámara: ' + (e.message || e.name), 'err'); }
+  }
+  q.busy = false;
+  camRefreshStatus(t);
+}
+function camApply(idx, key, val) {
+  const t = S.tracks[idx]; const c = camCons(t);
+  const meta = CAM_CTRL[key];
+  if (meta?.needs) {
+    /* Control manual: el driver exige su modo en 'manual' (si lo soporta) */
+    const [mk, mv] = meta.needs;
+    let caps = {}; try { caps = camTrackOf(t)?.getCapabilities?.() || {}; } catch (e) {}
+    if (Array.isArray(caps[mk]) && caps[mk].includes(mv)) c.adv[mk] = mv;
+  } else {
+    /* Cambiar un modo a no-manual: soltar los controles que dependían de él */
+    Object.entries(CAM_CTRL).forEach(([k, m]) => { if (m.needs?.[0] === key && val !== m.needs[1]) delete c.adv[k]; });
+  }
+  c.adv[key] = val;
+  camPush(t);
+}
+function camApplyNum(idx, key, raw) {
+  const lbl = document.querySelector(`#cam-cfg [data-ckey="${key}"] .ep-val`);
+  if (lbl) lbl.textContent = camFmt(raw, key);
+  camApply(idx, key, +raw);
+}
+async function camApplyRes(idx, res, fps) {
+  const t = S.tracks[idx]; const c = camCons(t);
+  if (res) { const [w, h] = res.split('x').map(Number); c.basic.width = { ideal:w }; c.basic.height = { ideal:h }; }
+  if (fps) c.basic.frameRate = { ideal:+fps };
+  await camPush(t);
+}
+/* Refleja lo que el driver aceptó realmente (selects, checks, línea de estado) sin tocar los sliders */
+function camRefreshStatus(t) {
+  const box = document.getElementById('cam-cfg'); if (!box || S.tracks[S.ati] !== t) return;
+  let st = {}; try { st = camTrackOf(t)?.getSettings?.() || {}; } catch (e) {}
+  const stEl = document.getElementById('cam-st'); if (stEl) stEl.textContent = camStatusText(st);
+  box.querySelectorAll('[data-ckey]').forEach(row => {
+    const k = row.dataset.ckey; if (st[k] === undefined) return;
+    const sel = row.querySelector('select'); if (sel) sel.value = st[k];
+    const chk = row.querySelector('input[type=checkbox]');
+    if (chk) { chk.checked = !!st[k]; const b = row.querySelector('.cam-bool'); if (b) b.textContent = st[k] ? 'ON' : 'OFF'; }
+  });
+}
 
 /* ═══════════════════════════════════════════════════════
    SNAP
@@ -4122,13 +5420,134 @@ function renderTransition(W, H) {
   }
 }
 
+/* ── Capa MEDIA de una pista: la fuente principal (archivo / galería /
+   en vivo) con toda la lógica de clips, reversa y buffers. Era el cuerpo
+   del bucle de pistas del render loop; ahora es una capa más. ── */
+function drawTrackMedia(t, ti, zdx, zdy, zdw, zdh, mH, mV, rgb) {
+    const tf = trackFrame[ti];
+    const W = cvs.width, H = cvs.height;
+    /* ── Out-of-range check: if masterTime is outside this track's video window → black ──
+       When a clip is active it manages its own playback, so skip this check for active clips.
+       For idle tracks (no active clip), show black if cursor is outside videoOffset…videoOffset+dur */
+    const vo     = t.videoOffset || 0;
+    const isLive = t.sourceType !== 'file';
+
+    /* ── LIVE TRACK (display/capture) — draw from liveVid, bypass all clip logic ── */
+    if (isLive) {
+      const lv = t.liveVid;
+      if (lv.readyState < 2) { ctx.globalAlpha=1; return; }
+
+      /* Clips-interruptor (srcLive, ⚡ GENERAR CLIPS sobre una fuente en
+         vivo): si la pista tiene alguno, la fuente sólo se ve mientras uno
+         esté activo. Si no, ventana de visibilidad clásica por rango. */
+      if (t.clips.some(c => c.srcLive)) {
+        if (!t.activeClip || !t.activeClip.srcLive) { ctx.globalAlpha=1; return; }
+      } else if (t.clips.length) {
+        const visible = t.clips.some(c => {
+          const tlIn=vo+c.in, tlOut=vo+c.out;
+          return S.masterTime>=tlIn && S.masterTime<=tlOut;
+        });
+        if (!visible) { ctx.globalAlpha=1; return; }
+      }
+
+      ctx.globalAlpha = t.opacity;
+      { const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
+        drawTrackWarped(vprocApply(t, lv), tr.dx, tr.dy, tr.dw, tr.dh, t.xform, false, false, trackGridOn && ti===S.ati, {crop:t._cropRect, erase:t._eraseMask}); }
+      ctx.globalAlpha = 1;
+      return; // skip all file-based logic below
+    }
+
+    /* ── FILE TRACK — out-of-range check ── */
+    const inRange = t.activeClip ||
+                    (S.masterTime >= vo && S.masterTime <= vo + t.dur);
+    if (!inRange) { tf.hasFrame=false; return; }
+
+    ctx.globalAlpha = t.opacity;
+
+    const c      = t.activeClip;
+    const inRev  = c && (c.loopMode==='reverse' || (c.loopMode==='pingpong' && t.pingDir===-1));
+    /* HQ reverse: a pre-rendered reversed file plays natively → full res/fps */
+    const hqRev  = t._useRev && t._revReady && t.revVid && t.revVid.readyState >= 2;
+    const vsrc   = vprocApply(t, hqRev ? t.revVid : t.vid);
+
+    if (inRev && !hqRev && t._revFrames?.length) {
+      const idx   = Math.max(0, Math.min(t._revFrameIdx, t._revFrames.length-1));
+      const frame = t._revFrames[idx];
+      if (frame) {
+        if (tf.cvs.width!==W||tf.cvs.height!==H){tf.cvs.width=W;tf.cvs.height=H;}
+        { const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
+          drawTrackWarped(vprocApply(t, frame), tr.dx, tr.dy, tr.dw, tr.dh, t.xform, false, false, trackGridOn && ti===S.ati, {crop:t._cropRect, erase:t._eraseMask}); }
+        tf.ctx.drawImage(cvs, 0, 0); tf.hasFrame=true;
+        ctx.globalAlpha=1;
+        return;
+      }
+    }
+
+    /* In HQ reverse, never fall back to the forward frame (avoids flicker on
+       the reversed clip's loop seek) — hold the last good frame instead. */
+    const vidReady = hqRev ? true : (t._useRev ? false : (t.vid.readyState >= 2));
+
+    if (vidReady) {
+      if (tf.cvs.width!==W || tf.cvs.height!==H) { tf.cvs.width=W; tf.cvs.height=H; }
+
+      if (rgb) {
+        const off=rgb.offset||20;
+        if (offCvs.width!==W||offCvs.height!==H){ offCvs.width=W; offCvs.height=H; }
+        offCtx.drawImage(vsrc,zdx,zdy,zdw,zdh);
+        ctx.globalCompositeOperation='screen';
+        ctx.save(); ctx.filter='saturate(6)'; ctx.globalAlpha=t.opacity*.7; ctx.drawImage(offCvs,-off,0); ctx.restore();
+        ctx.save(); ctx.filter='saturate(0) brightness(.4)'; ctx.globalAlpha=t.opacity*.5; ctx.drawImage(offCvs,0,0); ctx.restore();
+        ctx.save(); ctx.filter='hue-rotate(175deg) saturate(6)'; ctx.globalAlpha=t.opacity*.7; ctx.drawImage(offCvs,off,0); ctx.restore();
+        ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1; ctx.filter='none';
+      } else {
+        const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
+        drawTrackWarped(vsrc, tr.dx, tr.dy, tr.dw, tr.dh, t.xform, !!mH, !!mV, trackGridOn && ti===S.ati, {crop:t._cropRect, erase:t._eraseMask});
+      }
+
+      /* Save current frame for seek-buffer fallback */
+      tf.ctx.drawImage(cvs, 0, 0);
+      tf.hasFrame = true;
+
+    } else if (tf.hasFrame) {
+      /* Video is buffering/seeking — hold last good frame */
+      ctx.drawImage(tf.cvs, 0, 0);
+    }
+    ctx.globalAlpha=1;
+}
+
+/* ── Capas estáticas: color / imagen / video en loop / en vivo ── */
+const layerColorCache = new Map();   // '#rrggbb' → canvas 2×2 relleno
+function layerSource(layer) {
+  if (layer.kind === 'color') {
+    let c = layerColorCache.get(layer.color);
+    if (!c) {
+      c = document.createElement('canvas'); c.width = 2; c.height = 2;
+      const x = c.getContext('2d'); x.fillStyle = layer.color || '#000'; x.fillRect(0, 0, 2, 2);
+      layerColorCache.set(layer.color, c);
+    }
+    return c;
+  }
+  const el = layer._el;
+  if (!el || (el.readyState !== undefined && el.readyState < 2)) return null;
+  return el;
+}
+function drawLayer(t, ti, layer, zdx, zdy, zdw, zdh) {
+  const src = layerSource(layer);
+  if (!src) return;
+  ctx.globalAlpha = Math.max(0, Math.min(1, layer.opacity ?? 1));
+  const xf = layerXform(t, layer);
+  const tr = trackXformRect(zdx, zdy, zdw, zdh, xf);
+  drawTrackWarped(src, tr.dx, tr.dy, tr.dw, tr.dh, xf, false, false, trackGridOn && ti===S.ati && t.selLayerId===layer.id);
+  ctx.globalAlpha = 1;
+}
+
 function loop() {
   requestAnimationFrame(loop);
   S.frame++;
   const W=cvs.width, H=cvs.height;
 
   /* Skip rendering entirely if nothing is loaded and no transitions */
-  const anyActive = S.tracks.some(t=>t.loaded||t.sourceType!=='file');
+  const anyActive = S.tracks.some(t=>t.loaded||t.sourceType!=='file'||t.layers.some(l=>l.kind!=='media'&&l.on));
   if (!anyActive && !TX.out.active && !TX.in.active) {
     if (S.frame%30===0) renderTL();
     return;
@@ -4154,95 +5573,16 @@ function loop() {
   /* Lo cachea el editor de caja por pista (bounding box en pantalla) para saber a qué escala trabajar */
   lastZd.zdx=zdx; lastZd.zdy=zdy; lastZd.zdw=zdw; lastZd.zdh=zdh;
 
-  /* Draw each track (T1=bottom → T4=top) */
+  /* Draw each track (T1=bottom → T8=top); dentro de cada pista, sus capas
+     de abajo hacia arriba. La capa 'media' es el bloque de siempre. */
   for (let ti=0; ti<N_TRACKS; ti++) {
     const t  = S.tracks[ti];
-    const tf = trackFrame[ti];
-    if (!t.visible || !t.loaded) continue;
-
-    /* ── Out-of-range check: if masterTime is outside this track's video window → black ──
-       When a clip is active it manages its own playback, so skip this check for active clips.
-       For idle tracks (no active clip), show black if cursor is outside videoOffset…videoOffset+dur */
-    const vo     = t.videoOffset || 0;
-    const isLive = t.sourceType !== 'file';
-
-    /* ── LIVE TRACK (display/capture) — draw from liveVid, bypass all clip logic ── */
-    if (isLive) {
-      const lv = t.liveVid;
-      if (lv.readyState < 2) { ctx.globalAlpha=1; continue; }
-
-      /* Visibility window: if clips exist, only show inside their time range */
-      if (t.clips.length) {
-        const visible = t.clips.some(c => {
-          const tlIn=vo+c.in, tlOut=vo+c.out;
-          return S.masterTime>=tlIn && S.masterTime<=tlOut;
-        });
-        if (!visible) { ctx.globalAlpha=1; continue; }
-      }
-
-      ctx.globalAlpha = t.opacity;
-      { const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
-        drawTrackWarped(lv, tr.dx, tr.dy, tr.dw, tr.dh, t.xform, false, false, trackGridOn && ti===S.ati); }
-      ctx.globalAlpha = 1;
-      continue; // skip all file-based logic below
+    if (!t.visible) continue;
+    for (const layer of t.layers) {
+      if (!layer.on) continue;
+      if (layer.kind === 'media') { if (t.loaded) drawTrackMedia(t, ti, zdx, zdy, zdw, zdh, mH, mV, rgb); }
+      else drawLayer(t, ti, layer, zdx, zdy, zdw, zdh);
     }
-
-    /* ── FILE TRACK — out-of-range check ── */
-    const inRange = t.activeClip ||
-                    (S.masterTime >= vo && S.masterTime <= vo + t.dur);
-    if (!inRange) { tf.hasFrame=false; continue; }
-
-    ctx.globalAlpha = t.opacity;
-
-    const c      = t.activeClip;
-    const inRev  = c && (c.loopMode==='reverse' || (c.loopMode==='pingpong' && t.pingDir===-1));
-    /* HQ reverse: a pre-rendered reversed file plays natively → full res/fps */
-    const hqRev  = t._useRev && t._revReady && t.revVid && t.revVid.readyState >= 2;
-    const vsrc   = hqRev ? t.revVid : t.vid;
-
-    if (inRev && !hqRev && t._revFrames?.length) {
-      const idx   = Math.max(0, Math.min(t._revFrameIdx, t._revFrames.length-1));
-      const frame = t._revFrames[idx];
-      if (frame) {
-        if (tf.cvs.width!==W||tf.cvs.height!==H){tf.cvs.width=W;tf.cvs.height=H;}
-        { const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
-          drawTrackWarped(frame, tr.dx, tr.dy, tr.dw, tr.dh, t.xform, false, false, trackGridOn && ti===S.ati); }
-        tf.ctx.drawImage(cvs, 0, 0); tf.hasFrame=true;
-        ctx.globalAlpha=1;
-        continue;
-      }
-    }
-
-    /* In HQ reverse, never fall back to the forward frame (avoids flicker on
-       the reversed clip's loop seek) — hold the last good frame instead. */
-    const vidReady = hqRev ? true : (t._useRev ? false : (t.vid.readyState >= 2));
-
-    if (vidReady) {
-      if (tf.cvs.width!==W || tf.cvs.height!==H) { tf.cvs.width=W; tf.cvs.height=H; }
-
-      if (rgb) {
-        const off=rgb.offset||20;
-        if (offCvs.width!==W||offCvs.height!==H){ offCvs.width=W; offCvs.height=H; }
-        offCtx.drawImage(vsrc,zdx,zdy,zdw,zdh);
-        ctx.globalCompositeOperation='screen';
-        ctx.save(); ctx.filter='saturate(6)'; ctx.globalAlpha=t.opacity*.7; ctx.drawImage(offCvs,-off,0); ctx.restore();
-        ctx.save(); ctx.filter='saturate(0) brightness(.4)'; ctx.globalAlpha=t.opacity*.5; ctx.drawImage(offCvs,0,0); ctx.restore();
-        ctx.save(); ctx.filter='hue-rotate(175deg) saturate(6)'; ctx.globalAlpha=t.opacity*.7; ctx.drawImage(offCvs,off,0); ctx.restore();
-        ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1; ctx.filter='none';
-      } else {
-        const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
-        drawTrackWarped(vsrc, tr.dx, tr.dy, tr.dw, tr.dh, t.xform, !!mH, !!mV, trackGridOn && ti===S.ati);
-      }
-
-      /* Save current frame for seek-buffer fallback */
-      tf.ctx.drawImage(cvs, 0, 0);
-      tf.hasFrame = true;
-
-    } else if (tf.hasFrame) {
-      /* Video is buffering/seeking — hold last good frame */
-      ctx.drawImage(tf.cvs, 0, 0);
-    }
-    ctx.globalAlpha=1;
   }
 
   /* ── Post-process on composite ── */
@@ -4250,6 +5590,7 @@ function loop() {
 
   /* Transform: pan/scale/rotate/depth — goes first so color/glitch fx below apply to the warped frame */
   if (anyEfxOn) applyXform(W, H);
+
 
   /* B&W */
   if (anyEfxOn && gfx('bw')) {
@@ -4538,7 +5879,7 @@ function loadRevIntoTrack(track, key, blob) {
 /* ── Ensure a reversed file exists for (track, clip); generate if needed ──
    Returns true if ready now, false if generating/unavailable. */
 async function ensureReverse(track, clip) {
-  if (!track || !clip || track.sourceType !== 'file' || !track._url) return false;
+  if (!track || !clip || track.sourceType !== 'file' || track.mediaKind === 'image' || !track._url) return false;
   if (clip.loopMode !== 'reverse' && clip.loopMode !== 'pingpong') return false;
   const dur = clip.out - clip.in;
   if (!(dur > 0) || dur > HQ_REV_MAX) return false;
@@ -4962,11 +6303,20 @@ async function saveProject() {
     media: { folderHint: MEDIA.library?.rootName || '' },
     tracks: S.tracks.map(t=>({id:t.id,name:t.name,opacity:t.opacity,videoOffset:t.videoOffset||0,
       xform:{...t.xform},
+      vproc:{...t.vproc},
       media:t.sourceType==='file' ? serializeMediaRef(t.mediaRef) : null,
       clips:t.clips.map(c=>({...c, srcRef:c.srcRef ? serializeMediaRef(c.srcRef) : null})),
       groups:t.groups.map(g=>({...g})),
       playlist:t.playlist.map(e=>({id:e.id, name:e.name, dur:e.dur||0, media:serializeMediaRef(e.mediaRef)})),
-      playlistLoop:!!t.playlistLoop})),
+      playlistLoop:!!t.playlistLoop,
+      galleryDur:t.galleryDur||5,
+      browserURL:t.browserURL||'',
+      selLayerId:t.selLayerId||'media',
+      layersLinked:t.layersLinked!==false,
+      layers:t.layers.map(l => l.kind==='media' ? { id:'media', kind:'media', on:l.on!==false } : ({
+        id:l.id, kind:l.kind, name:l.name, on:l.on!==false, opacity:l.opacity??1, color:l.color||null,
+        xform:{ ...l.xform, pin:{ ...l.xform.pin } }, liveType:l.liveType||null, browserURL:l.browserURL||'',
+        media:serializeMediaRef(l.mediaRef) }))})),
     efxs:   S.efxs.map(e=>({...e,on:false})),
     banks:  S.banks.map(b=>({...b})),
     outRes: {...S.outRes},
@@ -5880,6 +7230,10 @@ function bankSnapshot() {
        corner-pin) — antes no se guardaba en los bancos, así que cambiar de
        banco no tocaba estas cajas aunque sí tocaba el resto. */
     tracksXform: S.tracks.map(t => ({ ...t.xform, pin:{ ...t.xform.pin } })),
+    tracksVproc: S.tracks.map(t => ({ ...t.vproc })),
+    /* Capas: ON/OFF, opacidad, transform y orden por pista */
+    tracksLayersLinked: S.tracks.map(t => t.layersLinked !== false),
+    tracksLayers: S.tracks.map(t => t.layers.map(l => l.kind==='media' ? { id:'media', on:l.on } : { id:l.id, on:l.on, opacity:l.opacity, color:l.color, xform:{ ...l.xform, pin:{ ...l.xform.pin } } })),
   };
 }
 
@@ -5908,9 +7262,28 @@ function bankApply(data) {
   if (data.tracksXform) {
     data.tracksXform.forEach((snap, i) => {
       if (i < S.tracks.length && snap) {
-        S.tracks[i].xform = { x:0,y:0,scaleX:1,scaleY:1,rotation:0, ...snap,
-          pin:{ tl:[0,0],tr:[0,0],bl:[0,0],br:[0,0], ...(snap.pin||{}) } };
+        S.tracks[i].xform = xformDefault(snap);
       }
+    });
+  }
+  if (data.tracksLayersLinked) data.tracksLayersLinked.forEach((v, i) => { if (S.tracks[i]) S.tracks[i].layersLinked = v !== false; });
+  if (data.tracksLayers) {
+    data.tracksLayers.forEach((snaps, i) => {
+      const t = S.tracks[i]; if (!t || !snaps) return;
+      const order = [];
+      snaps.forEach(sn => {
+        const l = layerOf(t, sn.id); if (!l) return;
+        l.on = sn.on !== false;
+        if (l.kind !== 'media') { if (sn.opacity!==undefined) l.opacity = sn.opacity; if (sn.color) l.color = sn.color; if (sn.xform) l.xform = xformDefault(sn.xform); }
+        order.push(l);
+      });
+      t.layers.forEach(l => { if (!order.includes(l)) order.push(l); });   // capas creadas después del banco
+      t.layers = order;
+    });
+  }
+  if (data.tracksVproc) {
+    data.tracksVproc.forEach((snap, i) => {
+      if (i < S.tracks.length && snap) S.tracks[i].vproc = { ...vprocDefault(), ...snap };
     });
   }
   /* Force full re-render of efx panel so params update */
@@ -6080,6 +7453,20 @@ function refrescarDestinosAudio() {
       aplicar: v => { S.tracks[i].opacity = v; refrescarSlidersDePista(i); },
       leer: () => S.tracks[i].opacity,
     });
+    /* Procesador de video: cada parámetro es un destino continuo por pista */
+    VPROC_PARAMS.forEach(p => {
+      T.registrar({
+        id: 'track.' + t.id + '.vproc.' + p.key, grupo: t.name, nombre: 'Procesador — ' + p.lbl,
+        min: p.min, max: p.max,
+        aplicar: v => {
+          const tr = S.tracks[i];
+          tr.vproc[p.key] = v;
+          if (!tr.vproc.on) { tr.vproc.on = true; if (i === S.ati) syncVprocBtn(tr); }
+          if (i === S.ati) setSliderRow('#vproc-params', p.key, v, p.fmt);
+        },
+        leer: () => S.tracks[i].vproc[p.key],
+      });
+    });
   });
   S.efxs.forEach(e => {
     efxParams(e).forEach(p => {
@@ -6087,7 +7474,12 @@ function refrescarDestinosAudio() {
       T.registrar({
         id: 'efx.' + e.id + '.' + p.key, grupo: e.name, nombre: p.lbl,
         min: p.min, max: p.max,
-        aplicar: v => { e[p.key] = v; refrescarSliderDeEfecto(e.id, p.key, v, p.fmt); },
+        aplicar: v => {
+          e[p.key] = v; refrescarSliderDeEfecto(e.id, p.key, v, p.fmt);
+          /* TRANSFORM con escalas vinculadas: la otra sigue */
+          const o = e.type === 'xform' && e.scaleLink ? xformLinkedKey(p.key) : null;
+          if (o) { e[o] = v; refrescarSliderDeEfecto(e.id, o, v, p.fmt); }
+        },
         leer: () => e[p.key],
       });
     });
