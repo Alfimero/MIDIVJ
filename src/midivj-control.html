@@ -169,7 +169,8 @@ code.inline{background:var(--bg3);border-radius:4px;padding:1px 5px;color:var(--
   </p>
   <p class="nota aviso">
     Si el teléfono no abre la página, revisa que el enlace no diga <code class="inline">localhost</code>
-    y que el firewall de Windows permita el puerto en redes privadas:
+    que el teléfono esté en la misma red que esa dirección, que Windows marque esa red como
+    <b>privada</b> y que el firewall permita los puertos (mando y cámara) en redes privadas:
     <code class="inline" id="cod-firewall">…</code>
     (consola de administrador). No la agregues en redes públicas.
   </p>
@@ -285,9 +286,12 @@ function pintarTarjetas() {
   }
   $('txt-dir').textContent = baseURL();
   $('cod-ws').textContent = 'ws://' + (dirElegida || location.hostname) + ':' + red.puerto;
+  /* Incluye el puerto HTTPS de /camara: sin él, la cámara del teléfono da
+     tiempo de espera agotado aunque el mando sí abra. */
+  const puertos = red.puertoSeguro ? red.puerto + ',' + red.puertoSeguro : String(red.puerto);
   $('cod-firewall').textContent =
-    `netsh advfirewall firewall add rule name="MIDIVJ ${red.puerto}" dir=in action=allow ` +
-    `protocol=TCP localport=${red.puerto} profile=private`;
+    `netsh advfirewall firewall add rule name="MIDIVJ ${puertos}" dir=in action=allow ` +
+    `protocol=TCP localport=${puertos} profile=private`;
 }
 
 function pintarTarjetasCamara() {
