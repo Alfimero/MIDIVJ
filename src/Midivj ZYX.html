@@ -1907,6 +1907,13 @@ function replaceTrackSource(t, file, relativePath='') {
   if (t.sourceType === 'browser') closeBrowserWindow(t.i, true);
   if (t.activeClip) deactivateClip(t);
   loadTrackFileObject(t, file, relativePath);
+  /* Un archivo con el mismo nombre que una entrada de MEDIOS de OTRO archivo
+     no debe pasar por esa entrada: si compartieran clave, sus clips sonarían
+     con este archivo y onMeta les recortaría el out. La marca es sólo de
+     ejecución (mediaRef, lo que se guarda, no cambia). */
+  const e = t.playlist.find(x => mediaRefKey(x.mediaRef) === t._srcKey);
+  if (e && e.file && !(e.file.size === file.size && e.file.lastModified === file.lastModified))
+    t._srcKey += '#' + file.size + '-' + file.lastModified;
 }
 /* ⇄ de la lista MEDIOS / aviso tras agregar: usar esa entrada como fuente */
 function useMediaEntryAsSource(trackIdx, id) {
@@ -2965,11 +2972,13 @@ function renderTrackInfo() {
 </div>` : '');
 
   const offerF = t._replaceOffer || null;
+  /* ¿la oferta es un homónimo de una entrada de MEDIOS con otro archivo? (entonces no quedó en la lista) */
+  const offerHomo = offerF && t.playlist.some(e => mediaRefKey(e.mediaRef) === mediaRefKey(buildFileMediaRef(offerF)) && e.file !== offerF);
   const offerRow = offerF ? `
 <div class="ti-row" style="gap:4px;">
   <span class="ti-name" style="color:var(--yellow);">➕ "${escHtml(offerF.name)}" elegido</span>
   <button class="hbtn save" style="font-size:8px;padding:2px 6px;" onclick="useReplaceOffer(${idx})" title="Reemplazar la fuente actual de la pista por el archivo que acabas de elegir">⇄ USAR COMO FUENTE</button>
-  <button class="hbtn" style="font-size:8px;padding:2px 6px;" onclick="dismissReplaceOffer(${idx})" title="Dejarlo sólo en la lista">✕</button>
+  <button class="hbtn" style="font-size:8px;padding:2px 6px;" onclick="dismissReplaceOffer(${idx})" title="${offerHomo ? 'Descartar: MEDIOS conserva el archivo anterior con ese nombre' : 'Dejarlo sólo en la lista'}">✕</button>
 </div>` : '';
 
   const camSes = CAM.sesiones.get(idx);
@@ -4790,7 +4799,7 @@ function tlArrangeSequence() {
      cambia nada (p. ej. un segundo clic) no se pisa el ↶ anterior. */
   const moved = new Map();
   let cur = items[0].videoOffset || 0;
-  items.forEach(t => { const old = t.videoOffset || 0, nu = clampOffset(cur); cur += trackExtent(t); if (nu !== old) moved.set(t, [old, nu]); });
+  items.forEach(t => { const old = t.videoOffset || 0, nu = clampOffset(cur); cur += trackExtent(t); if (Math.abs(nu - old) > 1e-6) moved.set(t, [old, nu]); });   // tolerancia: el imán puede dejar diferencias de 1e-14
   if (!moved.size) { setSt('st-active', 'SECUENCIA: ya están en secuencia', 'act'); return; }
   moved.forEach(([, nu], t) => { t.videoOffset = nu; });
   TL.lastArrange = moved;   // por pista, no por posición (◂ ▸ las reordena)
