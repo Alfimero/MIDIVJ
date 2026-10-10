@@ -81,7 +81,7 @@ active
 
 ### Pendientes
 - Sincronía local vs GitHub: resuelta el 2026-10-10 (PR #3 y #4 en `main`, `080e1db`).
-- 2026-10-10, en la rama `claude/wizardly-goldberg-1s1ejj` (falta fusionar a `main` y que el usuario lo pruebe en su PC):
+- 2026-10-10, en la rama `claude/wizardly-goldberg-1s1ejj`, PR abierto: https://github.com/Alfimero/MIDIVJ/pull/5 (revisión adversarial con varios agentes en curso antes de fusionar; falta fusionar a `main` y que el usuario lo pruebe en su PC):
   - Trackviewer: scroll vertical (`#tl-wrap`), manija de alto en el borde superior (doble clic = ver todas las pistas), zoom vertical (`↕−`/`↕+`, Alt+rueda), Shift+rueda = scroll; alto y zoom se recuerdan en localStorage (`midivj-tl-view`).
   - Bug "video atorado": no había botón ✕ para fuentes de archivo; 🎬 VIDEO sobre una pista con video sólo lo agregaba a la lista; al pasar a una fuente en vivo el video viejo seguía sonando y los clips de archivo dejaban la fuente nueva invisible; al abrir una sesión, el clip activo y el video de la sesión anterior seguían mandando. Arreglado con `releaseFileMedia()` y cambios en `stopTrackSource`, `_applyStream`, `onTrackMediaChosen`, `applyProjectData` y `restoreProjectMedia`.
   - Offset: `maxDur()` no sumaba el offset del video (la reproducción se detenía antes del final; reproducido en la versión anterior: con DUR 10 min y offset 590 s se paraba en 600 s con el video en 10/20 s). Ahora usa `contentEnd()`. Slider sin tope fijo de 1 h + campo de texto (`90`, `1:30`, `1:02:03`).
