@@ -79,9 +79,14 @@ active
 - —
 
 ### Pendientes
-- Sincronía local vs GitHub (verificado 2026-10-10 con la salida de git del usuario): la PC del usuario está en `360a00d`, igual que `origin/main` (0 commits de diferencia), pero tiene cambios SIN commit desde el día 14: modificados `AGENTS.md`, `CLAUDE.md`, `README.md`, `src/Midivj ZYX.html`; nuevos sin seguimiento `Sessions/CDMX.vjp`, `Sessions/STREAM.vjp`, `Sessions/Zimapán.vjp`, `Sessions/untitled.vjp`. Pendiente: revisar `git diff` y que el usuario haga commit/push a `main`.
-- Riesgo de conflicto: la rama `claude/wizardly-goldberg-1s1ejj` también modifica esta sección de `CLAUDE.md`/`AGENTS.md`. Tras el push del usuario, rehacer esa rama sobre el nuevo `main`.
+- Sincronía local vs GitHub (verificado 2026-10-10 con la salida de git del usuario): la PC del usuario está en `360a00d`, igual que `origin/main`, con cambios SIN commit desde el día 14:
+  - `src/Midivj ZYX.html`: ~1,780 líneas cambiadas (código aún no revisado por Claude).
+  - `README.md`: +21/−1; documenta fuentes VIDEO multi-archivo, GALERÍA, NAVEGADOR, CÁMARA, ⚡ GENERAR CLIPS (reemplaza PLAYLIST), 🧅 CAPAS por pista, TRANSFORM DE PISTA, CONFIG. DE CÁMARA, PROCESADOR DE VIDEO y reset con doble clic.
+  - `AGENTS.md` / `CLAUDE.md`: sin cambios de contenido (solo aviso LF/CRLF); no hace falta subirlos y no hay riesgo de conflicto.
+  - Sesiones nuevas sin seguimiento: `CDMX.vjp`, `STREAM.vjp`, `Zimapán.vjp`, `untitled.vjp`.
+- Plan propuesto: el usuario sube los cambios a una rama `feat/capas-y-fuentes`; Claude revisa el HTML y valida la sintaxis del script inline antes de fusionar a `main`.
 - Repo público: antes de subir sesiones `.vjp`, comprobar que no contengan rutas absolutas personales (las 3 sesiones ya publicadas usan rutas relativas).
+- Tras fusionar: actualizar `PROJECT_CONTEXT.md` (fuentes de pista, capas, procesador de video), que hoy no las menciona.
 
 ### Repositorio
 - GitHub: https://github.com/Alfimero/MIDIVJ
