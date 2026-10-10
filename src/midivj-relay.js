@@ -378,6 +378,16 @@ function esHotspot(ip, nombreIface = '') {
   return /wi-?fi direct|hosted|punto de acceso|hotspot/i.test(nombreIface);
 }
 
+/* VPN o adaptador virtual: un teléfono en la Wi-Fi no llega a esa dirección.
+   100.64.0.0/10 es el rango de Tailscale (CGNAT); 169.254/16 es una IP que
+   Windows se asigna sola cuando no obtuvo dirección. */
+function esVirtual(ip, nombreIface = '') {
+  const [a, b] = ip.split('.').map(Number);
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true;
+  return /tailscale|zerotier|wireguard|nordlynx|openvpn|vpn|\btap\b|\btun\b|vethernet|hyper-v|virtualbox|vmware|wsl|docker/i.test(nombreIface);
+}
+
 function direcciones() {
   const salida = [];
   for (const [nombre, iface] of Object.entries(os.networkInterfaces())) {
@@ -386,11 +396,16 @@ function direcciones() {
       salida.push({
         ip: dir.address,
         interfaz: nombre,
-        tipo: esHotspot(dir.address, nombre) ? 'hotspot' : 'lan'
+        tipo: esHotspot(dir.address, nombre) ? 'hotspot' : esVirtual(dir.address, nombre) ? 'vpn' : 'lan'
       });
     }
   }
-  salida.sort((a, b) => (a.tipo === b.tipo ? 0 : a.tipo === 'hotspot' ? -1 : 1));
+  /* Orden: red creada por esta PC, luego la red local (Wi-Fi/Ethernet), y al
+     final VPN y adaptadores virtuales. La página /control usa la primera para
+     los QR: con Tailscale u otra VPN instalada, antes podía quedar primera la
+     dirección de la VPN y el teléfono no conectaba (tiempo de espera agotado). */
+  const rango = { hotspot: 0, lan: 1, vpn: 2 };
+  salida.sort((a, b) => rango[a.tipo] - rango[b.tipo]);
   return salida;
 }
 
@@ -1303,7 +1318,7 @@ async function printIPs() {
   if (info.direcciones.length) {
     console.log('  Direcciones para teléfonos y otros equipos:');
     info.direcciones.forEach(d => {
-      const etiqueta = d.tipo === 'hotspot' ? '  ← red creada por esta PC' : '';
+      const etiqueta = d.tipo === 'hotspot' ? '  ← red creada por esta PC' : d.tipo === 'vpn' ? '  ← VPN o adaptador virtual (los teléfonos no suelen llegar aquí)' : '';
       console.log(`    http://${d.ip}:${PORT}/mando   (${d.interfaz})${etiqueta}`);
       if (d.camara) console.log(`    ${d.camara}   (cámara — certificado autofirmado, aceptar la advertencia una vez)`);
     });

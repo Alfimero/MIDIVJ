@@ -129,7 +129,13 @@ Si no hay router, comparte la red desde Windows (Configuración → Red e Intern
 
 Todas esas consultas son de lectura (`netsh` y la API de Windows); el programa nunca enciende, apaga ni cambia una red por su cuenta.
 
-Si el teléfono no abre la página, casi siempre es el firewall: la página de control muestra la regla exacta (`netsh advfirewall …`, sólo perfil privado). El relay es de red local; no lo expongas a internet.
+Si el teléfono no abre la página (tiempo de espera agotado), revisa en este orden:
+
+- **La dirección del QR.** Con una VPN instalada (Tailscale, WireGuard, etc.) la computadora tiene una dirección extra a la que el teléfono no llega. El relay pone esas direcciones al final, marcadas **VPN**, y la página de control elige la de la Wi-Fi; si la cambiaste a mano, vuelve a elegir la de tu Wi-Fi en el selector de arriba.
+- **La misma red.** El teléfono tiene que estar en la misma Wi-Fi que esa dirección. Si el teléfono tiene una VPN activa, actívale el acceso a la red local o apágala.
+- **El firewall.** La página de control muestra la regla exacta (`netsh advfirewall …`, puertos del mando y de la cámara, sólo perfil privado), y Windows debe marcar esa red como privada.
+
+El relay es de red local; no lo expongas a internet.
 
 ### Mapear los botones con MAP
 

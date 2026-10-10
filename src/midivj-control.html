@@ -212,7 +212,7 @@ async function cargarRed() {
   red.direcciones.forEach(d => {
     const o = document.createElement('option');
     o.value = d.ip;
-    o.textContent = d.ip + (d.tipo === 'hotspot' ? '  · hotspot' : '') + '  (' + d.interfaz + ')';
+    o.textContent = d.ip + (d.tipo === 'hotspot' ? '  · hotspot' : d.tipo === 'vpn' ? '  · VPN (no usar para el teléfono)' : '') + '  (' + d.interfaz + ')';
     sel.appendChild(o);
   });
   dirElegida = previa && [...sel.options].some(o => o.value === previa)
