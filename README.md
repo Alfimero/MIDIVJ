@@ -42,7 +42,27 @@ en la barra superior tienes la posibilidad de agregar hasta 4 controladores MIDI
 
 ### Videos
 
-Para configurar tus visuales dirigete a la ventana lateral izquierda donde tendrás ocho Tracks de videos (T1...T8) donde podrás elegir tres opciones para tus visuales: VIDEO (archivo), PANTALLA, CAPTURADORA de video. Una vez agregado Crea un CLIP en la parte inferior de la misma ventana y ahora podrás asignale un mensaje MIDI de CC o de Nota para disparar el CLIP.
+Para configurar tus visuales dirigete a la ventana lateral izquierda donde tendrás ocho Tracks de videos (T1...T8) donde podrás elegir la fuente de cada pista: 🎬 VIDEO (uno o varios archivos), 🖼 GALERÍA (una o varias imágenes), 🌐 NAVEGADOR (una URL), 🖥 PANTALLA, 📷 CAPTURA y 📱 CÁMARA. Una vez agregado Crea un CLIP en la parte inferior de la misma ventana y ahora podrás asignale un mensaje MIDI de CC o de Nota para disparar el CLIP.
+
+Fuentes y **⚡ GENERAR CLIPS** (sección 🎞 MEDIOS del panel de pista):
+
+- **🎬 VIDEO / 🖼 GALERÍA** aceptan varios archivos a la vez: todos entran a la lista de MEDIOS de la pista (videos e imágenes mezclados, en el orden que quieras) y el primero se carga en la pista si estaba vacía. GENERAR CLIPS crea un clip por cada medio, encadenados en orden (🔁 LOOP vuelve al primero al terminar); las imágenes duran lo que diga **SEG/IMG**. Es lo que antes hacía la PLAYLIST, ahora para cualquier formato.
+- **🌐 NAVEGADOR**: pide una URL y la abre en una ventana aparte; después pulsa **📡 CAPTURAR** y elige esa ventana en el selector (el navegador no permite dibujar una página directamente en el canvas, así que se captura como PANTALLA). Son dos pasos porque abrir la ventana consume el gesto que la captura de pantalla exige.
+- Con una fuente en vivo activa (NAVEGADOR, PANTALLA, CAPTURA o CÁMARA), GENERAR CLIPS crea un clip-interruptor (grupo FUENTE, modo toggle): mientras la pista tenga uno, la fuente sólo se ve cuando ese clip está activo, así se puede mostrar/ocultar por MIDI con transiciones de entrada y salida.
+
+**🧅 CAPAS por pista** (sección del panel de pista): una pista no se limita a una fuente. Además de su fuente principal (la capa **MEDIA**, con el motor de clips), puede apilar capas estáticas dibujadas de abajo hacia arriba:
+
+- **🎨 COLOR**: pinta toda la salida con un tono homogéneo (selector de color). El botón `🎨 COLOR` de la fila de fuentes lo agrega como fondo, debajo de MEDIA. Sirve de base para videomapping: escálalo, gíralo o deforma sus esquinas con la caja interactiva igual que un video.
+- **🖼 imagen**, **🎬 video en loop** (mudo, sin clips), **🖥 pantalla**, **📷 captura**, **🌐 navegador**: cada una con su propio ON/OFF, opacidad y orden (↑ al frente / ↓ al fondo). La cámara de teléfono 📱 sólo puede ser fuente principal.
+- **TRANSFORM** actúa por defecto sobre **todas las capas de la pista a la vez** (`🔗 CAPAS` encendido): colocas el fondo de color donde quieres proyectar y el video, la imagen o la cámara caen en el mismo cuadrilátero. Apaga `🔗 CAPAS` si quieres transformar cada capa por separado (clic en el nombre de la capa para elegir cuál editan los sliders y la caja del canvas).
+- GENERAR CLIPS crea además un clip-interruptor por capa (grupo CAPAS): dispararlo por MIDI prende/apaga la capa sin interrumpir el clip de video que esté sonando en la misma pista. Las capas, su orden y sus transforms se guardan en la sesión y en los bancos.
+
+Cada pista tiene además, en ese mismo panel:
+
+- **TRANSFORM DE PISTA**: posición, escala X/Y y rotación. El botón 🔗 vincula Escala X e Y para moverlas a la vez (también al arrastrar una esquina en el canvas).
+- **CONFIG. DE CÁMARA** (sólo con fuente CAPTURA): dispositivo, resolución/fps y los controles que exponga el driver de la cámara o capturadora (zoom, foco, exposición, ISO, balance de blancos, brillo, contraste, etc.). Lo que no aparece es porque el dispositivo no lo expone al navegador; la abertura nunca se expone.
+- **PROCESADOR DE VIDEO**: ganancia, brillo, contraste, gamma, balance de blancos, compensación de contraluz, matiz, saturación y nitidez, aplicados por software a cualquier fuente (archivo, pantalla, capturadora o cámara de teléfono). Se enciende solo al mover un slider; OFF lo deja en bypass.
+- Doble clic sobre cualquier slider de parámetros (transform, efectos, cámara, procesador, opacidad) lo devuelve a su valor por defecto.
 
 ### CLIPS
 

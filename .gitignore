@@ -19,3 +19,4 @@ raw-video/
 *.mkv
 *.webm
 data/
+*.vjp
