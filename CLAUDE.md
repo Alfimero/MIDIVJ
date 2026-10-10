@@ -20,16 +20,19 @@ active
 
 ### Decisiones
 - 2026-10-10: las sesiones `.vjp` son sesiones personales de shows y deben quedar fuera del repo (`*.vjp` en `.gitignore`).
+- 2026-10-10: flujo de trabajo. Claude sube sus cambios a la rama `claude/wizardly-goldberg-1s1ejj`; el usuario los fusiona en `main` (PR en GitHub) y actualiza su copia local con `git switch main` + `git pull origin main`. El usuario usa cmd (Símbolo del sistema de Windows), no PowerShell: dar comandos compatibles con cmd.
 
 ### Pendientes
-- Sincronía local vs GitHub (verificado 2026-10-10 con la salida de git del usuario): la PC del usuario está en `360a00d`, igual que `origin/main`, con cambios SIN commit desde el día 14:
-  - `src/Midivj ZYX.html`: ~1,780 líneas cambiadas (código aún no revisado por Claude).
-  - `README.md`: +21/−1; documenta fuentes VIDEO multi-archivo, GALERÍA, NAVEGADOR, CÁMARA, ⚡ GENERAR CLIPS (reemplaza PLAYLIST), 🧅 CAPAS por pista, TRANSFORM DE PISTA, CONFIG. DE CÁMARA, PROCESADOR DE VIDEO y reset con doble clic.
-  - `AGENTS.md` / `CLAUDE.md`: sin cambios de contenido (solo aviso LF/CRLF); no hace falta subirlos y no hay riesgo de conflicto.
-  - Sesiones nuevas sin seguimiento (`CDMX.vjp`, `STREAM.vjp`, `Zimapán.vjp`, `untitled.vjp`): NO se suben.
-- Plan acordado (2026-10-10): el usuario crea `feat/capas-y-fuentes` en su PC, agrega `*.vjp` a `.gitignore` y sube `.gitignore`, `README.md` y `src/Midivj ZYX.html`. Después Claude descarga la rama, revisa el HTML y valida la sintaxis del script inline antes de fusionar a `main`. Estado: el usuario recibió los 5 pasos (status, rama, .gitignore, commit, push) y está por ejecutarlos; falta confirmar el push. El usuario trabaja en cmd (Símbolo del sistema de Windows), no en PowerShell: dar comandos compatibles con cmd (p. ej. `echo *.vjp>>.gitignore`).
-- Pendiente de decisión del usuario (puede ir en un commit aparte, después): si se sacan del repo las 3 sesiones ya publicadas (`Bk-Nk!*.vjp`) con `git rm --cached` desde su PC. Si se quitan, ajustar las referencias en `AGENTS.md`, `PROJECT.md`, `PROJECT_CONTEXT.md` y `docs/operations/graphify-validation.md`.
-- Tras fusionar: actualizar `PROJECT_CONTEXT.md` (fuentes de pista, capas, procesador de video), que hoy no las menciona.
+- Sincronía local vs GitHub: resuelta el 2026-10-10 (PR #3 y #4 en `main`, `080e1db`).
+- 2026-10-10, en la rama `claude/wizardly-goldberg-1s1ejj`, PR abierto: https://github.com/Alfimero/MIDIVJ/pull/5 (revisión adversarial con varios agentes en curso antes de fusionar; falta fusionar a `main` y que el usuario lo pruebe en su PC):
+  - Trackviewer: scroll vertical (`#tl-wrap`), manija de alto en el borde superior (doble clic = ver todas las pistas), zoom vertical (`↕−`/`↕+`, Alt+rueda), Shift+rueda = scroll; alto y zoom se recuerdan en localStorage (`midivj-tl-view`).
+  - Bug "video atorado": no había botón ✕ para fuentes de archivo; 🎬 VIDEO sobre una pista con video sólo lo agregaba a la lista; al pasar a una fuente en vivo el video viejo seguía sonando y los clips de archivo dejaban la fuente nueva invisible; al abrir una sesión, el clip activo y el video de la sesión anterior seguían mandando. Arreglado con `releaseFileMedia()` y cambios en `stopTrackSource`, `_applyStream`, `onTrackMediaChosen`, `applyProjectData` y `restoreProjectMedia`.
+  - Offset: `maxDur()` no sumaba el offset del video (la reproducción se detenía antes del final; reproducido en la versión anterior: con DUR 10 min y offset 590 s se paraba en 600 s con el video en 10/20 s). Ahora usa `contentEnd()`. Slider sin tope fijo de 1 h + campo de texto (`90`, `1:30`, `1:02:03`).
+  - Probado con Chromium headless (Playwright) y videos de prueba; no probado: selector real de PANTALLA/CAPTURA, Windows, hardware MIDI.
+- Pregunta abierta al usuario: si "agregar más video y colocarlo en cualquier parte sin que se solape" significa varios videos posicionables libremente dentro de UNA misma pista (función nueva en el motor de reproducción, zona de riesgo) o basta con el offset sin límite por pista.
+- El caso "offset en el extremo izquierdo (0) no reproduce todo el video" no se reprodujo; si persiste tras el arreglo, pedir pasos exactos.
+- Pendiente de decisión del usuario: si se sacan del repo las 3 sesiones ya publicadas (`Bk-Nk!*.vjp`) con `git rm --cached` desde su PC. Si se quitan, ajustar las referencias en `AGENTS.md`, `PROJECT.md`, `PROJECT_CONTEXT.md` y `docs/operations/graphify-validation.md`.
+- Actualizar `PROJECT_CONTEXT.md` (fuentes de pista GALERÍA/NAVEGADOR, CAPAS, procesador de video, trackviewer nuevo), que hoy no las menciona.
 
 ### Repositorio
 - GitHub: https://github.com/Alfimero/MIDIVJ

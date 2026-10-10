@@ -253,7 +253,17 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 .zbtn:hover{border-color:var(--accent);color:var(--accent);}
 .ztxt{font-family:var(--mono);font-size:9px;color:var(--text3);min-width:42px;text-align:center;}
 #tl-pos{font-family:var(--mono);font-size:9px;color:var(--text2);margin-left:auto;}
-#tl-canvas{width:100%;height:194px;flex-shrink:0;display:block;cursor:crosshair;}
+/* Trackviewer: alto ajustable (arrastrando la manija de arriba), scroll
+   vertical cuando las pistas no caben y zoom vertical (alto de fila). */
+#tl-resize{height:8px;flex-shrink:0;cursor:ns-resize;display:flex;align-items:center;justify-content:center;background:var(--surface);border-top:1px solid var(--border);touch-action:none;user-select:none;}
+#tl-resize span{width:56px;height:3px;border-radius:2px;background:var(--border2);transition:background .12s;}
+#tl-resize:hover span,#tl-resize.drag span{background:var(--accent);}
+#tl-wrap{height:194px;flex-shrink:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;background:#080818;scrollbar-width:thin;scrollbar-color:var(--border2) var(--surface);}
+#tl-wrap::-webkit-scrollbar{width:8px;}
+#tl-wrap::-webkit-scrollbar-track{background:var(--surface);}
+#tl-wrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
+#tl-wrap::-webkit-scrollbar-thumb:hover{background:var(--text3);}
+#tl-canvas{width:100%;display:block;cursor:crosshair;}
 
 /* ── PANEL DE RELAY Y MANDOS ── */
 #relay-fondo{position:fixed;inset:0;background:rgba(3,3,10,.78);z-index:900;display:none;align-items:center;justify-content:center;padding:20px;}
@@ -588,6 +598,8 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
       <div id="efx-lbl"></div>
     </div>
 
+    <!-- Manija para cambiar el alto del trackviewer -->
+    <div id="tl-resize" title="Arrastra para cambiar el alto del trackviewer · Doble clic = alto automático (según las pistas)"><span></span></div>
     <!-- Timeline zoom controls -->
     <div id="tl-ctrl">
       <button class="zbtn" onclick="tlPan(-1)">◁</button>
@@ -597,6 +609,10 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
       <button class="zbtn" onclick="tlPan(1)">▷</button>
       <button class="zbtn" onclick="tlFit()">FIT</button>
       <button id="snap-btn" onclick="toggleSnap()">⊡ SNAP</button>
+      <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;flex-shrink:0;"></div>
+      <button class="zbtn" onclick="tlRowZoom(-1)" title="Zoom vertical: filas más bajas (Alt+rueda)">↕−</button>
+      <span class="ztxt" id="vzoom-lbl" title="Alto de fila del trackviewer">1.0×</span>
+      <button class="zbtn" onclick="tlRowZoom(1)" title="Zoom vertical: filas más altas (Alt+rueda)">↕+</button>
       <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;flex-shrink:0;"></div>
       <span style="font-family:var(--mono);font-size:8px;color:var(--text3);flex-shrink:0;">DUR:</span>
       <select id="tldur-sel" style="background:var(--panel2);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:8px;padding:1px 3px;outline:none;cursor:pointer;" onchange="setTlDur(+this.value)">
@@ -609,8 +625,8 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
       </select>
       <span id="tl-pos"></span>
     </div>
-    <!-- Timeline: 4 tracks × 28px + 18px axis = 130px -->
-    <canvas id="tl-canvas" height="130"></canvas>
+    <!-- Timeline: una fila por pista con contenido + eje; scroll vertical en #tl-wrap -->
+    <div id="tl-wrap"><canvas id="tl-canvas" height="130"></canvas></div>
   </div>
 
   <!-- RIGHT: Effects -->
@@ -738,7 +754,7 @@ function midiTitulo(obj) {
 const ft = t => isNaN(t)||t<0 ? '0:00.0' : Math.floor(t/60)+':'+(t%60).toFixed(1).padStart(4,'0');
 
 /* ── TIMELINE STATE ── */
-const TL = { zoom:1, viewStart:0 };
+const TL = { zoom:1, viewStart:0, rowH:22, frozenDur:null, autoH:true };   // rowH = alto de fila (zoom vertical) · frozenDur = escala fija durante un arrastre · autoH = alto según las pistas
 const N_TRACKS = 8;
 
 /* Parámetros del PROCESADOR DE VIDEO por pista (el motor está más abajo,
@@ -762,7 +778,9 @@ function vprocDefault() {
 function vprocIsIdentity(v) {
   return VPROC_PARAMS.every(p => Math.abs((v[p.key] ?? p.def) - p.def) < 1e-6);
 }
-const TL_TH  = 22;   // px per track row (smaller to fit 8 rows)
+const TL_TH  = 22;   // alto de fila por defecto (TL.rowH es el actual, con zoom vertical)
+const TL_ROW_MIN = 14, TL_ROW_MAX = 66;   // límites del zoom vertical
+const TL_VIEW_MIN = 60;                   // alto mínimo del trackviewer al arrastrar la manija
 const TL_PAD = 36;   // left label pad
 const TL_RP  = 6;    // right pad
 const TL_AX  = 18;   // axis height
@@ -812,6 +830,7 @@ const cvs    = document.getElementById('out-canvas');
    segundo. Sin desynchronized el navegador solo muestra frames completos. */
 const ctx    = cvs.getContext('2d', { alpha:false, willReadFrequently:false });
 const tlCvs  = document.getElementById('tl-canvas');
+const tlWrap = document.getElementById('tl-wrap');
 const tlCtx  = tlCvs.getContext('2d', { alpha:false });
 const offCvs  = document.createElement('canvas');
 const offCtx  = offCvs.getContext('2d', { alpha:false, desynchronized:true, willReadFrequently:false });
@@ -1205,6 +1224,7 @@ function makeTrack(i) {
       if (csk && csk !== t._srcKey) return;
       if (c.srcLive) return;   // clips de fuente en vivo no dependen de la duración
       if (!c.out||c.out>src.duration) c.out=src.duration;
+      if (c.in > c.out - .05) c.in = Math.max(0, c.out - .05);   // un video más corto no deja el clip al revés
     });
     if (t.activeClip) t.vid.play().catch(()=>{});
     else syncTracksToMaster();
@@ -1220,6 +1240,8 @@ function makeTrack(i) {
     });
   };
   vidA.addEventListener('loadedmetadata', () => onMeta(vidA));
+  /* Archivo que no se puede abrir: el panel deja de decir "cargando" */
+  vidA.addEventListener('error', () => { if (t._url && S.tracks[S.ati] === t) renderTrackInfo(); });
   still.addEventListener('loadedmetadata', () => onMeta(still));
   still.addEventListener('timeupdate', () => onTU(still));
 
@@ -1653,13 +1675,16 @@ async function applyProjectData(d) {
     if (!proceed) { MEDIA.pendingProjectData = d; document.getElementById('mdirinput').click(); return; }
   }
 
+  /* Un clip activo de la sesión anterior seguiría mandando sobre la pista
+     aunque ya no esté en su lista (no habría cómo detenerlo): se apagan. */
+  S.tracks.forEach(t => { if (t.activeClip) deactivateClip(t); });
   S.tracks.forEach(t=>t.clips=[]);
   if (d.tracks) {
     d.tracks.forEach((td,i)=>{ if(i<S.tracks.length){
       S.tracks[i].clips=(td.clips||[]).map(migrateClip);
       S.tracks[i].groups=(td.groups||[]);
       if(td.opacity!==undefined) S.tracks[i].opacity=td.opacity;
-      if(td.videoOffset!==undefined) S.tracks[i].videoOffset=td.videoOffset;
+      if(td.videoOffset!==undefined) S.tracks[i].videoOffset=clampOffset(td.videoOffset);
       if(td.xform) S.tracks[i].xform=xformDefault(td.xform);
       /* Capas: se desechan las actuales (streams, URLs) y se reconstruyen */
       S.tracks[i].layers.forEach(l => { if (l.kind!=='media') disposeLayer(l); });
@@ -1671,7 +1696,9 @@ async function applyProjectData(d) {
       S.tracks[i].selLayerId = td.selLayerId && S.tracks[i].layers.some(l=>l.id===td.selLayerId) ? td.selLayerId : 'media';
       S.tracks[i].layersLinked = td.layersLinked !== false;
       S.tracks[i].vproc = { ...vprocDefault(), ...(td.vproc||{}) };
-      S.tracks[i].mediaRef = td.media || td.mediaRef || null;
+      /* Sesiones viejas (v5) no guardaban 'media': la pista conserva lo que
+         el usuario haya cargado a mano. */
+      if ('media' in td || 'mediaRef' in td) S.tracks[i].mediaRef = td.media || td.mediaRef || null;
       (S.tracks[i].playlist||[]).forEach(e => { if (e.objectURL) URL.revokeObjectURL(e.objectURL); });
       S.tracks[i].playlist = (td.playlist||[]).map(pe => ({
         id: pe.id, name: pe.name, dur: pe.dur||0,
@@ -1733,9 +1760,23 @@ async function restoreProjectMedia(projectData) {
   for (let i = 0; i < Math.min(pTracks.length, S.tracks.length); i++) {
     const td = pTracks[i] || {};
     const track = S.tracks[i];
+    /* Una sesión v5 (sin clave 'media') no dice nada del video de la pista:
+       se deja como está, igual que antes. Sólo una sesión que declara la
+       pista (media, aunque sea null) manda sobre su video. */
+    if (!('media' in td) && !('mediaRef' in td)) continue;
     const ref = td.media || td.mediaRef || null;
     track.mediaRef = ref && ref.sourceType === 'file' ? { ...ref } : null;
-    if (!track.mediaRef) continue;
+    if (!track.mediaRef) {
+      /* La sesión no tiene video en esta pista: se suelta el de la sesión
+         anterior (antes se quedaba cargado y no correspondía a la sesión). */
+      if (track.sourceType === 'file' && (track.loaded || track._url)) {
+        releaseFileMedia(track);
+        track._sourceKey++;
+        resetTrackCaches(track);
+        track.loaded = false; track.dur = 0; track.loadedName = '—';
+      }
+      continue;
+    }
     totalRefs++;
 
     const libEntry = resolveMediaLibraryEntry(track.mediaRef);
@@ -1752,15 +1793,12 @@ async function restoreProjectMedia(projectData) {
     }
 
     if (track.sourceType === 'file' && (track.loaded || track._url)) {
-      revokeTrackObjectURL(track);
-      track.vid.pause();
-      track.vidA.src = '';
-      track.vidB.src = '';
-      track._url = '';
+      releaseFileMedia(track);
       track.loaded = false;
       track.dur = 0;
       track.loadedName = '—';
     }
+    track._mediaMissing = true;   // el panel muestra "⚠ falta …"
     unresolved.push({ track, ref:track.mediaRef });
   }
 
@@ -1827,11 +1865,34 @@ function onTrackMediaChosen(ev, kind) {
   const accepted = files.filter(f => kind === 'image' ? isImageFile(f) : !isImageFile(f));
   if (!accepted.length) return;
   addTrackMedia(t, accepted);
-  if (!t.loaded || t.sourceType !== 'file') loadTrackFileObject(t, accepted[0]);
+  /* Pista vacía o con fuente en vivo → se carga el primero. Si ya tiene un
+     archivo, se agrega a MEDIOS y el panel ofrece reemplazarlo con un botón
+     (sin diálogo: un confirm() congela el render y la salida HDMI/OBS). */
+  const firstKey = mediaRefKey(buildFileMediaRef(accepted[0]));
+  const entry = t.playlist.find(e => mediaRefKey(e.mediaRef) === firstKey);
+  if (!t.loaded || t.sourceType !== 'file') replaceTrackSource(t, accepted[0]);
+  else t._replaceOfferId = entry ? entry.id : null;
   renderTrackInfo();
   probePlaylistDurations(t);
   warmPlaylist(t);
 }
+/* Cambia la fuente principal de la pista por un archivo (video o imagen) */
+function replaceTrackSource(t, file, relativePath='') {
+  if (t.sourceType === 'browser') closeBrowserWindow(t.i, true);
+  if (t.activeClip) deactivateClip(t);
+  loadTrackFileObject(t, file, relativePath);
+}
+/* ⇄ de la lista MEDIOS / aviso tras agregar: usar esa entrada como fuente */
+function useMediaEntryAsSource(trackIdx, id) {
+  const t = S.tracks[trackIdx];
+  const e = t.playlist.find(x => x.id === id);
+  t._replaceOfferId = null;
+  if (!e) { renderTrackInfo(); return; }
+  if (!e.file) { alert('"'+e.name+'" no está disponible: elige la carpeta de medios o vuelve a agregar el archivo.'); renderTrackInfo(); return; }
+  replaceTrackSource(t, e.file, e.relativePath || '');
+  renderTrackInfo();
+}
+function dismissReplaceOffer(trackIdx) { S.tracks[trackIdx]._replaceOfferId = null; renderTrackInfo(); }
 function addTrackMedia(t, files) {
   const have = new Set(t.playlist.map(e => mediaRefKey(e.mediaRef)));
   files.forEach(file => {
@@ -1863,6 +1924,8 @@ function onDrop(e) {
 function startLoad(track, name, url, mediaRef=null) {
   /* Stop live stream if switching to file */
   stopTrackStream(track);
+  track._mediaMissing = false;
+  track._replaceOfferId = null;
   if (track._objectURL && track._objectURL !== url) revokeTrackObjectURL(track);
   track._sourceKey++;
   resetTrackCaches(track);
@@ -2065,10 +2128,17 @@ function mkVidLayer() {
   document.body.appendChild(v); return v;
 }
 function _applyStream(track, stream, type, label) {
+  /* El video de archivo anterior deja de reproducirse: antes seguía de fondo
+     (con audio) y su clip activo seguía controlando la pista. vidA/vidB no se
+     vacían, para que los clips de archivo puedan volver a usarlos. */
+  if (track.activeClip && !track.activeClip.srcLive) deactivateClip(track);
+  [track.vidA, track.vidB, track.still].forEach(v => { try { v.pause(); } catch(_) {} });
   stopTrackStream(track);
   revokeTrackObjectURL(track);
   track._sourceKey++;
   resetTrackCaches(track);
+  track._mediaMissing = false;
+  track._replaceOfferId = null;
 
   track._stream    = stream;
   track.sourceType = type;
@@ -2121,11 +2191,33 @@ function stopTrackStream(track) {
   track.liveVid.onresize = null;
 }
 
+/* Suelta por completo el video/imagen de archivo de la pista. Antes, quitar
+   la fuente sólo bajaba t.loaded: vidA seguía con el video (y sonando si
+   tenía un clip activo), el clip activo seguía mandando sobre la pista y el
+   video quedaba "atorado" sin forma de quitarlo ni de cambiarlo. */
+function releaseFileMedia(track) {
+  if (track.activeClip) deactivateClip(track);
+  track._pendingClip = null;
+  [track.vidA, track.vidB].forEach(v => {
+    try { v.pause(); v.removeAttribute('src'); v.load(); } catch(_) {}
+  });
+  try { track.still.pause(); track.still.src = ''; } catch(_) {}
+  revokeTrackObjectURL(track);
+  track._url = ''; track._srcKey = '';
+  track._activeVid = 'A'; track.mediaKind = 'video';
+  track.vidA.muted = false; track.vidB.muted = true;
+  track.prebuffering = false;
+  track._plBufKey = track._plBufUrl = track._plBufMediaRef = null;
+  track._plPrebuffered = false;
+  track._mediaMissing = false;
+  track._replaceOfferId = null;
+}
+
 function stopTrackSource(trackIdx) {
   const t = S.tracks[trackIdx];
   if (t.sourceType === 'browser') closeBrowserWindow(trackIdx, true);
   stopTrackStream(t);
-  revokeTrackObjectURL(t);
+  releaseFileMedia(t);
   t._sourceKey++;
   resetTrackCaches(t);
   t.mediaRef = null;
@@ -2197,7 +2289,7 @@ function masterSeek(t) {
   S.masterTime = Math.max(0, Math.min(t, maxDur()));
   /* Sync idle tracks */
   S.tracks.forEach(track => {
-    if (!track.loaded || track.activeClip) return;
+    if (!track.loaded || track.activeClip || track.sourceType !== 'file') return;   // en vivo: ver masterPlayPause
     const vidT = S.masterTime - (track.videoOffset || 0);
     if (vidT < 0 || vidT > track.dur) { track.vid.pause(); return; }
     track.vid.currentTime = vidT;
@@ -2205,7 +2297,7 @@ function masterSeek(t) {
   });
   /* Also scrub inside active clips so cursor moves freely */
   S.tracks.forEach(track => {
-    if (!track.loaded || !track.activeClip) return;
+    if (!track.loaded || !track.activeClip || track.sourceType !== 'file') return;
     const c   = track.activeClip;
     const vo  = track.videoOffset || 0;
     const vidT = S.masterTime - vo;           // video time at cursor
@@ -2227,7 +2319,8 @@ function masterPlayPause() {
     btn.textContent = '⏸ PAUSE';
     /* Play all idle tracks */
     S.tracks.forEach(t => {
-      if (!t.loaded || t.activeClip) return;
+      /* fuente en vivo: no tiene tiempo propio; su vidA guarda el video viejo y no debe sonar */
+      if (!t.loaded || t.activeClip || t.sourceType !== 'file') return;
       const vidT = S.masterTime - (t.videoOffset||0);
       if (vidT >= 0 && vidT <= t.dur) { t.vid.currentTime = vidT; t.vid.play(); }
     });
@@ -2741,6 +2834,49 @@ function swapTrack(a, b) {
   renderAll();
 }
 
+/* ── OFFSET de pista: sin tope fijo. El rango del slider cubre todo el
+   timeline actual y una hora más allá del offset; escribiendo el tiempo se
+   puede ir más lejos (el timeline se estira solo, ver contentEnd()). ── */
+const MAX_OFFSET = 100 * 3600;   // 100 h: valores absurdos (1e9, 1e300) colgaban el dibujo del eje
+function clampOffset(v) { v = +v; return isFinite(v) ? Math.max(0, Math.min(v, MAX_OFFSET)) : 0; }
+function offsetSliderMax(t) {
+  return Math.ceil(Math.max(3600, maxDur(), (t.videoOffset || 0) + 3600));
+}
+function setTrackOffset(v, live = false) {
+  const t = S.tracks[S.ati];
+  t.videoOffset = clampOffset(v);
+  if (live) {
+    const el = document.getElementById('off-v');
+    if (el) el.value = ft(t.videoOffset);
+  } else renderTrackInfo();
+  renderTL();
+}
+/* "90", "1:30", "1:30.5" o "1:02:03" → segundos (null si no se entiende) */
+function parseTimeInput(str) {
+  const parts = String(str).trim().replace(',', '.').split(':');
+  if (!parts.length || parts.length > 3 || parts.some(p => p.trim() === '')) return null;
+  const nums = parts.map(Number);
+  if (nums.some(n => !isFinite(n) || n < 0)) return null;
+  return nums.reduce((acc, n) => acc * 60 + n, 0);
+}
+function setTrackOffsetText(str) {
+  const v = parseTimeInput(str);
+  if (v === null) { renderTrackInfo(); return; }   // texto inválido: vuelve a mostrar el valor actual
+  setTrackOffset(v);
+}
+
+/* Nombre de la fuente en el panel: distingue cargada / cargando / no se
+   pudo abrir / falta en la carpeta de medios (sólo al abrir una sesión). */
+function trackSourceLabel(t, srcIco) {
+  if (t.loaded) return srcIco+' '+escHtml(t.loadedName);
+  if (t._mediaMissing && t.mediaRef)
+    return '<span style="color:var(--hot);" title="El archivo de la sesión no se encontró en la carpeta de medios">⚠ falta '+escHtml(t.mediaRef.fileName||t.mediaRef.name||'video')+'</span>';
+  if (t._url && t.mediaKind === 'video' && t.vidA.error)
+    return '<span style="color:var(--hot);" title="El navegador no pudo abrir o decodificar este archivo">⚠ no se pudo abrir '+escHtml(t._pendingName||'el archivo')+'</span>';
+  if (t._url) return '<span style="color:var(--yellow);">⏳ cargando '+escHtml(t._pendingName||'')+'…</span>';
+  return 'Sin fuente';
+}
+
 function renderTrackInfo() {
   const t   = S.tracks[S.ati];
   const idx = S.ati;
@@ -2766,16 +2902,24 @@ function renderTrackInfo() {
   <button class="hbtn" style="font-size:8px;padding:2px 6px;border-color:var(--hot);color:var(--hot);" onclick="closeBrowserWindow(${idx})" title="Cerrar la ventana">✕</button>
 </div>` : '');
 
+  const offerE = t._replaceOfferId ? t.playlist.find(e => e.id === t._replaceOfferId) : null;
+  const offerRow = offerE ? `
+<div class="ti-row" style="gap:4px;">
+  <span class="ti-name" style="color:var(--yellow);">➕ "${escHtml(offerE.name)}" agregado a MEDIOS</span>
+  <button class="hbtn save" style="font-size:8px;padding:2px 6px;" onclick="useMediaEntryAsSource(${idx},'${offerE.id}')" title="Reemplazar la fuente actual de la pista por este archivo">⇄ USAR COMO FUENTE</button>
+  <button class="hbtn" style="font-size:8px;padding:2px 6px;" onclick="dismissReplaceOffer(${idx})" title="Dejarlo sólo en la lista">✕</button>
+</div>` : '';
+
   const camSes = CAM.sesiones.get(idx);
   const camEsperando = camSes && camSes.estado !== 'lista'
     ? `<span style="color:var(--yellow);font-size:8px;">⏳ esperando cámara ${camSes.slot}…</span>` : '';
 
   document.getElementById('track-info').innerHTML = `
 <div class="ti-row">
-  <span class="ti-name">${t.loaded ? srcIco+' '+t.loadedName : 'Sin fuente'}</span>
+  <span class="ti-name">${trackSourceLabel(t, srcIco)}</span>
   <span class="ti-dur">${t.loaded&&t.dur?ft(t.dur):(t.loaded?'∞':'—')}</span>
   ${camEsperando}
-  ${(t.loaded&&t.sourceType!=='file')||camSes?`<button class="hbtn" style="font-size:8px;padding:2px 6px;border-color:var(--hot);color:var(--hot);" onclick="stopTrackSource(${idx})">✕</button>`:''}
+  ${t.loaded||t._url||t.mediaRef||t._stream||camSes?`<button class="hbtn" style="font-size:8px;padding:2px 6px;border-color:var(--hot);color:var(--hot);" onclick="stopTrackSource(${idx})" title="Quitar la fuente de esta pista (los clips se conservan)">✕</button>`:''}
 </div>
 <div class="ti-row" style="gap:3px;flex-wrap:wrap;">
   <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackVideo()" title="Cargar uno o varios videos (van a la lista de medios; el primero se carga si la pista está vacía)">🎬 VIDEO</button>
@@ -2788,15 +2932,17 @@ function renderTrackInfo() {
 </div>
 <div style="font-family:var(--mono);font-size:7px;color:var(--text3);padding:2px 0;">
   🎬/🖼 = archivos (varios a la vez) · 🌐 = URL en ventana aparte · 🖥 = otra ventana/pestaña · 📷 = cámara o capturadora USB · 📱 = cámara de teléfono · 🎨 = fondo de color
-</div>${navRow}
+</div>${offerRow}${navRow}
 ${renderLayersPanel(t)}
 ${buildCamCfgHTML(t, idx)}
-<div class="opa-row" title="Desplazamiento del video en el timeline. Shift+arrastra en el timeline.">
+<div class="opa-row" title="Desplazamiento del video en el timeline, sin límite: el timeline se alarga solo. Shift+arrastra el bloque del video en el timeline, o escribe el tiempo (segundos, m:ss o h:mm:ss) y pulsa Enter.">
   <span class="opa-lbl">OFFSET</span>
-  <input type="range" class="opasl" min="0" max="3600" step="1" value="${Math.round(t.videoOffset||0)}" data-def="0"
-    oninput="S.tracks[S.ati].videoOffset=+this.value;document.getElementById('off-v').textContent=ft(+this.value);renderTL();">
-  <span class="opa-lbl" id="off-v">${ft(t.videoOffset||0)}</span>
-  <button class="hbtn" style="font-size:8px;padding:1px 6px;" onclick="S.tracks[S.ati].videoOffset=0;renderTrackInfo();renderTL();">0</button>
+  <input type="range" class="opasl" min="0" max="${offsetSliderMax(t)}" step="1" value="${Math.round(t.videoOffset||0)}" data-def="0"
+    oninput="setTrackOffset(+this.value, true)" onchange="this.max=offsetSliderMax(S.tracks[S.ati])">
+  <input id="off-v" type="text" value="${ft(t.videoOffset||0)}" spellcheck="false"
+    style="width:64px;background:var(--panel2);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:9px;padding:1px 3px;outline:none;"
+    onchange="setTrackOffsetText(this.value)" onkeydown="if(event.key==='Enter')this.blur()">
+  <button class="hbtn" style="font-size:8px;padding:1px 6px;" onclick="setTrackOffset(0)">0</button>
 </div>
 ${tiSec('xform', `⛶ TRANSFORM · <span style="color:var(--yellow)">${t.layersLinked!==false ? 'TODAS LAS CAPAS' : escHtml(layerLabel(t, curLayer(t)))}</span>`,
   `<button class="hbtn${t.layersLinked!==false?' on':''}" style="font-size:8px;padding:1px 6px;margin-left:auto;" onclick="toggleLayersLinked(${idx})" title="${t.layersLinked!==false?'Vinculado: la transformación mueve todas las capas de la pista juntas (clic para transformar cada capa por separado)':'Suelto: cada capa tiene su propia transformación (clic para vincular todas)'}">🔗 CAPAS</button>
@@ -2877,6 +3023,7 @@ function renderPlaylistPanel(t) {
       <span class="ti-dur" style="width:14px;">${i+1}</span>
       <span class="ti-name" title="${e.relativePath||e.name}">${isImageRef(e.mediaRef)?'🖼':'🎬'} ${e.name}</span>
       <span class="ti-dur" title="${e._warming?'Cacheando en segundo plano para que reaccione al instante…':(e._warmed?'Lista para disparar al instante':'')}">${e.dur?ft(e.dur):'—'}${e._warming?' ⏳':''}</span>
+      <button class="hbtn" style="font-size:8px;padding:1px 5px;" onclick="useMediaEntryAsSource(${idx},'${e.id}')" title="Usar como fuente principal de la pista (reemplaza la actual)">⇄</button>
       <button class="hbtn" style="font-size:8px;padding:1px 5px;" ${i===0?'disabled':''} onclick="movePlaylistEntry(${idx},'${e.id}',-1)" title="Subir">↑</button>
       <button class="hbtn" style="font-size:8px;padding:1px 5px;" ${i===t.playlist.length-1?'disabled':''} onclick="movePlaylistEntry(${idx},'${e.id}',1)" title="Bajar">↓</button>
       <button class="hbtn" style="font-size:8px;padding:1px 5px;border-color:var(--hot);color:var(--hot);" onclick="removePlaylistEntry(${idx},'${e.id}')" title="Quitar">✕</button>
@@ -3979,13 +4126,37 @@ function renderAll() { renderTabs(); renderTrackInfo(); renderClips(); renderEfx
 /* ═══════════════════════════════════════════════════════
    TIMELINE — Zoom + Scroll + 4-track rows + drag handles
 ═══════════════════════════════════════════════════════ */
+/* Fin real del contenido: el video de cada pista termina en offset+duración
+   y sus clips en offset+out. El timeline y el reloj maestro llegan al menos
+   hasta ahí — antes se medía sólo la duración del video SIN su offset, así
+   que un video desplazado se cortaba antes de terminar (el reloj maestro se
+   detenía en maxDur como si la sesión hubiera llegado al final). */
+function contentEnd() {
+  let end = 1;
+  S.tracks.forEach(t => {
+    const vo = t.videoOffset || 0;
+    if (t.loaded && t.dur) end = Math.max(end, vo + t.dur);
+    let pl = 0;   // los clips de la lista de medios se muestran uno tras otro
+    t.clips.forEach(c => {
+      if (c.srcLive || c.layerId) return;   // interruptores: out = LIVE_CLIP_OUT (10 h), no son contenido
+      if (c.playlistEntryId) pl += Math.max(0, (c.out||0) - (c.in||0));
+      else end = Math.max(end, vo + (c.out || 0));
+    });
+    end = Math.max(end, vo + pl);
+  });
+  return end;
+}
 function setTlDur(v) {
-  S.tlDur = v || Math.max(1, ...S.tracks.map(t=>t.dur||0));
+  S.tlDur = v || contentEnd();
   renderTL();
 }
 function maxDur() {
-  const vDur = Math.max(1, ...S.tracks.map(t=>t.dur||0));
-  return S.tlDur ? Math.max(S.tlDur, vDur) : vDur;
+  /* Durante un arrastre en el timeline la escala queda fija (como antes del
+     offset sin tope): si no, mover el bloque del video alarga el timeline,
+     el mismo x da más tiempo y el offset se dispara solo. Se libera al soltar. */
+  if (TL.frozenDur) return TL.frozenDur;
+  const end = contentEnd();
+  return S.tlDur ? Math.max(S.tlDur, end) : end;
 }
 function viewSpan() { return maxDur() / TL.zoom; }
 
@@ -4002,18 +4173,41 @@ function tlPan(dir) {
 }
 function tlFit() { TL.zoom=1; TL.viewStart=0; document.getElementById('zoom-lbl').textContent='1.0×'; renderTL(); }
 
-function renderTL() {
-  const W = tlCvs.offsetWidth || 600;
-  /* Dynamic height based on tracks with content */
+/* Filas visibles y geometría vertical del trackviewer. La usan el dibujo y
+   el mouse, así el hit-test coincide con lo que se ve. Con más filas de las
+   que caben, el canvas crece y #tl-wrap muestra la barra de scroll; el eje
+   de tiempo queda pegado al borde inferior visible. */
+function tlLayoutRows() {
   const hasAny = S.tracks.some(t => t.loaded || t.clips.length || t.groups.length);
-  const activeTracks = hasAny
-    ? S.tracks.filter(t => t.loaded || t.clips.length || t.groups.length)
-    : S.tracks;
-  const nRows = activeTracks.length;
-  const dynH  = Math.max(TL_TH + TL_AX, nRows * TL_TH + TL_AX);
-  tlCvs.width  = W;
-  tlCvs.height = dynH;
-  tlCvs.style.height = dynH + 'px';
+  return hasAny ? S.tracks.filter(t => t.loaded || t.clips.length || t.groups.length) : S.tracks;
+}
+function tlLayout() {
+  const rows = tlLayoutRows();
+  const rowH = TL.rowH;
+  const contentH = rows.length * rowH + TL_AX;
+  const viewH = tlWrap.clientHeight || contentH;
+  const H = Math.max(contentH, viewH);
+  const top = Math.max(0, Math.min(tlWrap.scrollTop, H - viewH));
+  const axY = Math.min(H, top + viewH) - TL_AX;
+  return { rows, nRows: rows.length, rowH, H, viewH, top, axY };
+}
+
+function renderTL() {
+  /* Alto automático (por defecto, como antes): el panel mide lo que ocupan
+     las pistas con contenido, hasta el máximo que deja espacio al video;
+     si no caben, aparece el scroll. Al arrastrar la manija pasa a manual. */
+  if (TL.autoH) {
+    const want = Math.min(tlLayoutRows().length * TL.rowH + TL_AX, tlMaxViewH());
+    if (tlWrap.style.height !== want + 'px') tlWrap.style.height = want + 'px';
+  }
+  /* La vista nunca queda más allá del final (p. ej. al bajar un offset) */
+  TL.viewStart = Math.max(0, Math.min(TL.viewStart, maxDur() - viewSpan()));
+  const W = tlCvs.offsetWidth || 600;
+  const L = tlLayout();
+  const activeTracks = L.rows;
+  const nRows = L.nRows, rowH = L.rowH, dynH = L.H, axY = L.axY;
+  if (tlCvs.width !== W) tlCvs.width = W;
+  if (tlCvs.height !== dynH || tlCvs.style.height !== dynH + 'px') { tlCvs.height = dynH; tlCvs.style.height = dynH + 'px'; }
   tlCtx.clearRect(0,0,W,dynH);
   tlCtx.fillStyle='#080818'; tlCtx.fillRect(0,0,W,dynH);
 
@@ -4030,7 +4224,6 @@ function renderTL() {
   } else document.getElementById('tl-pos').textContent = '';
 
   /* Draw rows */
-  const rowH = TL_TH;
   for (let ri=0; ri<activeTracks.length; ri++) {
     const track = activeTracks[ri];
     const ti    = track.i;
@@ -4038,15 +4231,15 @@ function renderTL() {
 
     /* Row bg */
     tlCtx.fillStyle = ti%2===0 ? '#0a0a1e' : '#0c0c22';
-    tlCtx.fillRect(TL_PAD, rowY, W-TL_PAD-TL_RP, TL_TH);
+    tlCtx.fillRect(TL_PAD, rowY, W-TL_PAD-TL_RP, rowH);
 
     /* Track label */
     tlCtx.font = 'bold 8px Space Mono,monospace'; tlCtx.textAlign='center';
     tlCtx.fillStyle = track.loaded ? track.acc : track.acc+'44';
-    tlCtx.fillText('T'+(ti+1), TL_PAD/2, rowY+TL_TH/2+3);
+    tlCtx.fillText('T'+(ti+1), TL_PAD/2, rowY+rowH/2+3);
 
     /* Center line */
-    tlCtx.fillStyle='#181835'; tlCtx.fillRect(TL_PAD, rowY+TL_TH/2-1, W-TL_PAD-TL_RP, 2);
+    tlCtx.fillStyle='#181835'; tlCtx.fillRect(TL_PAD, rowY+rowH/2-1, W-TL_PAD-TL_RP, 2);
 
     /* Clips (esp. playlist-generated ones) must still be visible before the
        track has ever actually loaded a video — a playlist's clips exist and
@@ -4061,17 +4254,17 @@ function renderTL() {
       if (vx2 > vx1) {
         tlCtx.globalAlpha = .08;
         tlCtx.fillStyle = track.acc;
-        tlCtx.fillRect(vx1, rowY+1, vx2-vx1, TL_TH-2);
+        tlCtx.fillRect(vx1, rowY+1, vx2-vx1, rowH-2);
         tlCtx.globalAlpha = .25;
         tlCtx.strokeStyle = track.acc;
         tlCtx.lineWidth = 1;
-        tlCtx.strokeRect(vx1, rowY+1, vx2-vx1, TL_TH-2);
+        tlCtx.strokeRect(vx1, rowY+1, vx2-vx1, rowH-2);
         tlCtx.globalAlpha = 1;
         /* Shift label */
         if (vo > 0.1) {
           tlCtx.font='7px Space Mono,monospace'; tlCtx.textAlign='left';
           tlCtx.fillStyle = track.acc+'99';
-          tlCtx.fillText('+'+ft(vo), vx1+2, rowY+TL_TH-3);
+          tlCtx.fillText('+'+ft(vo), vx1+2, rowY+rowH-3);
         }
       }
     }
@@ -4104,11 +4297,11 @@ function renderTL() {
       const isLk   = c.isLock||isLockTarget(c.id);
 
       tlCtx.globalAlpha = isPlay?.75 : isSel?.55 : .3;
-      tlCtx.fillStyle = c.color; tlCtx.fillRect(x1, rowY+3, w, TL_TH-6);
+      tlCtx.fillStyle = c.color; tlCtx.fillRect(x1, rowY+3, w, rowH-6);
       tlCtx.globalAlpha = 1;
       tlCtx.strokeStyle = c.color; tlCtx.lineWidth = isPlay||isSel?2:1;
       if (isLk) tlCtx.setLineDash([3,2]);
-      tlCtx.strokeRect(x1, rowY+3, w, TL_TH-6); tlCtx.setLineDash([]);
+      tlCtx.strokeRect(x1, rowY+3, w, rowH-6); tlCtx.setLineDash([]);
 
       /* Drag handles for selected clip — reuse tlIn/tlOut so handles line up
          with the box above (playlist clips are laid out sequentially via
@@ -4117,8 +4310,8 @@ function renderTL() {
       if (isSel) {
         const hx1 = toPx(tlIn), hx2 = toPx(tlOut);
         tlCtx.fillStyle = c.color;
-        if (hx1>=TL_PAD) tlCtx.fillRect(hx1-3, rowY+2, 6, TL_TH-4);
-        if (hx2<=W-TL_RP) tlCtx.fillRect(hx2-3, rowY+2, 6, TL_TH-4);
+        if (hx1>=TL_PAD) tlCtx.fillRect(hx1-3, rowY+2, 6, rowH-4);
+        if (hx2<=W-TL_RP) tlCtx.fillRect(hx2-3, rowY+2, 6, rowH-4);
       }
 
       /* Label */
@@ -4127,10 +4320,10 @@ function renderTL() {
         tlCtx.fillStyle = isPlay||isSel ? c.color : '#8888aa';
         let lbl = (isLk?'⚓ ':'')+c.name;
         if (c.midi!==null) lbl = dispMidi(c.midi);
-        tlCtx.fillText(lbl, x1+3, rowY+TL_TH/2+3);
+        tlCtx.fillText(lbl, x1+3, rowY+rowH/2+3);
         if (c.nextClipId) {
           tlCtx.fillStyle = TRACK_ACC[ti];
-          tlCtx.fillText('→', Math.min(x2+2, W-TL_RP-12), rowY+TL_TH/2+3);
+          tlCtx.fillText('→', Math.min(x2+2, W-TL_RP-12), rowY+rowH/2+3);
         }
       }
     });
@@ -4142,18 +4335,18 @@ function renderTL() {
   const masterPx = toPx(S.masterTime);
   if (masterPx >= TL_PAD && masterPx <= W - TL_RP) {
     tlCtx.strokeStyle = 'rgba(0,0,0,.5)'; tlCtx.lineWidth=3;
-    tlCtx.beginPath(); tlCtx.moveTo(masterPx,0); tlCtx.lineTo(masterPx,nRows*TL_TH); tlCtx.stroke();
+    tlCtx.beginPath(); tlCtx.moveTo(masterPx,0); tlCtx.lineTo(masterPx,axY); tlCtx.stroke();
     tlCtx.strokeStyle='#ffffff'; tlCtx.lineWidth=1.5;
-    tlCtx.beginPath(); tlCtx.moveTo(masterPx,0); tlCtx.lineTo(masterPx,nRows*TL_TH); tlCtx.stroke();
+    tlCtx.beginPath(); tlCtx.moveTo(masterPx,0); tlCtx.lineTo(masterPx,axY); tlCtx.stroke();
     tlCtx.fillStyle='#ffffff';
-    tlCtx.beginPath(); tlCtx.moveTo(masterPx-5,0); tlCtx.lineTo(masterPx+5,0); tlCtx.lineTo(masterPx,9); tlCtx.fill();
+    tlCtx.beginPath(); tlCtx.moveTo(masterPx-5,L.top); tlCtx.lineTo(masterPx+5,L.top); tlCtx.lineTo(masterPx,L.top+9); tlCtx.fill();
     tlCtx.font='bold 9px Space Mono,monospace'; tlCtx.textAlign='center';
-    tlCtx.fillStyle='rgba(0,0,0,.7)'; tlCtx.fillRect(masterPx-22,nRows*TL_TH-18,44,12);
-    tlCtx.fillStyle='#ffffff'; tlCtx.fillText(ft(S.masterTime),masterPx,nRows*TL_TH-8);
+    tlCtx.fillStyle='rgba(0,0,0,.7)'; tlCtx.fillRect(masterPx-22,axY-16,44,12);
+    tlCtx.fillStyle='#ffffff'; tlCtx.fillText(ft(S.masterTime),masterPx,axY-6);
   }
 
-  /* Time axis */
-  const axY = nRows*TL_TH;
+  /* Time axis (pegado al borde inferior visible): tapa las filas que pasan por debajo */
+  tlCtx.fillStyle='#080818'; tlCtx.fillRect(0, axY, W, TL_AX);
   tlCtx.fillStyle='#0d0d26'; tlCtx.fillRect(TL_PAD, axY, W-TL_PAD-TL_RP, TL_AX);
   tlCtx.font='8px Space Mono,monospace'; tlCtx.textAlign='center';
 
@@ -4161,7 +4354,7 @@ function renderTL() {
   let tickInt = 1;
   const rawInt = span/8;
   for (const ni of niceInts) { if(rawInt<=ni){tickInt=ni;break;} }
-  if (rawInt>600) tickInt=600;
+  if (rawInt>600) tickInt = Math.ceil(rawInt/600)*600;   // siempre ~8 marcas, aunque el timeline sea enorme
 
   const firstTick = Math.ceil(TL.viewStart/tickInt)*tickInt;
   for (let t=firstTick; t<=vEnd; t+=tickInt) {
@@ -4185,13 +4378,21 @@ tlCvs.addEventListener('mousedown', e => {
   const r   = tlCvs.getBoundingClientRect();
   const x   = e.clientX - r.left;
   const y   = e.clientY - r.top;
-  const hasAny2 = S.tracks.some(t => t.loaded || t.clips.length || t.groups.length);
-  const activeTracks = hasAny2
-    ? S.tracks.filter(t => t.loaded || t.clips.length || t.groups.length)
-    : S.tracks;
-  const nRows = activeTracks.length;
-  const ti  = Math.floor(y / TL_TH);
-  if (ti >= nRows) return; // axis area
+  const L = tlLayout();
+  const activeTracks = L.rows;
+  if (y >= L.axY) return; // eje de tiempo (pegado abajo)
+  const ti  = Math.floor(y / L.rowH);
+  if (ti >= L.nRows) {
+    /* Espacio libre bajo las filas: igual que un área vacía → seek */
+    const span = viewSpan(), W = tlCvs.width;
+    const t0 = TL.viewStart + ((x - TL_PAD) / (W - TL_PAD - TL_RP)) * span;
+    S.selClipId = null;
+    tlDrag = { type:'seek', track: S.tracks[S.ati] };
+    _seekFrozen = true;
+    masterSeek(t0);
+    renderClips(); renderTL();
+    return;
+  }
 
   const track = activeTracks[ti];
   const trackIdx = S.tracks.indexOf(track);
@@ -4281,6 +4482,7 @@ tlCvs.addEventListener('mousedown', e => {
 
 tlCvs.addEventListener('mousemove', e => {
   if (!tlDrag) return;
+  if (!TL.frozenDur) TL.frozenDur = maxDur();   // ver maxDur()
 
   const r    = tlCvs.getBoundingClientRect();
   const x    = e.clientX - r.left;
@@ -4316,7 +4518,7 @@ tlCvs.addEventListener('mousemove', e => {
     tlCvs.style.cursor = 'grabbing';
   } else if (tlDrag.type === 'vidmove') {
     const delta = ts - tlDrag.startT;
-    tlDrag.track.videoOffset = Math.max(0, tlDrag.origOffset + delta);
+    tlDrag.track.videoOffset = clampOffset(tlDrag.origOffset + delta);
     tlCvs.style.cursor = 'grabbing';
   } else if (tlDrag.type === 'seek') {
     _seekFrozen = true;
@@ -4341,22 +4543,101 @@ window.addEventListener('mouseup', () => {
   } else if ((tlDrag?.type === 'in' || tlDrag?.type === 'out') && tlDrag.track && tlDrag.c) {
     invalidateReverse(tlDrag.track, tlDrag.c);   // range changed → rebuild reversed file
   }
+  const wasDrag = !!tlDrag;
   tlDrag = null;
+  TL.frozenDur = null;
   _seekFrozen = false;
   tlCvs.style.cursor = 'crosshair';
+  if (wasDrag) {   // la escala se descongela: el timeline se estira hasta el contenido nuevo
+    renderTL();
+    if (S.tracks[S.ati]) { const sl = document.querySelector('#track-info input.opasl[oninput^="setTrackOffset"]'); if (sl) sl.max = offsetSliderMax(S.tracks[S.ati]); }
+  }
 });
 
-/* Scroll = pan, Ctrl+scroll = zoom */
+/* Rueda = desplazar en el tiempo · Ctrl+rueda = zoom horizontal
+   Shift+rueda (o rueda sobre los nombres T1…T8) = scroll vertical
+   Alt+rueda = zoom vertical (alto de fila) */
 tlCvs.addEventListener('wheel', e => {
   e.preventDefault();
-  if (e.ctrlKey||e.metaKey) { tlZoom(e.deltaY<0?1:-1); }
+  const d = e.deltaY || e.deltaX;
+  const x = e.clientX - tlCvs.getBoundingClientRect().left;
+  if (e.ctrlKey||e.metaKey) { tlZoom(d<0?1:-1); }
+  else if (e.altKey) { tlRowZoom(d<0?1:-1); }
+  else if (e.shiftKey || x < TL_PAD) { tlWrap.scrollTop += d; }
   else {
-    TL.viewStart = Math.max(0, Math.min(TL.viewStart + viewSpan()*0.08*(e.deltaY>0?1:-1), maxDur()-viewSpan()));
+    TL.viewStart = Math.max(0, Math.min(TL.viewStart + viewSpan()*0.08*(d>0?1:-1), maxDur()-viewSpan()));
     renderTL();
   }
 },{passive:false});
 
-new ResizeObserver(() => renderTL()).observe(document.getElementById('tl-canvas'));
+/* El eje va pegado al borde inferior visible: redibujar al hacer scroll */
+tlWrap.addEventListener('scroll', () => renderTL(), {passive:true});
+new ResizeObserver(() => renderTL()).observe(tlWrap);
+
+/* ── Alto del trackviewer (manija de arriba) y zoom vertical. Se recuerdan
+   en este navegador (localStorage); si no hay acceso, quedan los valores
+   por defecto. ── */
+const TL_VIEW_KEY = 'midivj-tl-view';
+function tlSaveView() {
+  try { localStorage.setItem(TL_VIEW_KEY, JSON.stringify({ h: tlWrap.offsetHeight, rowH: TL.rowH, auto: TL.autoH })); } catch(_) {}
+}
+function tlMaxViewH() {
+  /* deja al menos 80px de alto para el video */
+  const fixed = document.getElementById('tl-ctrl').offsetHeight + document.getElementById('tl-resize').offsetHeight;
+  return Math.max(TL_VIEW_MIN, document.getElementById('center').clientHeight - fixed - 80);
+}
+function tlSetViewH(h) {
+  tlWrap.style.height = Math.round(Math.max(TL_VIEW_MIN, Math.min(h, tlMaxViewH()))) + 'px';
+}
+function tlUpdateVZoomLbl() {
+  const el = document.getElementById('vzoom-lbl');
+  if (el) el.textContent = (TL.rowH / TL_TH).toFixed(1) + '×';
+}
+function tlRowZoom(dir) {
+  const old = TL.rowH;
+  const next = Math.round(Math.max(TL_ROW_MIN, Math.min(TL_ROW_MAX, old * (dir > 0 ? 1.25 : 0.8))));
+  if (next === old) return;
+  const firstRow = tlWrap.scrollTop / old;   // conserva la fila que está arriba de la vista
+  TL.rowH = next;
+  tlUpdateVZoomLbl();
+  renderTL();
+  tlWrap.scrollTop = firstRow * next;
+  renderTL();
+  tlSaveView();
+}
+/* Doble clic en la manija: volver al alto automático (ajustado a las pistas) */
+function tlFitHeight() {
+  TL.autoH = true;
+  renderTL();
+  tlSaveView();
+}
+(() => {
+  const handle = document.getElementById('tl-resize');
+  let drag = null;
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    drag = { y: e.clientY, h: tlWrap.offsetHeight };
+    TL.autoH = false;   // alto manual hasta el próximo doble clic
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('drag');
+    e.preventDefault();
+  });
+  handle.addEventListener('pointermove', e => {
+    if (drag) tlSetViewH(drag.h - (e.clientY - drag.y));   // hacia arriba = más alto
+  });
+  const end = () => { if (!drag) return; drag = null; handle.classList.remove('drag'); tlSaveView(); };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+  handle.addEventListener('dblclick', tlFitHeight);
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(TL_VIEW_KEY) || 'null'); } catch(_) {}
+  if (saved && +saved.rowH) TL.rowH = Math.max(TL_ROW_MIN, Math.min(TL_ROW_MAX, Math.round(+saved.rowH)));
+  TL.autoH = !saved || saved.auto !== false;
+  if (!TL.autoH && +saved.h) tlSetViewH(+saved.h);
+  tlUpdateVZoomLbl();
+  /* si la ventana se achica, el trackviewer no se come todo el video */
+  window.addEventListener('resize', () => { if (TL.autoH) renderTL(); else if (tlWrap.offsetHeight > tlMaxViewH()) tlSetViewH(tlWrap.offsetHeight); });
+})();
 
 /* ═══════════════════════════════════════════════════════
    CANVAS RENDER LOOP — composite 4 tracks + effects
@@ -5442,12 +5723,19 @@ function drawTrackMedia(t, ti, zdx, zdy, zdw, zdh, mH, mV, rgb) {
          esté activo. Si no, ventana de visibilidad clásica por rango. */
       if (t.clips.some(c => c.srcLive)) {
         if (!t.activeClip || !t.activeClip.srcLive) { ctx.globalAlpha=1; return; }
-      } else if (t.clips.length) {
-        const visible = t.clips.some(c => {
-          const tlIn=vo+c.in, tlOut=vo+c.out;
-          return S.masterTime>=tlIn && S.masterTime<=tlOut;
-        });
-        if (!visible) { ctx.globalAlpha=1; return; }
+      } else {
+        /* Ventana clásica por rango, sólo con clips propios de la pista: los
+           clips atados a un archivo de la lista de medios (srcRef) o a una
+           capa no cuentan — antes, los clips del video anterior dejaban la
+           fuente nueva invisible y parecía que no se podía cambiar. */
+        const winClips = t.clips.filter(c => !c.srcRef && !c.playlistEntryId && !c.layerId);
+        if (winClips.length) {
+          const visible = winClips.some(c => {
+            const tlIn=vo+c.in, tlOut=vo+c.out;
+            return S.masterTime>=tlIn && S.masterTime<=tlOut;
+          });
+          if (!visible) { ctx.globalAlpha=1; return; }
+        }
       }
 
       ctx.globalAlpha = t.opacity;
@@ -5541,6 +5829,7 @@ function drawLayer(t, ti, layer, zdx, zdy, zdw, zdh) {
   ctx.globalAlpha = 1;
 }
 
+let _outBlanked = false;   // ver loop(): el lienzo ya se limpió por no haber nada activo
 function loop() {
   requestAnimationFrame(loop);
   S.frame++;
@@ -5549,9 +5838,13 @@ function loop() {
   /* Skip rendering entirely if nothing is loaded and no transitions */
   const anyActive = S.tracks.some(t=>t.loaded||t.sourceType!=='file'||t.layers.some(l=>l.kind!=='media'&&l.on));
   if (!anyActive && !TX.out.active && !TX.in.active) {
+    /* Al quitar la última fuente se limpia una sola vez el lienzo y la
+       salida (HDMI/OBS): antes se quedaba congelado el último cuadro. */
+    if (!_outBlanked) { ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H); pushToOut(); _outBlanked = true; }
     if (S.frame%30===0) renderTL();
     return;
   }
+  _outBlanked = false;
 
   /* Strobe: black-out every other frame group */
   const strobe = gfx('strobe');
