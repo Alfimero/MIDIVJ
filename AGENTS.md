@@ -79,8 +79,9 @@ active
 - —
 
 ### Pendientes
-- Verificar sincronía entre la copia local (PC del usuario) y GitHub. Al 2026-10-10, `origin/main` está en `360a00d` (merge del PR #2, último commit de contenido `c64f357`, 2026-09-13). Falta que el usuario ejecute `git fetch` + `git status` en su PC; desde la sesión en la nube no hay acceso a su equipo.
-- El usuario indica (2026-10-10) que probablemente tiene cambios en la carpeta local desde el día 14 (sin confirmar mes; se asume septiembre) que no están en GitHub. Pendiente: que comparta la salida de `git status` y `git diff --stat` para revisarlos antes de hacer commit/push (repo público: revisar que no se suban archivos pesados o privados).
+- Sincronía local vs GitHub (verificado 2026-10-10 con la salida de git del usuario): la PC del usuario está en `360a00d`, igual que `origin/main` (0 commits de diferencia), pero tiene cambios SIN commit desde el día 14: modificados `AGENTS.md`, `CLAUDE.md`, `README.md`, `src/Midivj ZYX.html`; nuevos sin seguimiento `Sessions/CDMX.vjp`, `Sessions/STREAM.vjp`, `Sessions/Zimapán.vjp`, `Sessions/untitled.vjp`. Pendiente: revisar `git diff` y que el usuario haga commit/push a `main`.
+- Riesgo de conflicto: la rama `claude/wizardly-goldberg-1s1ejj` también modifica esta sección de `CLAUDE.md`/`AGENTS.md`. Tras el push del usuario, rehacer esa rama sobre el nuevo `main`.
+- Repo público: antes de subir sesiones `.vjp`, comprobar que no contengan rutas absolutas personales (las 3 sesiones ya publicadas usan rutas relativas).
 
 ### Repositorio
 - GitHub: https://github.com/Alfimero/MIDIVJ
