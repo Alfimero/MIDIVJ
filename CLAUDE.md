@@ -20,16 +20,12 @@ active
 
 ### Decisiones
 - 2026-10-10: las sesiones `.vjp` son sesiones personales de shows y deben quedar fuera del repo (`*.vjp` en `.gitignore`).
+- 2026-10-10: flujo de trabajo. Claude sube sus cambios a la rama `claude/wizardly-goldberg-1s1ejj`; el usuario los fusiona en `main` (PR en GitHub) y actualiza su copia local con `git switch main` + `git pull origin main`. El usuario usa cmd (Símbolo del sistema de Windows), no PowerShell: dar comandos compatibles con cmd.
 
 ### Pendientes
-- Sincronía local vs GitHub (verificado 2026-10-10 con la salida de git del usuario): la PC del usuario está en `360a00d`, igual que `origin/main`, con cambios SIN commit desde el día 14:
-  - `src/Midivj ZYX.html`: ~1,780 líneas cambiadas (código aún no revisado por Claude).
-  - `README.md`: +21/−1; documenta fuentes VIDEO multi-archivo, GALERÍA, NAVEGADOR, CÁMARA, ⚡ GENERAR CLIPS (reemplaza PLAYLIST), 🧅 CAPAS por pista, TRANSFORM DE PISTA, CONFIG. DE CÁMARA, PROCESADOR DE VIDEO y reset con doble clic.
-  - `AGENTS.md` / `CLAUDE.md`: sin cambios de contenido (solo aviso LF/CRLF); no hace falta subirlos y no hay riesgo de conflicto.
-  - Sesiones nuevas sin seguimiento (`CDMX.vjp`, `STREAM.vjp`, `Zimapán.vjp`, `untitled.vjp`): NO se suben.
-- Plan acordado (2026-10-10): el usuario crea `feat/capas-y-fuentes` en su PC, agrega `*.vjp` a `.gitignore` y sube `.gitignore`, `README.md` y `src/Midivj ZYX.html`. Después Claude descarga la rama, revisa el HTML y valida la sintaxis del script inline antes de fusionar a `main`. Estado: el usuario recibió los 5 pasos (status, rama, .gitignore, commit, push) y está por ejecutarlos; falta confirmar el push. El usuario trabaja en cmd (Símbolo del sistema de Windows), no en PowerShell: dar comandos compatibles con cmd (p. ej. `echo *.vjp>>.gitignore`).
-- Pendiente de decisión del usuario (puede ir en un commit aparte, después): si se sacan del repo las 3 sesiones ya publicadas (`Bk-Nk!*.vjp`) con `git rm --cached` desde su PC. Si se quitan, ajustar las referencias en `AGENTS.md`, `PROJECT.md`, `PROJECT_CONTEXT.md` y `docs/operations/graphify-validation.md`.
-- Tras fusionar: actualizar `PROJECT_CONTEXT.md` (fuentes de pista, capas, procesador de video), que hoy no las menciona.
+- Sincronía local vs GitHub: resuelta el 2026-10-10. Los cambios locales desde el día 14 (`src/Midivj ZYX.html`, `README.md`, `*.vjp` en `.gitignore`) entraron a `main` con el PR #3 (`6df9ec0`); `main` quedó en `080e1db` tras el PR #4. Validación de sintaxis (2026-10-10, `node --check`): OK en los scripts inline de los 6 HTML de `src/` y en todos los `.js`. No sustituye la prueba manual con navegador y hardware.
+- Pendiente de decisión del usuario: si se sacan del repo las 3 sesiones ya publicadas (`Bk-Nk!*.vjp`) con `git rm --cached` desde su PC. Si se quitan, ajustar las referencias en `AGENTS.md`, `PROJECT.md`, `PROJECT_CONTEXT.md` y `docs/operations/graphify-validation.md`.
+- Actualizar `PROJECT_CONTEXT.md` (fuentes de pista GALERÍA/NAVEGADOR, CAPAS, procesador de video), que hoy no las menciona.
 
 ### Repositorio
 - GitHub: https://github.com/Alfimero/MIDIVJ
