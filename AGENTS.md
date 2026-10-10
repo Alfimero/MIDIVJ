@@ -78,6 +78,7 @@ active
 ### Decisiones
 - 2026-10-10: las sesiones `.vjp` son sesiones personales de shows y deben quedar fuera del repo (`*.vjp` en `.gitignore`).
 - 2026-10-10: flujo de trabajo. Claude sube sus cambios a la rama `claude/wizardly-goldberg-1s1ejj`; el usuario los fusiona en `main` (PR en GitHub) y actualiza su copia local con `git switch main` + `git pull origin main`. El usuario usa cmd (Símbolo del sistema de Windows), no PowerShell: dar comandos compatibles con cmd.
+- 2026-10-10: el usuario cuestionó el gasto de tokens de las revisiones con varios agentes (modo "ultracode" activo en la sesión). Regla: NO lanzar flujos de agentes (Workflow) sin preguntar antes al usuario y decirle el costo aproximado; por defecto, probar con las baterías propias de Playwright. Pendiente: confirmar si se detiene la ronda de cierre del PR #6.
 - 2026-10-10: timeline. Los videos se mueven arrastrando su bloque (1 video principal por pista, sin "varios videos por pista" por ahora). Los videos de pistas distintas PUEDEN coincidir en el tiempo (son capas); el imán y ⇥ SECUENCIA sirven para ponerlos seguidos.
 
 ### Pendientes
