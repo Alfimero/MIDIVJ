@@ -17,6 +17,7 @@ const https = require('https');
 const os = require('os');
 const path = require('path');
 const fsp = require('fs/promises');
+const net = require('net');
 const { execFile } = require('child_process');
 const { WebSocketServer } = require('ws');
 const selfsigned = require('selfsigned');
@@ -378,6 +379,16 @@ function esHotspot(ip, nombreIface = '') {
   return /wi-?fi direct|hosted|punto de acceso|hotspot/i.test(nombreIface);
 }
 
+/* VPN o adaptador virtual: un teléfono en la Wi-Fi no llega a esa dirección.
+   100.64.0.0/10 es el rango de Tailscale (CGNAT); 169.254/16 es una IP que
+   Windows se asigna sola cuando no obtuvo dirección. */
+function esVirtual(ip, nombreIface = '') {
+  const [a, b] = ip.split('.').map(Number);
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true;
+  return /tailscale|zerotier|wireguard|nordlynx|openvpn|vpn|\btap\b|\btun\b|vethernet|hyper-v|virtualbox|vmware|wsl|docker/i.test(nombreIface);
+}
+
 function direcciones() {
   const salida = [];
   for (const [nombre, iface] of Object.entries(os.networkInterfaces())) {
@@ -386,11 +397,16 @@ function direcciones() {
       salida.push({
         ip: dir.address,
         interfaz: nombre,
-        tipo: esHotspot(dir.address, nombre) ? 'hotspot' : 'lan'
+        tipo: esHotspot(dir.address, nombre) ? 'hotspot' : esVirtual(dir.address, nombre) ? 'vpn' : 'lan'
       });
     }
   }
-  salida.sort((a, b) => (a.tipo === b.tipo ? 0 : a.tipo === 'hotspot' ? -1 : 1));
+  /* Orden: red creada por esta PC, luego la red local (Wi-Fi/Ethernet), y al
+     final VPN y adaptadores virtuales. La página /control usa la primera para
+     los QR: con Tailscale u otra VPN instalada, antes podía quedar primera la
+     dirección de la VPN y el teléfono no conectaba (tiempo de espera agotado). */
+  const rango = { hotspot: 0, lan: 1, vpn: 2 };
+  salida.sort((a, b) => rango[a.tipo] - rango[b.tipo]);
   return salida;
 }
 
@@ -410,28 +426,52 @@ const CERT_FILE = path.join(CERT_DIR, 'cert.pem');
 const KEY_FILE = path.join(CERT_DIR, 'key.pem');
 const CERT_META_FILE = path.join(CERT_DIR, 'meta.json');
 
+const MAX_NOMBRES_CERT = 24;
+
+/** Nombres que el certificado TIENE que cubrir: los locales y las IPs de
+    hotspot/LAN. Las de VPN y adaptadores virtuales no obligan a regenerar:
+    la de Tailscale apagado (169.254.x) cambia sola y haría que el teléfono
+    aceptara la advertencia otra vez sin motivo. */
+function nombresRequeridos() {
+  return ['localhost', '127.0.0.1', '::1', ...direcciones().filter(d => d.tipo !== 'vpn').map(d => d.ip)];
+}
+
+/** Nombres que cubre el certificado en uso (para revisar sin leer disco). */
+let nombresCert = new Set();
+
 /** Genera (o reutiliza) un certificado autofirmado cuyo SAN cubra `localhost`,
     `127.0.0.1`, `::1` y todas las IPs de LAN detectadas ahora mismo. Sólo
     regenera cuando falta alguna: así el teléfono no tiene que volver a
-    aceptar la advertencia del navegador en cada show si la red no cambió. */
+    aceptar la advertencia del navegador en cada show si la red no cambió.
+    Al regenerar conserva las IPs de redes anteriores (casa, venue…), así que
+    volver a una red ya conocida no obliga a generar otro. */
 async function obtenerCertificado() {
-  const requeridos = ['localhost', '127.0.0.1', '::1', ...direcciones().map(d => d.ip)];
+  const requeridos = nombresRequeridos();
+  let anteriores = [];
 
   try {
     const meta = JSON.parse(await fsp.readFile(CERT_META_FILE, 'utf8'));
-    const cubiertos = new Set(meta.nombres || []);
+    anteriores = Array.isArray(meta.nombres) ? meta.nombres : [];
+    const cubiertos = new Set(anteriores);
     if (requeridos.every(n => cubiertos.has(n))) {
       const [cert, key] = await Promise.all([
         fsp.readFile(CERT_FILE, 'utf8'),
         fsp.readFile(KEY_FILE, 'utf8')
       ]);
+      nombresCert = cubiertos;
       return { cert, key };
     }
   } catch { /* sin caché válida: se genera abajo */ }
 
+  /* Primero las de ahora (también VPN, por si alguien la usa a propósito),
+     luego las de redes anteriores hasta el tope. */
+  const nombres = [...new Set([...requeridos, ...direcciones().map(d => d.ip), ...anteriores])]
+    .filter(n => n === 'localhost' || net.isIP(String(n)))
+    .slice(0, MAX_NOMBRES_CERT);
+
   const altNames = [
     { type: 2, value: 'localhost' },
-    ...requeridos.filter(n => n !== 'localhost').map(ip => ({ type: 7, ip }))
+    ...nombres.filter(n => n !== 'localhost').map(ip => ({ type: 7, ip }))
   ];
   const pems = await selfsigned.generate([{ name: 'commonName', value: 'MIDIVJ (red local)' }], {
     keySize: 2048,
@@ -447,9 +487,34 @@ async function obtenerCertificado() {
   await fsp.mkdir(CERT_DIR, { recursive: true });
   await fsp.writeFile(CERT_FILE, pems.cert, 'utf8');
   await fsp.writeFile(KEY_FILE, pems.private, 'utf8');
-  await fsp.writeFile(CERT_META_FILE, JSON.stringify({ nombres: requeridos, generado: Date.now() }, null, 2), 'utf8');
+  await fsp.writeFile(CERT_META_FILE, JSON.stringify({ nombres, generado: Date.now() }, null, 2), 'utf8');
 
+  nombresCert = new Set(nombres);
   return { cert: pems.cert, key: pems.private };
+}
+
+/** Servidor HTTPS de /camara (null hasta que arranca o si no pudo arrancar). */
+let servidorSeguro = null;
+let renovandoCert = null;
+
+/** Si la PC cambió de red con el relay abierto (otra Wi-Fi, otra IP), el
+    certificado del arranque no cubre la IP nueva y /camara da error de
+    certificado en el teléfono. Se regenera y se cambia en caliente, sin
+    reiniciar el relay; las conexiones abiertas siguen con el anterior. */
+function renovarCertificadoSiHaceFalta() {
+  if (!servidorSeguro) return Promise.resolve();
+  if (nombresRequeridos().every(n => nombresCert.has(n))) return Promise.resolve();
+  if (renovandoCert) return renovandoCert;
+  renovandoCert = obtenerCertificado()
+    .then(credenciales => {
+      servidorSeguro.setSecureContext(credenciales);
+      const nuevas = direcciones().filter(d => d.tipo !== 'vpn').map(d => d.ip).join(', ');
+      console.log(`  [https] la red cambió: certificado de /camara renovado para ${nuevas}` +
+        ' (el teléfono acepta la advertencia otra vez)');
+    })
+    .catch(error => console.error('  [https] no se pudo renovar el certificado:', error.message))
+    .finally(() => { renovandoCert = null; });
+  return renovandoCert;
 }
 
 /** Cache corta: las consultas tardan ~250 ms y /control refresca seguido. */
@@ -572,6 +637,8 @@ function payloadWifi(ssid, pass, auth) {
 }
 
 async function infoRed(sala) {
+  /* Antes de dar los QR: que el certificado de /camara cubra la IP actual. */
+  await renovarCertificadoSiHaceFalta();
   const wifi = await detectarWifi();
   /* El SSID escrito a mano en /control gana: el punto de acceso móvil de
      Windows 11 no publica su clave por netsh y hay que teclearla una vez. */
@@ -1303,7 +1370,7 @@ async function printIPs() {
   if (info.direcciones.length) {
     console.log('  Direcciones para teléfonos y otros equipos:');
     info.direcciones.forEach(d => {
-      const etiqueta = d.tipo === 'hotspot' ? '  ← red creada por esta PC' : '';
+      const etiqueta = d.tipo === 'hotspot' ? '  ← red creada por esta PC' : d.tipo === 'vpn' ? '  ← VPN o adaptador virtual (los teléfonos no suelen llegar aquí)' : '';
       console.log(`    http://${d.ip}:${PORT}/mando   (${d.interfaz})${etiqueta}`);
       if (d.camara) console.log(`    ${d.camara}   (cámara — certificado autofirmado, aceptar la advertencia una vez)`);
     });
@@ -1368,27 +1435,33 @@ async function iniciarHttps() {
     return;
   }
 
-  const servidorSeguro = https.createServer(credenciales, (req, res) => {
+  const seguro = https.createServer(credenciales, (req, res) => {
     handleHttp(req, res).catch(error => {
       if (!res.headersSent) sendJson(res, 500, { error: error.message || 'Error interno.' });
       else res.end();
     });
   });
-  servidorSeguro.on('error', error => {
+  seguro.on('error', error => {
     if (error.code !== 'EADDRINUSE') console.error('  [https]', error.message);
   });
 
-  const wssSeguro = new WebSocketServer({ server: servidorSeguro });
+  const wssSeguro = new WebSocketServer({ server: seguro });
   wssSeguro.on('error', error => {
     if (error.code !== 'EADDRINUSE') console.error('  [wss https]', error.message);
   });
   wssSeguro.on('connection', alConectar);
 
   try {
-    PORT_HTTPS = await escuchar(servidorSeguro, PORT + 1000, PUERTOS_ALTERNOS);
+    PORT_HTTPS = await escuchar(seguro, PORT + 1000, PUERTOS_ALTERNOS);
   } catch (error) {
     console.error('  [https] no se pudo abrir el puerto:', error.message);
+    return;
   }
+
+  servidorSeguro = seguro;
+  /* Revisión barata (sólo lee las interfaces): detecta el cambio de red
+     aunque nadie tenga /control abierto. */
+  setInterval(() => { renovarCertificadoSiHaceFalta(); }, 10000).unref();
 }
 
 function abrirNavegador(url) {
