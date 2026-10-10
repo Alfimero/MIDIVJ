@@ -85,7 +85,10 @@ Es la Ventana inferior central, tienes la posibilidad de observar todos tus trac
 - **Scroll vertical**: si las pistas no caben aparece una barra de desplazamiento; también Shift+rueda, o la rueda sobre los nombres T1…T8. El eje de tiempo queda siempre visible abajo.
 - **Zoom vertical**: botones `↕−` / `↕+` o Alt+rueda (alto de cada fila). El zoom horizontal sigue en `−` / `+` o Ctrl+rueda.
 - El alto del panel y el zoom vertical se recuerdan en ese navegador.
-- **OFFSET** (panel de pista): coloca el video en cualquier punto del timeline, sin límite. Usa el slider, Shift+arrastra el bloque del video en el timeline o escribe el tiempo (`90`, `1:30` o `1:02:03`) y pulsa Enter. El timeline y la reproducción se alargan solos hasta el final del último video.
+- **Mover un video en el timeline**: arrástralo directamente (su bloque o cualquiera de sus clips), sin Shift. Mientras lo arrastras, su inicio o su final se pega como un imán a los bordes de los videos de las otras pistas, al 0 y al cursor; mantén **Ctrl** para moverlo libre. Si llevas el puntero al borde derecho o izquierdo, el timeline se desplaza y se alarga solo: no hay límite. Un clic sin arrastrar sobre el bloque sigue moviendo el cursor (seek), y Alt+arrastrar un clip lo mueve dentro de su video, como antes.
+- **⇥ SECUENCIA** (barra del timeline): pone los videos de las pistas uno detrás de otro, en el orden en que están, sin huecos ni solapes. **↶** deshace. Los videos de pistas distintas pueden coincidir en el tiempo (son capas); el imán y SECUENCIA sirven para alinearlos cuando quieres que vayan seguidos.
+- Clic o arrastre sobre el eje de tiempo = mover el cursor (scrub).
+- **OFFSET** (panel de pista): el mismo desplazamiento en números. Usa el slider o escribe el tiempo (`90`, `1:30` o `1:02:03`) y pulsa Enter. El timeline y la reproducción se alargan solos hasta el final del último video.
 
 ### BANCOS
 
