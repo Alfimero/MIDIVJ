@@ -46,7 +46,7 @@ Para configurar tus visuales dirigete a la ventana lateral izquierda donde tendr
 
 Fuentes y **⚡ GENERAR CLIPS** (sección 🎞 MEDIOS del panel de pista):
 
-- **🎬 VIDEO / 🖼 GALERÍA** aceptan varios archivos a la vez: todos entran a la lista de MEDIOS de la pista (videos e imágenes mezclados, en el orden que quieras) y el primero se carga en la pista si estaba vacía. GENERAR CLIPS crea un clip por cada medio, encadenados en orden (🔁 LOOP vuelve al primero al terminar); las imágenes duran lo que diga **SEG/IMG**. Es lo que antes hacía la PLAYLIST, ahora para cualquier formato.
+- **🎬 VIDEO / 🖼 GALERÍA** aceptan varios archivos a la vez: todos entran a la lista de MEDIOS de la pista (videos e imágenes mezclados, en el orden que quieras) y el primero se carga en la pista si estaba vacía. Si la pista ya tiene un archivo, pregunta si quieres reemplazarlo o sólo agregar a la lista. El botón **✕** junto al nombre de la fuente la quita de la pista (archivo o en vivo); los clips se conservan. GENERAR CLIPS crea un clip por cada medio, encadenados en orden (🔁 LOOP vuelve al primero al terminar); las imágenes duran lo que diga **SEG/IMG**. Es lo que antes hacía la PLAYLIST, ahora para cualquier formato.
 - **🌐 NAVEGADOR**: pide una URL y la abre en una ventana aparte; después pulsa **📡 CAPTURAR** y elige esa ventana en el selector (el navegador no permite dibujar una página directamente en el canvas, así que se captura como PANTALLA). Son dos pasos porque abrir la ventana consume el gesto que la captura de pantalla exige.
 - Con una fuente en vivo activa (NAVEGADOR, PANTALLA, CAPTURA o CÁMARA), GENERAR CLIPS crea un clip-interruptor (grupo FUENTE, modo toggle): mientras la pista tenga uno, la fuente sólo se ve cuando ese clip está activo, así se puede mostrar/ocultar por MIDI con transiciones de entrada y salida.
 
@@ -80,6 +80,12 @@ Los CLIPS cuentan con las siguientes funciones que sirven para personalizar la e
 ### TRACK VIEWER
 
 Es la Ventana inferior central, tienes la posibilidad de observar todos tus tracks, desplazarte, zoom in/out y puedes observar el cursor que te indica la posición de todo el video.
+
+- **Alto del panel**: arrastra la manija del borde superior (la barrita del centro) hacia arriba o abajo. Doble clic en la manija = ajustar el alto para ver todas las pistas.
+- **Scroll vertical**: si las pistas no caben aparece una barra de desplazamiento; también Shift+rueda, o la rueda sobre los nombres T1…T8. El eje de tiempo queda siempre visible abajo.
+- **Zoom vertical**: botones `↕−` / `↕+` o Alt+rueda (alto de cada fila). El zoom horizontal sigue en `−` / `+` o Ctrl+rueda.
+- El alto del panel y el zoom vertical se recuerdan en ese navegador.
+- **OFFSET** (panel de pista): coloca el video en cualquier punto del timeline, sin límite. Usa el slider, Shift+arrastra el bloque del video en el timeline o escribe el tiempo (`90`, `1:30` o `1:02:03`) y pulsa Enter. El timeline y la reproducción se alargan solos hasta el final del último video.
 
 ### BANCOS
 
