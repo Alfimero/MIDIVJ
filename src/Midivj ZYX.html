@@ -609,6 +609,8 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
       <button class="zbtn" onclick="tlPan(1)">▷</button>
       <button class="zbtn" onclick="tlFit()">FIT</button>
       <button id="snap-btn" onclick="toggleSnap()">⊡ SNAP</button>
+      <button class="zbtn" onclick="tlArrangeSequence()" title="Pone los videos de las pistas uno detrás de otro, en el orden en que están ahora, sin huecos ni solapes">⇥ SECUENCIA</button>
+      <button class="zbtn" id="seq-undo" style="display:none;" onclick="tlUndoArrange()" title="Deshacer el último ⇥ SECUENCIA">↶</button>
       <div style="width:1px;height:14px;background:var(--border2);margin:0 2px;flex-shrink:0;"></div>
       <button class="zbtn" onclick="tlRowZoom(-1)" title="Zoom vertical: filas más bajas (Alt+rueda)">↕−</button>
       <span class="ztxt" id="vzoom-lbl" title="Alto de fila del trackviewer">1.0×</span>
@@ -754,7 +756,7 @@ function midiTitulo(obj) {
 const ft = t => isNaN(t)||t<0 ? '0:00.0' : Math.floor(t/60)+':'+(t%60).toFixed(1).padStart(4,'0');
 
 /* ── TIMELINE STATE ── */
-const TL = { zoom:1, viewStart:0, rowH:22, frozenDur:null, autoH:true };   // rowH = alto de fila (zoom vertical) · frozenDur = escala fija durante un arrastre · autoH = alto según las pistas
+const TL = { zoom:1, viewStart:0, rowH:22, frozenDur:null, autoH:true, lastArrange:null };   // rowH = alto de fila (zoom vertical) · frozenDur = escala fija durante un arrastre · autoH = alto según las pistas · lastArrange = offsets antes de ⇥ SECUENCIA (para ↶)
 const N_TRACKS = 8;
 
 /* Parámetros del PROCESADOR DE VIDEO por pista (el motor está más abajo,
@@ -969,7 +971,7 @@ function mkStill() {
     src: {
       get() { return _src; },
       set(v) {
-        _src = v || ''; _img = null; _t = 0;
+        _src = v || ''; _img = null; _t = 0; c.error = null;
         if (!_src) { cx.clearRect(0, 0, c.width, c.height); return; }
         const im = new Image();
         im.onload = () => {
@@ -980,12 +982,12 @@ function mkStill() {
           c.dispatchEvent(new Event('loadedmetadata'));
           c.dispatchEvent(new Event('canplay'));
         };
-        im.onerror = () => { if (_src === v) c.dispatchEvent(new Event('error')); };
+        im.onerror = () => { if (_src === v) { c.error = { code: 4 }; c.dispatchEvent(new Event('error')); } };
         im.src = _src;
       },
     },
   });
-  c.duration = STILL_MIN_DUR; c.muted = true; c.loop = false; c.playbackRate = 1; c.preload = 'auto';
+  c.duration = STILL_MIN_DUR; c.muted = true; c.loop = false; c.playbackRate = 1; c.preload = 'auto'; c.error = null;
   c.play  = () => { if (_paused) { _paused = false; _last = performance.now(); _timer = setInterval(tick, 40); } return Promise.resolve(); };
   c.pause = () => { _paused = true; if (_timer) { clearInterval(_timer); _timer = null; } };
   c.load  = () => {};
@@ -1109,7 +1111,7 @@ function makeTrack(i) {
 
     /* ── Pingpong: flip from forward to reverse at clip.out ── */
     if (c.loopMode === 'pingpong' && t.pingDir === 1 && !isStill) {
-      if (ct >= c.out - 0.08) {
+      if (ct >= c.out - 0.08 || src.ended) {   // ended: un out más largo que el archivo no deja el PING congelado
         t.pingDir = -1;
         src.pause();
         if (hqRevReady(t, c)) startHQPingReverse(t);   // native full-quality reverse pass
@@ -1138,7 +1140,10 @@ function makeTrack(i) {
          readyState>=2 a tiempo — el swap de abajo jamás se cumple y el loop
          cae siempre al re-seek in-place, que es el que corta/desincroniza
          el audio en cada vuelta. */
-      if (buf.src !== t._url) { buf.src = t._url; buf.load(); }
+      if (buf.src !== t._url) {
+        buf.src = t._url; buf.load();
+        t._plBufKey = t._plBufUrl = t._plBufMediaRef = t._plBufFile = null;   // vidBuf ya no tiene el siguiente de MEDIOS
+      }
       buf.currentTime = c.in;
     }
 
@@ -1158,13 +1163,13 @@ function makeTrack(i) {
           t.vidBuf.src = entry.objectURL;
           t.vidBuf.load();   // preload="none": sin esto no arranca a bajar datos solo
           t.vidBuf.currentTime = nr.clip.in || 0;
-          t._plBufKey = needKey; t._plBufUrl = entry.objectURL; t._plBufMediaRef = entry.mediaRef;
+          t._plBufKey = needKey; t._plBufUrl = entry.objectURL; t._plBufMediaRef = entry.mediaRef; t._plBufFile = entry.file || null;
         }
       }
     }
 
     /* ── Loop / chain point ── */
-    if (ct >= c.out - 0.07) {
+    if (ct >= c.out - 0.07 || src.ended) {   // ended: un out más largo que el archivo no deja la salida congelada
       if (c.playMode === 'loop') {
         /* Do the video swap */
         if (t.prebuffering && t.vidBuf.readyState >= 2) {
@@ -1240,8 +1245,23 @@ function makeTrack(i) {
     });
   };
   vidA.addEventListener('loadedmetadata', () => onMeta(vidA));
-  /* Archivo que no se puede abrir: el panel deja de decir "cargando" */
-  vidA.addEventListener('error', () => { if (t._url && S.tracks[S.ati] === t) renderTrackInfo(); });
+  /* Archivo que no se puede abrir: la pista deja de figurar cargada (si no,
+     quedaban el nombre, la duración y el último cuadro del video anterior) y
+     el panel dice "no se pudo abrir". vidA también da 'error' cuando se le
+     quita el src (imágenes, releaseFileMedia): por eso se compara con t._url. */
+  const onSrcError = (el, kind) => {
+    if (t.sourceType !== 'file' || t.mediaKind !== kind || !t._url) return;
+    if (kind === 'video' && (el !== t.vid || el.getAttribute('src') !== t._url)) return;   // el buffer (prebuffer/loop) no cuenta
+    if (kind === 'image' && el.src !== t._url) return;
+    if (t.loaded) {
+      if (t.activeClip) deactivateClip(t);
+      t.loaded = false; t.dur = 0; t.loadedName = '—';
+      resetTrackCaches(t);
+      renderAll();
+    } else if (S.tracks[S.ati] === t) renderTrackInfo();
+  };
+  vidA.addEventListener('error', () => onSrcError(vidA, 'video'));
+  still.addEventListener('error', () => onSrcError(still, 'image'));
   still.addEventListener('loadedmetadata', () => onMeta(still));
   still.addEventListener('timeupdate', () => onTU(still));
 
@@ -1678,6 +1698,9 @@ async function applyProjectData(d) {
   /* Un clip activo de la sesión anterior seguiría mandando sobre la pista
      aunque ya no esté en su lista (no habría cómo detenerlo): se apagan. */
   S.tracks.forEach(t => { if (t.activeClip) deactivateClip(t); });
+  /* ↶ de SECUENCIA pertenece a la sesión anterior */
+  TL.lastArrange = null;
+  { const u = document.getElementById('seq-undo'); if (u) u.style.display = 'none'; }
   S.tracks.forEach(t=>t.clips=[]);
   if (d.tracks) {
     d.tracks.forEach((td,i)=>{ if(i<S.tracks.length){
@@ -1746,11 +1769,29 @@ function resolveMediaLibraryEntry(ref) {
   }
   return matches[0];
 }
+/* Clave de la fuente que suena (t._srcKey). Las claves de MEDIOS son por
+   nombre: si la fuente principal es OTRO archivo con el mismo nombre que una
+   entrada de MEDIOS, no deben compartir clave (si no, los clips de esa
+   entrada sonarían con la fuente principal y onMeta les recortaría el out).
+   Se recalcula cada vez que cambian la fuente o MEDIOS. Es sólo de
+   ejecución: mediaRef, lo que se guarda en la sesión, no cambia. */
+function sameFileObj(a, b) { return !!a && !!b && a.size === b.size && a.lastModified === b.lastModified; }
+function syncSrcKey(t) {
+  if (t.sourceType !== 'file' || !t.mediaRef || !t._srcFile) return;
+  const base = mediaRefKey(t.mediaRef);
+  if (t._srcKey !== base && !t._srcKey.startsWith(base + '#')) return;   // la clave es de otra carga en curso
+  const e = t.playlist.find(x => mediaRefKey(x.mediaRef) === base);
+  t._srcKey = (e && e.file && !sameFileObj(e.file, t._srcFile))
+    ? base + '#' + t._srcFile.size + '-' + t._srcFile.lastModified
+    : base;
+}
 function loadTrackFileObject(track, file, relativePath='') {
   revokeTrackObjectURL(track);
   const url = URL.createObjectURL(file);
   track._objectURL = url;
   startLoad(track, file.name, url, buildFileMediaRef(file, relativePath));
+  track._srcFile = file;   // para no ofrecer ⇄ con el mismo archivo que ya suena
+  syncSrcKey(track);
 }
 async function restoreProjectMedia(projectData) {
   const pTracks = projectData?.tracks || [];
@@ -1834,6 +1875,7 @@ async function restoreProjectMedia(projectData) {
       }
     }
     if (track.playlist.length) warmPlaylist(track);
+    syncSrcKey(track);   // con las entradas ya resueltas
   }
 
   if (!totalRefs) {
@@ -1868,10 +1910,12 @@ function onTrackMediaChosen(ev, kind) {
   /* Pista vacía o con fuente en vivo → se carga el primero. Si ya tiene un
      archivo, se agrega a MEDIOS y el panel ofrece reemplazarlo con un botón
      (sin diálogo: un confirm() congela el render y la salida HDMI/OBS). */
-  const firstKey = mediaRefKey(buildFileMediaRef(accepted[0]));
-  const entry = t.playlist.find(e => mediaRefKey(e.mediaRef) === firstKey);
-  if (!t.loaded || t.sourceType !== 'file') replaceTrackSource(t, accepted[0]);
-  else t._replaceOfferId = entry ? entry.id : null;
+  /* La oferta guarda el archivo recién elegido (no la entrada de MEDIOS:
+     con el mismo nombre, la entrada puede ser otro archivo). */
+  const f0 = accepted[0], cur = t._srcFile;
+  const isCurrent = cur && cur.name === f0.name && cur.size === f0.size && cur.lastModified === f0.lastModified;
+  if (!t.loaded || t.sourceType !== 'file') replaceTrackSource(t, f0);
+  else t._replaceOffer = isCurrent ? null : f0;
   renderTrackInfo();
   probePlaylistDurations(t);
   warmPlaylist(t);
@@ -1886,19 +1930,41 @@ function replaceTrackSource(t, file, relativePath='') {
 function useMediaEntryAsSource(trackIdx, id) {
   const t = S.tracks[trackIdx];
   const e = t.playlist.find(x => x.id === id);
-  t._replaceOfferId = null;
+  t._replaceOffer = null;
   if (!e) { renderTrackInfo(); return; }
-  if (!e.file) { alert('"'+e.name+'" no está disponible: elige la carpeta de medios o vuelve a agregar el archivo.'); renderTrackInfo(); return; }
+  if (!e.file) {   // entrada de una sesión: buscarla en la carpeta de medios ya elegida
+    const lib = resolveMediaLibraryEntry(e.mediaRef);
+    if (lib) { e.file = lib.file; e.relativePath = lib.relativePath; }
+  }
+  if (!e.file) {
+    /* Sin alert(): un diálogo modal congela el render y la salida HDMI/OBS */
+    setSt('st-media', 'falta "'+e.name+'": elige la carpeta de medios', 'act');
+    renderTrackInfo(); return;
+  }
   replaceTrackSource(t, e.file, e.relativePath || '');
   renderTrackInfo();
 }
-function dismissReplaceOffer(trackIdx) { S.tracks[trackIdx]._replaceOfferId = null; renderTrackInfo(); }
+/* ⇄ USAR COMO FUENTE de la fila de aviso: carga el archivo que se acaba de elegir */
+function useReplaceOffer(trackIdx) {
+  const t = S.tracks[trackIdx], f = t._replaceOffer;
+  t._replaceOffer = null;
+  if (f) replaceTrackSource(t, f, f.webkitRelativePath || '');
+  renderTrackInfo();
+}
+function dismissReplaceOffer(trackIdx) { S.tracks[trackIdx]._replaceOffer = null; renderTrackInfo(); }
 function addTrackMedia(t, files) {
   const have = new Set(t.playlist.map(e => mediaRefKey(e.mediaRef)));
   files.forEach(file => {
     const mediaRef = buildFileMediaRef(file);
     const key = mediaRefKey(mediaRef);
-    if (have.has(key)) return;   // ya está en la lista
+    if (have.has(key)) {
+      /* Ya está en la lista: no se toca (sus clips, la precarga o el clip que
+         suena pueden estar usando ese archivo). Sólo se completa una entrada
+         de sesión que no tenía archivo. */
+      const old = t.playlist.find(e => mediaRefKey(e.mediaRef) === key);
+      if (old && !old.file) { old.file = file; old.relativePath = file.webkitRelativePath || ''; }
+      return;
+    }
     have.add(key);
     t.playlist.push({
       id: 'pe'+Date.now()+Math.random().toString(36).slice(2,7),
@@ -1910,6 +1976,7 @@ function addTrackMedia(t, files) {
       objectURL: null,
     });
   });
+  syncSrcKey(t);   // una entrada nueva con el nombre de la fuente puede ser otro archivo
 }
 function loadFromURL() {
   const u = document.getElementById('vid-url').value.trim();
@@ -1925,19 +1992,20 @@ function startLoad(track, name, url, mediaRef=null) {
   /* Stop live stream if switching to file */
   stopTrackStream(track);
   track._mediaMissing = false;
-  track._replaceOfferId = null;
+  track._replaceOffer = null;
   if (track._objectURL && track._objectURL !== url) revokeTrackObjectURL(track);
   track._sourceKey++;
   resetTrackCaches(track);
   track.sourceType  = 'file';
   track._pendingName = name;
   track._url = url;
+  track._srcFile = null;   // loadTrackFileObject lo vuelve a poner si la carga viene de un File
   track.mediaRef = serializeMediaRef(mediaRef || buildURLMediaRef(name, url));
   track._srcKey = mediaRefKey(track.mediaRef);
   track._activeVid = 'A';
   track.vidA.muted = false; track.vidB.muted = true;   // una carga nueva siempre entra por vidA
   track.prebuffering = false;
-  track._plBufKey = track._plBufUrl = track._plBufMediaRef = null;
+  track._plBufKey = track._plBufUrl = track._plBufMediaRef = track._plBufFile = null;
   track._plPrebuffered = false;
   track.still.pause();
   track.vidA.pause(); track.vidB.pause();
@@ -1946,7 +2014,7 @@ function startLoad(track, name, url, mediaRef=null) {
        la ventana del timeline — nunca menor que los clips que la usan, para
        que el clamp de loadedmetadata no los recorte. */
     track.mediaKind = 'image';
-    const outs = track.clips.filter(c => { const k = clipSourceKey(c); return (!k || k === track._srcKey) && !c.srcLive; }).map(c => c.out || 0);
+    const outs = track.clips.filter(c => { const k = clipSourceKey(c); return (!k || k === track._srcKey) && !c.srcLive && !c.layerId; }).map(c => c.out || 0);
     track.still.duration = Math.max(STILL_MIN_DUR, track.galleryDur || 0, ...outs);
     track.vidA.src = ''; track.vidB.src = '';
     track.still.src = url;
@@ -2138,7 +2206,7 @@ function _applyStream(track, stream, type, label) {
   track._sourceKey++;
   resetTrackCaches(track);
   track._mediaMissing = false;
-  track._replaceOfferId = null;
+  track._replaceOffer = null;
 
   track._stream    = stream;
   track.sourceType = type;
@@ -2207,10 +2275,10 @@ function releaseFileMedia(track) {
   track._activeVid = 'A'; track.mediaKind = 'video';
   track.vidA.muted = false; track.vidB.muted = true;
   track.prebuffering = false;
-  track._plBufKey = track._plBufUrl = track._plBufMediaRef = null;
+  track._plBufKey = track._plBufUrl = track._plBufMediaRef = track._plBufFile = null;
   track._plPrebuffered = false;
   track._mediaMissing = false;
-  track._replaceOfferId = null;
+  track._replaceOffer = null;
 }
 
 function stopTrackSource(trackIdx) {
@@ -2248,7 +2316,7 @@ function masterTick(now) {
   if (S.masterLastT !== null) {
     const elapsed = (now - S.masterLastT) / 1000;
     S.masterTime = Math.min(S.masterTime + elapsed, maxDur());
-    if (S.masterTime >= maxDur()) { S.masterPlaying = false; }
+    if (S.masterTime >= maxDur()) { S.masterPlaying = false; const pb = document.getElementById('play-btn'); if (pb) pb.textContent = '▶ PLAY'; }
   }
   S.masterLastT = now;
   syncTracksToMaster();
@@ -2344,6 +2412,8 @@ function syncMainFullscreenUI() {
 document.addEventListener('fullscreenchange', syncMainFullscreenUI);
 function resetAll() {
   if (!confirm('¿Resetear todo?')) return;
+  TL.lastArrange = null;   // ↶ de SECUENCIA pertenece al show anterior
+  { const u = document.getElementById('seq-undo'); if (u) u.style.display = 'none'; }
   S.tracks.forEach(t => {
     t._sourceKey++;
     revokeTrackObjectURL(t);
@@ -2613,6 +2683,7 @@ async function triggerClipWithLoad(track, clip) {
   track._pendingClip = clip;
   const expectSrcKey = needKey;
   startLoad(track, entry.name, entry.objectURL, entry.mediaRef);
+  track._srcFile = entry.file || null;   // no ofrecer ⇄ con este mismo archivo
   await onceEvent(track.vid, 'loadedmetadata');   // vidA o el canvas de imagen fija
 
   /* Race guard: user triggered something else while this was loading. */
@@ -2622,6 +2693,8 @@ async function triggerClipWithLoad(track, clip) {
 }
 
 function promoteBufferToActive(track) {
+  track._srcFile = track._plBufFile || null;
+  track._plBufFile = null;
   track._sourceKey++;
   resetTrackCaches(track);
   track.mediaKind = 'video';   // el prebuffer sólo se usa entre videos
@@ -2631,6 +2704,14 @@ function promoteBufferToActive(track) {
   track._srcKey = track._plBufKey;
   swapActiveVid(track);
   track._plBufKey = track._plBufUrl = track._plBufMediaRef = null;
+  /* Como onMeta (que no corre en esta vía): ningún clip de esta fuente pasa
+     del final real del archivo (un out mayor congelaba el final o la reversa). */
+  const d = track.vid.duration;
+  if (d > 0) track.clips.forEach(c => {
+    if (clipSourceKey(c) !== track._srcKey || c.srcLive || c.layerId || c.out <= d) return;
+    c.out = d;
+    if (c.in > c.out - .05) c.in = Math.max(0, c.out - .05);
+  });
 }
 
 function trigClipLoaded(track, clip) {
@@ -2871,7 +2952,7 @@ function trackSourceLabel(t, srcIco) {
   if (t.loaded) return srcIco+' '+escHtml(t.loadedName);
   if (t._mediaMissing && t.mediaRef)
     return '<span style="color:var(--hot);" title="El archivo de la sesión no se encontró en la carpeta de medios">⚠ falta '+escHtml(t.mediaRef.fileName||t.mediaRef.name||'video')+'</span>';
-  if (t._url && t.mediaKind === 'video' && t.vidA.error)
+  if (t._url && (t.mediaKind === 'image' ? t.still.error : t.vidA.error))
     return '<span style="color:var(--hot);" title="El navegador no pudo abrir o decodificar este archivo">⚠ no se pudo abrir '+escHtml(t._pendingName||'el archivo')+'</span>';
   if (t._url) return '<span style="color:var(--yellow);">⏳ cargando '+escHtml(t._pendingName||'')+'…</span>';
   return 'Sin fuente';
@@ -2902,12 +2983,14 @@ function renderTrackInfo() {
   <button class="hbtn" style="font-size:8px;padding:2px 6px;border-color:var(--hot);color:var(--hot);" onclick="closeBrowserWindow(${idx})" title="Cerrar la ventana">✕</button>
 </div>` : '');
 
-  const offerE = t._replaceOfferId ? t.playlist.find(e => e.id === t._replaceOfferId) : null;
-  const offerRow = offerE ? `
+  const offerF = t._replaceOffer || null;
+  /* ¿la oferta es un homónimo de una entrada de MEDIOS con otro archivo? (entonces no quedó en la lista) */
+  const offerHomo = offerF && t.playlist.some(e => mediaRefKey(e.mediaRef) === mediaRefKey(buildFileMediaRef(offerF)) && e.file !== offerF);
+  const offerRow = offerF ? `
 <div class="ti-row" style="gap:4px;">
-  <span class="ti-name" style="color:var(--yellow);">➕ "${escHtml(offerE.name)}" agregado a MEDIOS</span>
-  <button class="hbtn save" style="font-size:8px;padding:2px 6px;" onclick="useMediaEntryAsSource(${idx},'${offerE.id}')" title="Reemplazar la fuente actual de la pista por este archivo">⇄ USAR COMO FUENTE</button>
-  <button class="hbtn" style="font-size:8px;padding:2px 6px;" onclick="dismissReplaceOffer(${idx})" title="Dejarlo sólo en la lista">✕</button>
+  <span class="ti-name" style="color:var(--yellow);">➕ "${escHtml(offerF.name)}" elegido</span>
+  <button class="hbtn save" style="font-size:8px;padding:2px 6px;" onclick="useReplaceOffer(${idx})" title="Reemplazar la fuente actual de la pista por el archivo que acabas de elegir">⇄ USAR COMO FUENTE</button>
+  <button class="hbtn" style="font-size:8px;padding:2px 6px;" onclick="dismissReplaceOffer(${idx})" title="${offerHomo ? 'Descartar: MEDIOS conserva el archivo anterior con ese nombre' : 'Dejarlo sólo en la lista'}">✕</button>
 </div>` : '';
 
   const camSes = CAM.sesiones.get(idx);
@@ -3339,14 +3422,16 @@ async function probePlaylistDurations(track) {
 async function warmPlaylistEntry(track, entry) {
   if (entry._warmed || entry._warming || !entry.file || isImageRef(entry.mediaRef)) return;
   entry._warming = true;
+  const file = entry.file;   // la entrada puede cambiar de archivo mientras se lee (mismo nombre)
   try {
-    const reader = entry.file.stream().getReader();
+    const reader = file.stream().getReader();
     while (!(await reader.read()).done) {}
-    entry._warmed = true;
+    if (entry.file === file) entry._warmed = true;
   } catch(_) { /* best-effort */ }
   finally {
     entry._warming = false;
-    if (S.tracks[S.ati] === track) renderTrackInfo();
+    if (entry.file !== file && entry.file) warmPlaylistEntry(track, entry);   // leer el nuevo
+    else if (S.tracks[S.ati] === track) renderTrackInfo();
   }
 }
 function warmPlaylist(track, concurrency = 2) {
@@ -3388,8 +3473,9 @@ function removePlaylistEntry(trackIdx, id) {
   const idx = t.playlist.findIndex(e=>e.id===id);
   if (idx < 0) return;
   const [entry] = t.playlist.splice(idx, 1);
-  if (entry.objectURL) URL.revokeObjectURL(entry.objectURL);
+  if (entry.objectURL && entry.objectURL !== t._url) URL.revokeObjectURL(entry.objectURL);   // la que suena sigue en uso
   unlinkPlaylistClips(t, [id]);
+  syncSrcKey(t);
   renderClips(); renderTL(); renderTrackInfo();
 }
 
@@ -3398,9 +3484,10 @@ function clearPlaylist(trackIdx) {
   if (!t.playlist.length) return;
   if (!confirm('¿Vaciar la playlist de '+t.name+'? También se borrarán los clips generados desde ella.')) return;
   const entryIds = t.playlist.map(e=>e.id);
-  t.playlist.forEach(e => { if (e.objectURL) URL.revokeObjectURL(e.objectURL); });
+  t.playlist.forEach(e => { if (e.objectURL && e.objectURL !== t._url) URL.revokeObjectURL(e.objectURL); });
   t.playlist = [];
   unlinkPlaylistClips(t, entryIds);
+  syncSrcKey(t);
   renderClips(); renderTL(); renderTrackInfo();
 }
 
@@ -4131,19 +4218,21 @@ function renderAll() { renderTabs(); renderTrackInfo(); renderClips(); renderEfx
    hasta ahí — antes se medía sólo la duración del video SIN su offset, así
    que un video desplazado se cortaba antes de terminar (el reloj maestro se
    detenía en maxDur como si la sesión hubiera llegado al final). */
+/* Duración que ocupa la pista en el timeline desde su offset: el video de
+   archivo, los clips propios (offset+out) o la secuencia de clips de MEDIOS.
+   Los interruptores (fuente en vivo / capa, out "sin fin" de 10 h) no cuentan. */
+function trackExtent(t) {
+  let ext = (t.loaded && t.sourceType === 'file' && t.dur) ? t.dur : 0, pl = 0;
+  t.clips.forEach(c => {
+    if (c.srcLive || c.layerId) return;
+    if (c.playlistEntryId) pl += Math.max(0, (c.out||0) - (c.in||0));
+    else ext = Math.max(ext, c.out || 0);
+  });
+  return Math.max(ext, pl);
+}
 function contentEnd() {
   let end = 1;
-  S.tracks.forEach(t => {
-    const vo = t.videoOffset || 0;
-    if (t.loaded && t.dur) end = Math.max(end, vo + t.dur);
-    let pl = 0;   // los clips de la lista de medios se muestran uno tras otro
-    t.clips.forEach(c => {
-      if (c.srcLive || c.layerId) return;   // interruptores: out = LIVE_CLIP_OUT (10 h), no son contenido
-      if (c.playlistEntryId) pl += Math.max(0, (c.out||0) - (c.in||0));
-      else end = Math.max(end, vo + (c.out || 0));
-    });
-    end = Math.max(end, vo + pl);
-  });
+  S.tracks.forEach(t => { end = Math.max(end, (t.videoOffset || 0) + trackExtent(t)); });
   return end;
 }
 function setTlDur(v) {
@@ -4161,8 +4250,12 @@ function maxDur() {
 function viewSpan() { return maxDur() / TL.zoom; }
 
 function tlZoom(dir) {
-  if (dir>0) TL.zoom = Math.min(TL.zoom*1.5, 60);
+  if (dir>0) TL.zoom = Math.max(TL.zoom, Math.min(TL.zoom*1.5, 60));   // acercar nunca aleja
   else       TL.zoom = Math.max(TL.zoom/1.5, 1);
+  /* El zoom elegido durante un arrastre es el que queda al soltar. Se guarda
+     en la escala de antes del arrastre (el auto-alargamiento infla TL.zoom
+     para conservar el tramo visible mientras crece frozenDur). */
+  if (tlDrag?.type === 'vidmove') tlDrag.zoom0 = Math.max(1, TL.zoom * tlDrag.dur0 / (TL.frozenDur || tlDrag.dur0));
   TL.viewStart = Math.max(0, Math.min(TL.viewStart, maxDur()-viewSpan()));
   document.getElementById('zoom-lbl').textContent = TL.zoom.toFixed(1)+'×';
   renderTL();
@@ -4202,6 +4295,7 @@ function renderTL() {
   }
   /* La vista nunca queda más allá del final (p. ej. al bajar un offset) */
   TL.viewStart = Math.max(0, Math.min(TL.viewStart, maxDur() - viewSpan()));
+  if (!TL.frozenDur && S.masterTime > maxDur()) S.masterTime = maxDur();   // p. ej. al bajar un offset
   const W = tlCvs.offsetWidth || 600;
   const L = tlLayout();
   const activeTracks = L.rows;
@@ -4331,6 +4425,29 @@ function renderTL() {
     /* No per-track cursors — master cursor drawn below */
   }
 
+  /* ── Arrastre de un video: guía del imán y etiqueta con la nueva posición ── */
+  if (tlDrag?.type === 'vidmove') {
+    const d = tlDrag;
+    if (d.snapAt != null) {
+      const gx = Math.round(toPx(d.snapAt)) + .5;
+      if (gx >= TL_PAD && gx <= W - TL_RP) {
+        tlCtx.save(); tlCtx.strokeStyle = '#ffcc00'; tlCtx.lineWidth = 1; tlCtx.setLineDash([4,3]);
+        tlCtx.beginPath(); tlCtx.moveTo(gx, 0); tlCtx.lineTo(gx, axY); tlCtx.stroke(); tlCtx.restore();
+      }
+    }
+    const ri = activeTracks.indexOf(d.track);
+    if (ri >= 0) {
+      const dvo = d.track.videoOffset || 0;
+      const lbl = 'T'+(d.track.i+1)+'  '+ft(dvo)+' → '+ft(dvo + trackExtent(d.track));
+      tlCtx.font = 'bold 9px Space Mono,monospace'; tlCtx.textAlign = 'left';
+      const tw = tlCtx.measureText(lbl).width + 10;
+      const lx = Math.max(TL_PAD, Math.min(W - TL_RP - tw, toPx(dvo)));
+      let ly = ri*rowH - 14; if (ly < L.top) ly = ri*rowH + rowH + 1;
+      tlCtx.fillStyle = 'rgba(0,0,0,.85)'; tlCtx.fillRect(lx, ly, tw, 13);
+      tlCtx.fillStyle = '#ffcc00'; tlCtx.fillText(lbl, lx+5, ly+10);
+    }
+  }
+
   /* ── Single master playhead ── */
   const masterPx = toPx(S.masterTime);
   if (masterPx >= TL_PAD && masterPx <= W - TL_RP) {
@@ -4365,127 +4482,232 @@ function renderTL() {
 }
 
 /* ── TL mouse interactions ── */
-/* 
-  Click vacío       → seek
-  Click clip        → seleccionar (sin seek, sin drag)
-  Alt + drag clip   → mover clip (preview, commit en mouseup)
-  Handle ±9px      → resize in/out  
-  Shift + drag video block → mover videoOffset
+/*
+  Click vacío o en el eje   → seek (arrastrar = scrub del cursor)
+  Click clip                → seleccionar
+  Arrastrar un clip o el bloque del video → mover el video de la pista en el
+      timeline (offset). Imán a los bordes de los videos de las otras pistas,
+      al 0 y al cursor; Ctrl = sin imán. Junto al borde izquierdo/derecho el
+      timeline se desplaza (y se alarga) solo: no hay tope.
+  Click sin mover en el bloque (fuera de clips) → seek
+  Alt + drag clip           → mover el clip dentro de su video (in/out)
+  Handle ±9px               → resize in/out del clip seleccionado
+  Shift + drag bloque       → mover el video (como siempre)
 */
 let tlDrag = null;
+const TL_DRAG_PX   = 4;    // movimiento mínimo para que un clic se vuelva arrastre
+const TL_MAGNET_PX = 10;   // radio del imán al mover un video
+const TL_EDGE_PX   = 28;   // franja junto a los bordes que desplaza el timeline al arrastrar
+
+/* Posición mostrada de cada clip de la pista: id → [tlIn, tlOut]. Los clips
+   de la lista de MEDIOS (cada uno en su propio archivo, todos con in≈0) se
+   muestran uno tras otro desde el offset; los demás en offset + in. */
+function tlClipSpans(track) {
+  const vo = track.videoOffset || 0, m = new Map();
+  let pl = 0;
+  track.clips.forEach(c => {
+    if (c.playlistEntryId) { m.set(c.id, [vo + pl, vo + pl + (c.out - c.in)]); pl += Math.max(0, c.out - c.in); }
+    else m.set(c.id, [vo + c.in, vo + c.out]);
+  });
+  return m;
+}
+/* ¿Se puede mover el video de esta pista en el timeline? (las fuentes en vivo no tienen posición) */
+function tlCanMoveVideo(track) {
+  return track.sourceType === 'file' && trackExtent(track) > 0;
+}
+/* Qué hay bajo el puntero (x,y en px del canvas). Lo usan el clic y el cursor. */
+function tlHitTest(x, y) {
+  const L = tlLayout(), W = tlCvs.width, span = viewSpan();
+  const toPx = t => TL_PAD + ((t - TL.viewStart) / span) * (W - TL_PAD - TL_RP);
+  const t0 = TL.viewStart + ((x - TL_PAD) / (W - TL_PAD - TL_RP)) * span;
+  if (y >= L.axY) return { kind:'axis', t0 };
+  const ri = Math.floor(y / L.rowH);
+  if (ri >= L.nRows) return { kind:'below', t0 };
+  const track = L.rows[ri], vo = track.videoOffset || 0, spans = tlClipSpans(track);
+  const base = { track, t0, vo, spans, toPx };
+  if (S.selClipId) {
+    const c = track.clips.find(k => k.id === S.selClipId);
+    if (c) {
+      const [a, b] = spans.get(c.id);
+      if (Math.abs(x - toPx(a)) < 9) return { ...base, kind:'in',  clip:c, a, b };
+      if (Math.abs(x - toPx(b)) < 9) return { ...base, kind:'out', clip:c, a, b };
+    }
+  }
+  for (const c of track.clips) {
+    const [a, b] = spans.get(c.id);
+    if (t0 >= a && t0 <= b) return { ...base, kind:'clip', clip:c, a, b };
+  }
+  if (track.loaded && track.sourceType === 'file' && track.dur && t0 >= vo && t0 <= vo + track.dur)
+    return { ...base, kind:'block' };
+  return { ...base, kind:'empty' };
+}
+
+function tlStartSeek(track, t0) {
+  tlDrag = { type:'seek', track };
+  _seekFrozen = true;
+  masterSeek(t0);
+}
+function tlStartVidMove(track, grab, x, ctrl, xDown = x) {
+  const W = tlCvs.width;
+  /* armed: la franja de los bordes sólo desplaza si el puntero llega a ella
+     durante el arrastre (si se agarra ya dentro de la franja, hace falta
+     salir de ella o seguir hacia el borde; si no, el video salía disparado) */
+  const armed = xDown >= TL_PAD + TL_EDGE_PX && xDown <= W - TL_RP - TL_EDGE_PX;   // xDown: donde se pulsó
+  tlDrag = { type:'vidmove', track, grab, origOffset: track.videoOffset || 0, lastX: x, x0: xDown, armed, zoom0: TL.zoom, dur0: maxDur(), ctrl, snapAt: null };
+  TL.frozenDur = maxDur();             // escala fija mientras dura el arrastre (ver maxDur)
+  tlCvs.style.cursor = 'grabbing';
+  requestAnimationFrame(tlEdgeTick);
+}
+/* Mueve el video arrastrado para que el punto agarrado quede bajo el puntero.
+   El offset sale de la posición del puntero (no de un delta acumulado): así
+   no hay realimentación aunque la escala cambie por el auto-desplazamiento. */
+function tlVidMoveTo(x, ctrl) {
+  const d = tlDrag, track = d.track;
+  const W = tlCvs.width, span = viewSpan(), pxW = W - TL_PAD - TL_RP;
+  const xc = Math.max(TL_PAD, Math.min(W - TL_RP, x));
+  let vo = TL.viewStart + ((xc - TL_PAD) / pxW) * span - d.grab;
+  d.snapAt = null;
+  if (!ctrl) {
+    /* Imán: el inicio o el final del video se pega a los bordes de los videos
+       de las otras pistas (para ponerlos uno tras otro sin hueco ni solape),
+       al 0 y al cursor maestro. */
+    const ext = trackExtent(track), thr = TL_MAGNET_PX * span / pxW;
+    const edges = [0, S.masterTime];
+    S.tracks.forEach(u => {
+      if (u === track) return;
+      const e = trackExtent(u); if (!e) return;
+      const uo = u.videoOffset || 0;
+      edges.push(uo, uo + e);
+    });
+    let best = null, bd = thr;
+    for (const ed of edges) {
+      const ds = Math.abs(vo - ed), de = Math.abs(vo + ext - ed);
+      if (ds < bd) { bd = ds; best = { vo: ed, at: ed }; }
+      if (de < bd) { bd = de; best = { vo: ed - ext, at: ed }; }
+    }
+    if (best) { vo = best.vo; d.snapAt = best.at; }
+  }
+  track.videoOffset = clampOffset(vo);
+}
+/* Auto-desplazamiento: con el puntero junto a un borde durante el arrastre,
+   el timeline avanza (o se alarga, si ya se ve hasta el final) y el video
+   lo sigue. Así se puede llevar un video tan lejos como haga falta. */
+function tlEdgeTick() {
+  const d = tlDrag;
+  if (!d || d.type !== 'vidmove') return;
+  const W = tlCvs.width, right = W - TL_RP - TL_EDGE_PX, left = TL_PAD + TL_EDGE_PX;
+  let dir = 0, k = 0;
+  if (d.lastX > right && (d.armed || d.lastX > d.x0 + TL_DRAG_PX)) {
+    dir = 1;  k = Math.min(1, (d.lastX - Math.max(right, d.armed ? right : d.x0)) / TL_EDGE_PX);
+  } else if (d.lastX < left && (d.armed || d.lastX < d.x0 - TL_DRAG_PX)) {
+    dir = -1; k = Math.min(1, (Math.min(left, d.armed ? left : d.x0) - d.lastX) / TL_EDGE_PX);
+  }
+  if (dir) {
+    const span = viewSpan(), step = span * 0.012 * (0.3 + k);
+    if (dir > 0) {
+      if (TL.viewStart + span + step <= TL.frozenDur) TL.viewStart += step;
+      else {
+        /* Ya se ve hasta el final: el timeline se alarga. Con zoom se conserva
+           la escala (se ajusta el zoom) y la vista sigue al final. */
+        const cap = MAX_OFFSET + trackExtent(d.track);
+        if (TL.frozenDur < cap) {
+          const nd = Math.min(cap, TL.frozenDur + step);
+          if (TL.zoom > 1) {
+            TL.zoom = nd / span;
+            TL.viewStart = Math.max(0, nd - span);
+            const zl = document.getElementById('zoom-lbl'); if (zl) zl.textContent = TL.zoom.toFixed(1)+'×';
+          }
+          TL.frozenDur = nd;
+        }
+      }
+    } else TL.viewStart = Math.max(0, TL.viewStart - step);
+    tlVidMoveTo(d.lastX, d.ctrl);
+    renderTL();
+  }
+  requestAnimationFrame(tlEdgeTick);
+}
 
 tlCvs.addEventListener('mousedown', e => {
-  const r   = tlCvs.getBoundingClientRect();
-  const x   = e.clientX - r.left;
-  const y   = e.clientY - r.top;
-  const L = tlLayout();
-  const activeTracks = L.rows;
-  if (y >= L.axY) return; // eje de tiempo (pegado abajo)
-  const ti  = Math.floor(y / L.rowH);
-  if (ti >= L.nRows) {
-    /* Espacio libre bajo las filas: igual que un área vacía → seek */
-    const span = viewSpan(), W = tlCvs.width;
-    const t0 = TL.viewStart + ((x - TL_PAD) / (W - TL_PAD - TL_RP)) * span;
+  if (e.button !== 0) return;
+  const r = tlCvs.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const h = tlHitTest(x, y);
+
+  /* Eje de tiempo o espacio libre bajo las filas → seek / scrub */
+  if (h.kind === 'axis' || h.kind === 'below') {
     S.selClipId = null;
-    tlDrag = { type:'seek', track: S.tracks[S.ati] };
-    _seekFrozen = true;
-    masterSeek(t0);
+    tlStartSeek(S.tracks[S.ati], h.t0);
     renderClips(); renderTL();
     return;
   }
 
-  const track = activeTracks[ti];
+  const track = h.track;
   const trackIdx = S.tracks.indexOf(track);
   /* Switch active track without rebuilding everything */
   if (S.ati !== trackIdx) { S.ati=trackIdx; renderTabs(); renderTrackInfo(); renderClips(); }
+  const vo = h.vo, t0 = h.t0;
 
-  const span = viewSpan(), W = tlCvs.width;
-  const toPx = t => TL_PAD + ((t - TL.viewStart) / span) * (W - TL_PAD - TL_RP);
-  const toT  = px => TL.viewStart + ((px - TL_PAD) / (W - TL_PAD - TL_RP)) * span;
-  const t0   = toT(x);
-  const vo   = track.videoOffset || 0;
-
-  /* Playlist clips are laid out sequentially on screen (see renderTL) —
-     mirror that layout here so hit-testing/handles match what's drawn.
-     Without this, every auto-generated clip hit-tests at vo+c.in (which is
-     always 0 for playlist entries), so they all collide at the same spot
-     and editing one cascades into the others via the shared cursor. */
-  let plCursor = 0;
-  const plDispIn = new Map();
-  track.clips.filter(c=>c.playlistEntryId).forEach(c => {
-    plDispIn.set(c.id, plCursor);
-    plCursor += Math.max(0, c.out - c.in);
-  });
-  const clipTlIn  = c => vo + (c.playlistEntryId!=null ? plDispIn.get(c.id) : c.in);
-  const clipTlOut = c => clipTlIn(c) + (c.out - c.in);
-
-  /* ── Shift + click video block → move videoOffset ── */
-  if (e.shiftKey && track.loaded) {
-    const vx1 = toPx(vo), vx2 = toPx(vo + track.dur);
-    if (x >= vx1 && x <= vx2) {
-      tlDrag = { type:'vidmove', track, startT:t0, origOffset:vo };
-      return;
-    }
+  /* ── Shift + click video block → move videoOffset (inmediato, como siempre) ── */
+  if (e.shiftKey && track.loaded && track.dur && t0 >= vo && t0 <= vo + track.dur) {
+    tlStartVidMove(track, t0 - vo, x, e.ctrlKey || e.metaKey);
+    return;
   }
 
-  /* ── Check handles of selected clip first ── */
-  if (S.selClipId) {
-    const sr = findClip(S.selClipId);
-    if (sr && sr.track === track) {
-      const c = sr.clip;
-      const tlIn = clipTlIn(c), tlOut = clipTlOut(c);
-      const hx1 = toPx(tlIn), hx2 = toPx(tlOut);
-      const dispOffset = tlIn - vo - c.in;
-      if (Math.abs(x - hx1) < 9) { tlDrag = {type:'in',  c, track, dispOffset}; return; }
-      if (Math.abs(x - hx2) < 9) { tlDrag = {type:'out', c, track, dispOffset}; return; }
-      /* Alt+drag inside body = move — playlist clips are ordered by the
-         nextClipId chain, not by in/out, so moving them isn't meaningful
-         and would corrupt their trim points */
-      if (e.altKey && !c.playlistEntryId && x > hx1 + 9 && x < hx2 - 9) {
-        /* Store clip data by value (not reference) to survive DOM rebuilds */
-        tlDrag = { type:'move', clipId:c.id, track,
-          startT:t0, origIn:c.in, origOut:c.out,
-          previewIn:c.in, previewOut:c.out };
-        return;
-      }
-    }
+  /* ── Handles of the selected clip ── */
+  if (h.kind === 'in' || h.kind === 'out') {
+    const c = h.clip, dispOffset = h.a - vo - c.in;
+    tlDrag = { type:h.kind, c, track, dispOffset };
+    return;
   }
 
-  /* ── Click on any clip body → select only (no drag, no seek) ── */
-  for (const c of track.clips) {
-    const tlIn = clipTlIn(c), tlOut = clipTlOut(c);
-    if (t0 >= tlIn && t0 <= tlOut) {
-      /* Alt+drag → start move immediately even if unselected */
-      if (e.altKey && !c.playlistEntryId) {
-        S.selClipId = c.id;
-        tlDrag = { type:'move', clipId:c.id, track,
-          startT:t0, origIn:c.in, origOut:c.out,
-          previewIn:c.in, previewOut:c.out };
-        renderClips(); renderTL(); return;
-      }
-      /* Plain click → select, seek to clip.in */
-      if (S.selClipId !== c.id) {
-        S.selClipId = c.id;
-        renderClips();
-      }
-      renderTL(); return;
+  if (h.kind === 'clip') {
+    const c = h.clip;
+    /* Alt+drag → mover el clip dentro de su video. Los clips de MEDIOS se
+       ordenan por la cadena nextClipId, no por in/out: moverlos no tiene
+       sentido y corrompería sus puntos de corte. */
+    if (e.altKey) {
+      if (S.selClipId !== c.id) { S.selClipId = c.id; renderClips(); }
+      /* Store clip data by value (not reference) to survive DOM rebuilds */
+      if (!c.playlistEntryId) tlDrag = { type:'move', clipId:c.id, track,
+        startT:t0, origIn:c.in, origOut:c.out,
+        previewIn:c.in, previewOut:c.out };
+      renderTL(); return;   // Alt nunca mueve el video de la pista
     }
+    /* Click → seleccionar; si además se arrastra, se mueve el video de la pista */
+    if (S.selClipId !== c.id) { S.selClipId = c.id; renderClips(); }
+    if (tlCanMoveVideo(track)) tlDrag = { type:'pending', track, x0:x, grab: t0 - vo, seekT: null };
+    renderTL(); return;
+  }
+
+  if (h.kind === 'block') {
+    /* Bloque del video fuera de los clips: arrastrar = mover el video,
+       clic sin mover = seek a ese punto (como antes) */
+    S.selClipId = null;
+    tlDrag = { type:'pending', track, x0:x, grab: t0 - vo, seekT: t0 };
+    renderClips(); renderTL(); return;
   }
 
   /* ── Click on empty area → deselect + master seek ── */
   S.selClipId = null;
-  tlDrag = { type:'seek', track };
-  _seekFrozen = true;
-  masterSeek(t0);
+  tlStartSeek(track, t0);
   renderClips(); renderTL();
 });
 
-tlCvs.addEventListener('mousemove', e => {
+/* Arrastres: se escuchan en window para que sigan aunque el puntero salga del timeline */
+window.addEventListener('mousemove', e => {
   if (!tlDrag) return;
-  if (!TL.frozenDur) TL.frozenDur = maxDur();   // ver maxDur()
-
+  /* Se perdió el mouseup (Alt+Tab, menú contextual, un alert): terminar el
+     arrastre en vez de seguir moviendo el video sin el botón apretado */
+  if (!(e.buttons & 1)) { endTlDrag(); return; }
   const r    = tlCvs.getBoundingClientRect();
   const x    = e.clientX - r.left;
+
+  if (tlDrag.type === 'pending') {
+    if (Math.abs(x - tlDrag.x0) < TL_DRAG_PX) return;
+    tlStartVidMove(tlDrag.track, tlDrag.grab, x, e.ctrlKey || e.metaKey, tlDrag.x0);
+  }
+  if (!TL.frozenDur) TL.frozenDur = maxDur();   // ver maxDur()
+
   const span = viewSpan(), W = tlCvs.width;
   const toT  = px => TL.viewStart + ((px - TL_PAD) / (W - TL_PAD - TL_RP)) * span;
   const t    = Math.max(0, toT(x));
@@ -4517,9 +4739,10 @@ tlCvs.addEventListener('mousemove', e => {
     tlDrag.previewOut = tlDrag.previewIn + dur;
     tlCvs.style.cursor = 'grabbing';
   } else if (tlDrag.type === 'vidmove') {
-    const delta = ts - tlDrag.startT;
-    tlDrag.track.videoOffset = clampOffset(tlDrag.origOffset + delta);
-    tlCvs.style.cursor = 'grabbing';
+    tlDrag.lastX = x;
+    if (x >= TL_PAD + TL_EDGE_PX && x <= W - TL_RP - TL_EDGE_PX) tlDrag.armed = true;
+    tlDrag.ctrl = e.ctrlKey || e.metaKey;
+    tlVidMoveTo(x, tlDrag.ctrl);
   } else if (tlDrag.type === 'seek') {
     _seekFrozen = true;
     masterSeek(t);
@@ -4527,8 +4750,23 @@ tlCvs.addEventListener('mousemove', e => {
   renderTL();
 });
 
-window.addEventListener('mouseup', () => {
-  if (tlDrag?.type === 'move') {
+/* Cursor según lo que hay debajo (sin arrastre en curso) */
+tlCvs.addEventListener('mousemove', e => {
+  if (tlDrag) return;
+  const r = tlCvs.getBoundingClientRect();
+  const h = tlHitTest(e.clientX - r.left, e.clientY - r.top);
+  tlCvs.style.cursor = h.kind === 'in' || h.kind === 'out' ? 'ew-resize'
+    : (h.kind === 'block' || (h.kind === 'clip' && tlCanMoveVideo(h.track))) ? 'grab'
+    : 'crosshair';
+});
+
+window.addEventListener('mouseup', () => endTlDrag());
+window.addEventListener('blur', () => { if (tlDrag) endTlDrag(); });   // sin eventos de mouse, el auto-desplazamiento seguiría solo
+function endTlDrag() {
+  if (tlDrag?.type === 'pending') {
+    /* Clic sin arrastrar sobre el bloque del video → seek a ese punto */
+    if (tlDrag.seekT != null) { masterSeek(tlDrag.seekT); renderClips(); }
+  } else if (tlDrag?.type === 'move') {
     const r = findClip(tlDrag.clipId);
     if (r) {
       r.clip.in  = tlDrag.previewIn;
@@ -4543,16 +4781,60 @@ window.addEventListener('mouseup', () => {
   } else if ((tlDrag?.type === 'in' || tlDrag?.type === 'out') && tlDrag.track && tlDrag.c) {
     invalidateReverse(tlDrag.track, tlDrag.c);   // range changed → rebuild reversed file
   }
+  const moved = tlDrag?.type === 'vidmove' ? tlDrag.track : null;
+  const zoom0 = moved ? tlDrag.zoom0 : null;
+  const sp = moved ? viewSpan() : 0;   // tramo visible con la escala congelada
   const wasDrag = !!tlDrag;
   tlDrag = null;
   TL.frozenDur = null;
   _seekFrozen = false;
   tlCvs.style.cursor = 'crosshair';
+  if (moved && TL.zoom !== zoom0) {
+    /* El auto-alargamiento con zoom ajustó TL.zoom para conservar la escala:
+       al soltar se conserva el mismo tramo visible, sin quedar más cerca que
+       el zoom que había elegido el usuario si el timeline no creció. */
+    TL.zoom = Math.max(zoom0, Math.min(TL.zoom, maxDur() / sp));
+    const zl = document.getElementById('zoom-lbl'); if (zl) zl.textContent = TL.zoom.toFixed(1)+'×';
+  }
   if (wasDrag) {   // la escala se descongela: el timeline se estira hasta el contenido nuevo
     renderTL();
-    if (S.tracks[S.ati]) { const sl = document.querySelector('#track-info input.opasl[oninput^="setTrackOffset"]'); if (sl) sl.max = offsetSliderMax(S.tracks[S.ati]); }
+    if (moved && S.tracks[S.ati] === moved) renderTrackInfo();   // OFFSET del panel al día
+    else if (S.tracks[S.ati]) { const sl = document.querySelector('#track-info input.opasl[oninput^="setTrackOffset"]'); if (sl) sl.max = offsetSliderMax(S.tracks[S.ati]); }
   }
-});
+}
+
+/* ── ⇥ SECUENCIA: pone los videos de las pistas uno detrás de otro, en el
+   orden en que están ahora, sin huecos ni solapes. ↶ deshace. ── */
+function tlArrangeSequence() {
+  const items = S.tracks.filter(tlCanMoveVideo)
+    .sort((a, b) => (a.videoOffset || 0) - (b.videoOffset || 0) || a.i - b.i);
+  if (items.length < 2) { setSt('st-active', 'SECUENCIA: hacen falta 2 o más pistas con video', 'act'); return; }
+  /* Sólo se guardan las pistas que cambian (t → [antes, después]); si no
+     cambia nada (p. ej. un segundo clic) no se pisa el ↶ anterior. */
+  const moved = new Map();
+  let cur = items[0].videoOffset || 0;
+  items.forEach(t => {
+    const old = t.videoOffset || 0, nu = clampOffset(cur);
+    /* tolerancia: el imán puede dejar diferencias de 1e-14; si la pista ya está
+       en su sitio, la cadena sigue desde su posición real (el mismo borde que
+       usa el imán), así no se acumula el ruido */
+    if (Math.abs(nu - old) > 1e-6) moved.set(t, [old, nu]); else cur = old;
+    cur += trackExtent(t);
+  });
+  if (!moved.size) { setSt('st-active', 'SECUENCIA: ya están en secuencia', 'act'); return; }
+  moved.forEach(([, nu], t) => { t.videoOffset = nu; });
+  TL.lastArrange = moved;   // por pista, no por posición (◂ ▸ las reordena)
+  const u = document.getElementById('seq-undo'); if (u) u.style.display = '';
+  renderTrackInfo(); renderTL();
+}
+function tlUndoArrange() {
+  if (!TL.lastArrange) return;
+  /* Vuelve cada pista a su lugar anterior, salvo que se haya movido a mano después */
+  TL.lastArrange.forEach(([old, nu], t) => { if (Math.abs((t.videoOffset || 0) - nu) < 1e-6) t.videoOffset = old; });
+  TL.lastArrange = null;
+  const u = document.getElementById('seq-undo'); if (u) u.style.display = 'none';
+  renderTrackInfo(); renderTL();
+}
 
 /* Rueda = desplazar en el tiempo · Ctrl+rueda = zoom horizontal
    Shift+rueda (o rueda sobre los nombres T1…T8) = scroll vertical
@@ -4616,16 +4898,20 @@ function tlFitHeight() {
   let drag = null;
   handle.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
-    drag = { y: e.clientY, h: tlWrap.offsetHeight };
-    TL.autoH = false;   // alto manual hasta el próximo doble clic
+    drag = { y: e.clientY, h: tlWrap.offsetHeight, moved: false };
     handle.setPointerCapture(e.pointerId);
     handle.classList.add('drag');
     e.preventDefault();
   });
   handle.addEventListener('pointermove', e => {
-    if (drag) tlSetViewH(drag.h - (e.clientY - drag.y));   // hacia arriba = más alto
+    if (!drag) return;
+    const dy = e.clientY - drag.y;
+    if (!drag.moved && Math.abs(dy) < 2) return;   // un clic (o doble clic) no cambia nada
+    drag.moved = true;
+    TL.autoH = false;                              // alto manual hasta el próximo doble clic
+    tlSetViewH(drag.h - dy);                       // hacia arriba = más alto
   });
-  const end = () => { if (!drag) return; drag = null; handle.classList.remove('drag'); tlSaveView(); };
+  const end = () => { if (!drag) return; const moved = drag.moved; drag = null; handle.classList.remove('drag'); if (moved) tlSaveView(); };
   handle.addEventListener('pointerup', end);
   handle.addEventListener('pointercancel', end);
   handle.addEventListener('dblclick', tlFitHeight);
