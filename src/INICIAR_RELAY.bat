@@ -21,20 +21,49 @@ if not exist "src\midivj-relay.js" (
     exit /b 1
 )
 
-if not exist "node_modules\ws" goto instalar
-if not exist "node_modules\selfsigned" goto instalar
-goto seguir
+where node >nul 2>nul
+if errorlevel 1 goto sin_node
+for /f "delims=" %%v in ('node -v') do echo  Node: %%v
+echo.
 
-:instalar
+rem Instala si falta algo o si un git pull cambio package-lock.json.
+rem 0 = al dia, 1 = falta algo, 2 = versiones distintas.
+node src\midivj-dependencias.js
+set DEPENDENCIAS=%errorlevel%
+if "%DEPENDENCIAS%"=="0" goto seguir
+
 echo  Instalando dependencias...
 call npm install --ignore-scripts
-if errorlevel 1 (
-    color 0C
-    echo  ERROR: no se pudieron instalar las dependencias.
-    pause
-    exit /b 1
-)
+if not errorlevel 1 goto instaladas
+if "%DEPENDENCIAS%"=="2" goto sin_actualizar
+color 0C
 echo.
+echo  ERROR: no se pudieron instalar las dependencias.
+echo  Revisa que haya conexion a internet y vuelve a abrir este archivo.
+echo.
+pause
+exit /b 1
+
+:sin_actualizar
+echo.
+echo  AVISO: no se pudieron actualizar las dependencias; se usan las
+echo  que ya estaban instaladas. Con internet se actualizan solas.
+echo.
+goto seguir
+
+:instaladas
+echo.
+goto seguir
+
+:sin_node
+color 0C
+echo  ERROR: Node.js no esta instalado o no aparece en el PATH.
+echo.
+echo  Instala la version LTS de https://nodejs.org
+echo  y vuelve a abrir este archivo.
+echo.
+pause
+exit /b 1
 
 :seguir
 

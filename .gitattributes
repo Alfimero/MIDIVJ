@@ -1,0 +1,4 @@
+# Los launchers necesitan los saltos de línea de su sistema, sin importar
+# cómo esté configurado git en la máquina que clona o descarga el ZIP.
+*.bat     text eol=crlf
+*.command text eol=lf
