@@ -5,9 +5,27 @@ Aplicación local de visuales en vivo controlada por MIDI. El runtime vive en `s
 ![Sesión de Bake-Neko!](docs/images/midivj-preview-1.png)
 ![Sesión de Bake-Neko!](docs/images/midivj-preview-2.png)
 
+## Instalar y actualizar
+
+Necesitas [Node.js](https://nodejs.org) (versión LTS) y git. Clona el proyecto en tu carpeta de usuario (no en `Program Files`):
+
+```bat
+cd %USERPROFILE%
+git clone https://github.com/Alfimero/MIDIVJ.git
+```
+
+Copia tus videos a `videos/Visuales 2026/`. Los videos, tus sesiones `.vjp` y `data/` quedan fuera de Git, así que las actualizaciones no los tocan. Para actualizar, cierra el relay y ejecuta:
+
+```bat
+cd %USERPROFILE%\MIDIVJ
+git pull origin main
+```
+
+No hace falta nada más: al abrirse, los launchers comparan `node_modules` con `package-lock.json` e instalan solos lo que falte o haya cambiado. Si en ese momento no hay internet y sólo cambió una versión, avisan y arrancan con lo instalado.
+
 ## Ejecutar
 
-En Windows, inicia `src/INICIAR_RELAY.bat`. En macOS, `src/INICIAR_RELAY.command` (doble clic; la primera vez puede pedir `chmod +x`). Los dos launchers usan la raíz real del proyecto e instalan las dependencias fijadas (`ws`, `selfsigned`) si faltan. El relay **abre solo el navegador** con la aplicación, así que no hay que copiar ninguna dirección:
+En Windows, inicia `src/INICIAR_RELAY.bat`. En macOS, `src/INICIAR_RELAY.command` (doble clic). Los dos launchers usan la raíz real del proyecto, comprueban que Node.js esté instalado y mantienen al día las dependencias fijadas (`ws`, `selfsigned`). El relay **abre solo el navegador** con la aplicación, así que no hay que copiar ninguna dirección:
 
 - Aplicación principal: `http://localhost:9191/`
 - Emisor MIDI: `http://localhost:9191/sender`

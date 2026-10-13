@@ -142,13 +142,22 @@ echo "  Node: $VERSION_NODE  ($NODE)"
 [ -n "$MACOS" ] && echo "  macOS: $MACOS"
 echo
 
-if [ ! -d "node_modules/ws" ] || [ ! -d "node_modules/selfsigned" ]; then
+# Instala si falta algo o si un git pull cambió package-lock.json.
+# 0 = al día, 1 = falta algo, 2 = versiones distintas.
+"$NODE" src/midivj-dependencias.js
+DEPENDENCIAS=$?
+if [ "$DEPENDENCIAS" -ne 0 ]; then
   echo "  Instalando dependencias…"
   if ! command -v npm >/dev/null 2>&1; then
     error "npm no esta disponible." "npm viene junto con Node.js: reinstalalo desde https://nodejs.org"
   fi
   if ! npm install --ignore-scripts; then
-    error "no se pudieron instalar las dependencias." "Revisa que haya conexion a internet y vuelve a intentar."
+    if [ "$DEPENDENCIAS" -ne 2 ]; then
+      error "no se pudieron instalar las dependencias." "Revisa que haya conexion a internet y vuelve a intentar."
+    fi
+    echo
+    echo "  AVISO: no se pudieron actualizar las dependencias; se usan las"
+    echo "  que ya estaban instaladas. Con internet se actualizan solas."
   fi
   echo
 fi
