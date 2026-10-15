@@ -4444,6 +4444,7 @@ function paramCatalogo() {
       set:v => { t.xform.scaleX = v; t.xform.scaleY = v; },
       ui:v => { if (enPista() && curXform(t) === t.xform) { setSliderRow('#track-info','scaleX',v,'scale'); setSliderRow('#track-info','scaleY',v,'scale'); } } });
     xfDefs.forEach(p => out.push({ id:`t${i}.${p.key}`, grupo, nombre:`P${i+1} · ${p.lbl}`, min:p.min, max:p.max, def:p.def, fmt:p.fmt,
+      arriba: p.key === 'y',
       get:() => t.xform[p.key] ?? p.def,
       set:v => {
         t.xform[p.key] = v;
@@ -4465,6 +4466,7 @@ function paramCatalogo() {
     if (p.type === 'color') return;
     out.push({ id:`fx.${e.id}.${p.key}`, grupo: e.type === 'xform' ? 'SALIDA (TRANSFORM GLOBAL)' : 'EFECTOS',
       nombre:`${e.name} · ${p.lbl}`, min:p.min, max:p.max, def:p.def, fmt:p.fmt, efx:e,
+      arriba: e.type === 'xform' && p.key === 'y',
       get:() => e[p.key] ?? p.def,
       set:v => {
         e[p.key] = v;
@@ -4493,6 +4495,15 @@ function paramDe(id) { if (!_paramCat) paramCatalogo(); return _paramIdx.get(id)
 /* 0..127 → 0..1 con el 64 justo en el medio: una palanca en reposo (64)
    deja la posición en su centro exacto, no 6 px corrida. */
 function ccNormal(v) { return v <= 64 ? v / 128 : 0.5 + (v - 64) / 126; }
+/* Posición vertical: un control (palanca, pad, fader) manda más alto hacia
+   arriba, pero en la salida una "Pos Y" mayor BAJA la imagen. Esos
+   parámetros (arriba:true) se recorren al revés para que arriba en el
+   control sea arriba en pantalla; ⇅ sigue invirtiendo a partir de ahí. */
+function ccPosicion(m, p, vel) {
+  let n = ccNormal(vel);
+  if (p.arriba) n = 1 - n;
+  return m.inv ? 1 - n : n;
+}
 
 let _ccUiPend = new Map(), _ccUiRaf = 0;
 function aplicarCC(ccId, vel) {
@@ -4502,7 +4513,7 @@ function aplicarCC(ccId, vel) {
     const p = paramDe(m.destino);
     if (!p) continue;
     usado = true;
-    const n = m.inv ? 1 - ccNormal(vel) : ccNormal(vel);
+    const n = ccPosicion(m, p, vel);
     const v = m.min + (m.max - m.min) * n;
     p.set(v);
     m._n = n;
@@ -4660,7 +4671,8 @@ function pintarMedidoresCC() {
     const p = paramDe(m.destino);
     if (!fila || !p) return;
     const v = p.get();
-    const n = m.max !== m.min ? Math.max(0, Math.min(1, (v - m.min) / (m.max - m.min))) : 0;
+    let n = m.max !== m.min ? Math.max(0, Math.min(1, (v - m.min) / (m.max - m.min))) : 0;
+    if (p.arriba) n = 1 - n;   // el medidor sigue al control: lleno = arriba
     fila.querySelector('.cc-medidor i').style.width = (n * 100).toFixed(1) + '%';
     fila.querySelector('.cc-val').textContent = EFX_FMT[p.fmt] ? EFX_FMT[p.fmt](v) : (+v).toFixed(2);
   });
