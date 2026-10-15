@@ -261,13 +261,21 @@ function saneaLayout(entrada) {
       fuente: Math.min(40, Math.max(8, parseInt(rej.fuente, 10) || base.rejilla.fuente)),
       tema: typeof rej.tema === 'string' ? rej.tema.slice(0, 20) : base.rejilla.tema
     },
-    paginas: entrada.paginas.slice(0, 24).map((p, i) => ({
-      id: typeof p.id === 'string' && p.id ? p.id.slice(0, 40) : `p${i}`,
-      nombre: typeof p.nombre === 'string' ? p.nombre.slice(0, 24) : `GRUPO ${i + 1}`,
-      tipo: p.tipo === 'efectos' ? 'efectos' : 'principal',
-      color: typeof p.color === 'string' ? p.color.slice(0, 24) : '#00ff88',
-      botones: Array.isArray(p.botones) ? p.botones.slice(0, 100).map(saneaBoton).filter(Boolean) : []
-    })),
+    paginas: entrada.paginas.slice(0, 24).map((p, i) => {
+      const pagina = {
+        id: typeof p.id === 'string' && p.id ? p.id.slice(0, 40) : `p${i}`,
+        nombre: typeof p.nombre === 'string' ? p.nombre.slice(0, 24) : `GRUPO ${i + 1}`,
+        tipo: p.tipo === 'efectos' ? 'efectos' : 'principal',
+        color: typeof p.color === 'string' ? p.color.slice(0, 24) : '#00ff88',
+        botones: Array.isArray(p.botones) ? p.botones.slice(0, 100).map(saneaBoton).filter(Boolean) : []
+      };
+      /* Filas y columnas propias del grupo (opcionales: sin ellas el grupo
+         usa las de la rejilla, como los layouts de antes). */
+      const filas = parseInt(p.filas, 10), columnas = parseInt(p.columnas, 10);
+      if (filas >= 1) pagina.filas = Math.min(10, filas);
+      if (columnas >= 1) pagina.columnas = Math.min(10, columnas);
+      return pagina;
+    }),
     red: {
       ssid: typeof entrada.red?.ssid === 'string' ? entrada.red.ssid.slice(0, 64) : '',
       pass: typeof entrada.red?.pass === 'string' ? entrada.red.pass.slice(0, 64) : '',
@@ -287,21 +295,31 @@ function saneaBoton(b) {
   const imagen = typeof b.imagen === 'string' && b.imagen.startsWith('data:image/') && b.imagen.length < 1500000
     ? b.imagen : null;
 
+  /* Botón (lo de siempre) o control continuo: slider, palanca o pad XY */
+  const control = ['slider', 'palanca', 'xy'].includes(b.control) ? b.control : 'boton';
+  const saneaMidi = m => (m && typeof m === 'object' ? {
+    clase: m.clase === 'cc' ? 'cc' : 'nota',
+    num: num(m.num, 0, 127, 60),
+    canal: num(m.canal, 1, 16, 1),
+    modo: ['hold', 'pulso', 'toggle'].includes(m.modo) ? m.modo : 'hold',
+    valor: num(m.valor, 1, 127, 127)
+  } : null);
+
   let accion = { tipo: 'nada', midi: null, paginaDestino: null };
   if (b.accion && typeof b.accion === 'object') {
     const t = b.accion.tipo;
     accion.tipo = ['midi', 'ir', 'volver', 'nada'].includes(t) ? t : 'nada';
     accion.paginaDestino = texto(b.accion.paginaDestino, 40, null) || null;
-    const m = b.accion.midi;
-    if (m && typeof m === 'object') {
-      accion.midi = {
-        clase: m.clase === 'cc' ? 'cc' : 'nota',
-        num: num(m.num, 0, 127, 60),
-        canal: num(m.canal, 1, 16, 1),
-        modo: ['hold', 'pulso', 'toggle'].includes(m.modo) ? m.modo : 'hold',
-        valor: num(m.valor, 1, 127, 127)
-      };
-    }
+    accion.midi = saneaMidi(b.accion.midi);
+  }
+  if (control !== 'boton') {
+    /* Un control siempre manda CC; los de dos ejes, uno más para Y */
+    accion.tipo = 'midi';
+    accion.paginaDestino = null;
+    if (accion.midi) { accion.midi.clase = 'cc'; accion.midi.modo = 'pulso'; }
+    const y = control === 'boton' || control === 'slider' ? null : saneaMidi(b.accion && b.accion.midiY);
+    if (y) { y.clase = 'cc'; y.modo = 'pulso'; }
+    accion.midiY = y;
   }
 
   let submenu = null;
@@ -329,7 +347,9 @@ function saneaBoton(b) {
     ajusteImagen: b.ajusteImagen === 'contain' ? 'contain' : 'cover',
     animacion: ['ninguna', 'pulso', 'latido', 'giro', 'parpadeo', 'onda'].includes(b.animacion) ? b.animacion : 'ninguna',
     accion,
-    submenu,
+    submenu: control === 'boton' ? submenu : null,
+    control,
+    orientacion: ['vertical', 'horizontal'].includes(b.orientacion) ? b.orientacion : 'auto',
     /* true = lo configuró una persona; el mando no le reasigna el mensaje */
     tocado: !!b.tocado
   };
@@ -834,7 +854,8 @@ const server = http.createServer((req, res) => {
      cliente → { type:'midi', data:[status,num,vel] }          (se reenvía tal cual)
      cliente → { type:'layout', layout:{...} }                 (se valida y persiste)
      cliente → { type:'pedir-layout' }
-     app     → { type:'inventario', clips, efectos, bancos }
+     app     → { type:'inventario', clips, efectos, bancos, parametros, mapeos }
+     mando   → { type:'mapear-param', midi, destino, origen }     (sólo a la app: un CC → un parámetro)
      app     → { type:'evento', ev:'clip-inicio'|'clip-fin', ... }
      mando   → { type:'toast', texto }
      relay   → 'joined' | 'presencia' | 'layout' | 'inventario' | 'evento' |
@@ -1231,7 +1252,33 @@ function alConectar(ws) {
         efectos: Array.isArray(msg.efectos) ? msg.efectos.slice(0, 100) : [],
         bancos: Array.isArray(msg.bancos) ? msg.bancos.slice(0, 32) : []
       };
+      /* Parámetros que un slider/palanca/pad del mando puede mover, y qué CC
+         mueve a cuál. Sólo los manda la app que sabe hacerlo: sin ellos el
+         mando entiende que la app es de antes y no los ofrece. */
+      if (Array.isArray(msg.parametros)) sala.inventario.parametros = msg.parametros.slice(0, 400);
+      if (Array.isArray(msg.mapeos)) sala.inventario.mapeos = msg.mapeos.slice(0, 400);
       difundir(myRoom, sala.inventario, ws);
+      return;
+    }
+
+    /* ── Mapeo CC → parámetro pedido desde el mando: sólo le importa a la app ── */
+    if (msg.type === 'mapear-param') {
+      const sala = rooms.get(myRoom);
+      const midi = parseInt(msg.midi, 10);
+      if (!sala || !sala.app || !(midi >= 128 && midi <= 255)) return;
+      const o = msg.origen && typeof msg.origen === 'object' ? msg.origen : null;
+      enviar(sala.app, {
+        type: 'mapear-param', midi,
+        destino: typeof msg.destino === 'string' && msg.destino ? msg.destino.slice(0, 80) : null,
+        origen: o ? {
+          mando: parseInt(o.mando, 10) || 0,
+          boton: String(o.boton || '').slice(0, 40),
+          etiqueta: String(o.etiqueta || '').slice(0, 40),
+          fila: parseInt(o.fila, 10) || 0,
+          col: parseInt(o.col, 10) || 0,
+          eje: o.eje === 'y' ? 'y' : 'x'
+        } : null
+      });
       return;
     }
 

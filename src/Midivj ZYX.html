@@ -284,6 +284,21 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 #res-panel header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);}
 #res-panel h2{margin:0;font-family:var(--mono);font-size:12px;letter-spacing:2px;color:var(--accent);flex:1;}
 #res-cerrar{background:none;border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:12px;line-height:1;padding:4px 9px;cursor:pointer;}
+/* ── Panel 🎛 CONTROLES: CC (slider, palanca, pad XY, fader físico) → parámetro ── */
+#cc-fondo{position:fixed;inset:0;background:rgba(3,3,10,.78);z-index:900;display:none;align-items:center;justify-content:center;padding:20px;}
+#cc-fondo.vis{display:flex;}
+#cc-panel{background:var(--panel);border:1px solid var(--border2);border-radius:6px;width:min(760px,96vw);max-height:92vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.6);}
+#cc-panel header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);}
+#cc-panel h2{margin:0;font-family:var(--mono);font-size:12px;letter-spacing:2px;color:var(--accent);flex:1;}
+#cc-cerrar{background:none;border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:12px;line-height:1;padding:4px 9px;cursor:pointer;}
+.cc-fila{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 8px;border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);}
+.cc-fila select{background:var(--panel);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:9px;padding:3px 4px;outline:none;flex:1;min-width:180px;}
+.cc-fila input[type=number]{width:62px;background:var(--panel);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:9px;padding:3px 4px;outline:none;}
+.cc-fila label{font-family:var(--mono);font-size:8px;color:var(--text3);display:flex;align-items:center;gap:3px;}
+.cc-medidor{width:70px;height:6px;background:var(--panel);border:1px solid var(--border2);position:relative;flex-shrink:0;}
+.cc-medidor i{position:absolute;left:0;top:0;bottom:0;background:var(--blue);width:0;}
+.cc-val{font-family:var(--mono);font-size:8px;color:var(--text2);width:46px;text-align:right;flex-shrink:0;}
+.cc-vacio{font-family:var(--mono);font-size:9px;color:var(--text3);padding:14px;text-align:center;border:1px dashed var(--border2);}
 .res-pbtn{background:var(--panel2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:9px;font-weight:700;padding:7px 10px;cursor:pointer;text-align:left;line-height:1.5;}
 .res-pbtn:hover{border-color:var(--accent);color:var(--accent);}
 .res-pbtn.on{border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.1);}
@@ -501,6 +516,29 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   </div>
 </div>
 
+<!-- ── PANEL 🎛 CONTROLES (CC → parámetro) ── -->
+<div id="cc-fondo" onclick="if(event.target===this) cerrarPanelCC()">
+  <div id="cc-panel">
+    <header>
+      <h2>🎛 CONTROLES CONTINUOS — CC → PARÁMETRO</h2>
+      <button id="cc-cerrar" onclick="cerrarPanelCC()">✕</button>
+    </header>
+    <div class="rp-cuerpo">
+      <div class="rp-linea">
+        <button class="rp-btn pri" onclick="agregarMapeoCC()">+ MAPEO</button>
+        <span class="rp-ayuda" style="margin:0">Pulsa <b>MAP</b> en una fila y mueve el slider, la palanca o el pad del mando (o un fader físico).</span>
+      </div>
+      <div id="cc-lista"></div>
+      <p class="rp-ayuda">
+        Un CC mapeado aquí mueve el parámetro de forma continua (0–127 → MÍN–MÁX) y ya no dispara clips ni efectos.
+        <b>⇅</b> invierte el sentido. En los efectos, <b>AUTO</b> los enciende al salir del mínimo y los apaga al volver a él.
+        Un mismo CC puede mover varios parámetros a la vez (agrega otra fila con el mismo CC).
+        Desde el teléfono también se elige: ✎ EDITAR → toca el control → <b>CONTROLA</b>.
+      </p>
+    </div>
+  </div>
+</div>
+
 <!-- ── PANEL DE SESIONES (.vjp) ── -->
 <div id="ses-fondo" onclick="if(event.target===this) cerrarPanelSesiones()">
   <div id="ses-panel">
@@ -635,6 +673,7 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <div class="pnl right">
     <div class="pnl-hdr">
       <span class="pnl-title">EFECTOS</span>
+      <button class="hbtn" style="font-size:8px;padding:2px 7px;margin-left:8px;" onclick="abrirPanelCC()" title="Sliders, palancas y pads del mando (o faders MIDI) → zoom, opacidad, posición, intensidad de efectos…">🎛 CONTROLES</button>
       <div class="spacer"></div>
       <div class="pill" id="def-mode">
         <span class="po on" onclick="setDefMode('hold',this)">H</span>
@@ -813,6 +852,8 @@ const S = {
   activeBank: 0,
   bankLearning: null,   // index of bank being MIDI-learned
   outRes: { locked:false, w:1280, h:720 },  // resolución fija del lienzo de salida (null=auto según video)
+  ccMaps: [],   // CC → parámetro continuo (ver CONTROLES CONTINUOS)
+  negro: 0,     // fundido a negro de toda la salida (0..1), sólo por CC
 };
 let clipSeq = 1;
 const MEDIA = {
@@ -1066,6 +1107,13 @@ function makeTrack(i) {
        siempre (motor de clips); el resto son capas estáticas: color,
        imagen, video en loop, en vivo. Ver "CAPAS POR PISTA". */
     layers: [ { id:'media', kind:'media', on:true } ],
+    /* Cómo entra la fuente en el lienzo: 'auto' (teléfono = mantener
+       proporción, el resto = estirar), 'encajar', 'llenar' o 'estirar' */
+    ajuste:'auto',
+    /* Transición de la fuente: la usan sus clips que no tienen una propia
+       (ver TRANSICIONES ENTRE FUENTES) */
+    transIn:'none', transOut:'none', transDur:0.5,
+    _fade:null, _fadeSeq:0, _fadeTimer:0,   // fundido de opacidad en curso ('disolver')
     selLayerId:'media',    // capa que editan TRANSFORM DE PISTA y la caja interactiva (sólo si layersLinked=false)
     layersLinked:true,     // true = todas las capas comparten t.xform (el color marca dónde va todo); false = transform por capa
     vproc: vprocDefault(),  // procesador de video (brillo/contraste/matiz/… por pista, ver PROCESADOR DE VIDEO)
@@ -1254,7 +1302,7 @@ function makeTrack(i) {
     if (kind === 'video' && (el !== t.vid || el.getAttribute('src') !== t._url)) return;   // el buffer (prebuffer/loop) no cuenta
     if (kind === 'image' && el.src !== t._url) return;
     if (t.loaded) {
-      if (t.activeClip) deactivateClip(t);
+      if (t.activeClip) deactivateClip(t, true);
       t.loaded = false; t.dur = 0; t.loadedName = '—';
       resetTrackCaches(t);
       renderAll();
@@ -1697,7 +1745,7 @@ async function applyProjectData(d) {
 
   /* Un clip activo de la sesión anterior seguiría mandando sobre la pista
      aunque ya no esté en su lista (no habría cómo detenerlo): se apagan. */
-  S.tracks.forEach(t => { if (t.activeClip) deactivateClip(t); });
+  S.tracks.forEach(t => { if (t.activeClip) deactivateClip(t, true); });
   /* ↶ de SECUENCIA pertenece a la sesión anterior */
   TL.lastArrange = null;
   { const u = document.getElementById('seq-undo'); if (u) u.style.display = 'none'; }
@@ -1707,6 +1755,11 @@ async function applyProjectData(d) {
       S.tracks[i].clips=(td.clips||[]).map(migrateClip);
       S.tracks[i].groups=(td.groups||[]);
       if(td.opacity!==undefined) S.tracks[i].opacity=td.opacity;
+      /* Ajuste y transición de la fuente: sesiones de antes no los traen */
+      S.tracks[i].ajuste = ['auto','encajar','llenar','estirar'].includes(td.ajuste) ? td.ajuste : 'auto';
+      S.tracks[i].transIn = td.transIn || 'none';
+      S.tracks[i].transOut = td.transOut || 'none';
+      S.tracks[i].transDur = td.transDur !== undefined ? td.transDur : 0.5;
       if(td.videoOffset!==undefined) S.tracks[i].videoOffset=clampOffset(td.videoOffset);
       if(td.xform) S.tracks[i].xform=xformDefault(td.xform);
       /* Capas: se desechan las actuales (streams, URLs) y se reconstruyen */
@@ -1735,6 +1788,15 @@ async function applyProjectData(d) {
     S.tracks[0].clips = d.clips.map(migrateClip);
   }
   if (d.efxs) d.efxs.forEach(de=>{ const e=S.efxs.find(x=>x.id===de.id); if(e) Object.assign(e,de,{on:false,midi:de.midi!==undefined?de.midi:(de.note!==undefined?de.note:null)}); });
+  /* Mapeos CC → parámetro: son de la sesión (una sesión vieja deja la lista vacía) */
+  S.ccMaps = Array.isArray(d.ccMaps) ? d.ccMaps.filter(m => m && typeof m.destino === 'string').map(m => ({
+    id: m.id || ('cm' + Math.random().toString(36).slice(2, 8)),
+    midi: typeof m.midi === 'number' && m.midi >= 128 && m.midi <= 255 ? m.midi : null,
+    destino: m.destino, min: +m.min || 0, max: Number.isFinite(+m.max) ? +m.max : 1,
+    inv: !!m.inv, auto: m.auto !== false, origen: m.origen || null
+  })) : [];
+  S.negro = 0;
+  renderPanelCCSiAbierto();
   if (d.banks) d.banks.forEach((db,i)=>{ if(i<S.banks.length) Object.assign(S.banks[i],db); });
   if (d.outRes && d.outRes.locked && d.outRes.w && d.outRes.h) applyOutRes(d.outRes.w, d.outRes.h, true);
   if (d.audio) audioRestaurar(d.audio);
@@ -1923,7 +1985,7 @@ function onTrackMediaChosen(ev, kind) {
 /* Cambia la fuente principal de la pista por un archivo (video o imagen) */
 function replaceTrackSource(t, file, relativePath='') {
   if (t.sourceType === 'browser') closeBrowserWindow(t.i, true);
-  if (t.activeClip) deactivateClip(t);
+  if (t.activeClip) deactivateClip(t, true);
   loadTrackFileObject(t, file, relativePath);
 }
 /* ⇄ de la lista MEDIOS / aviso tras agregar: usar esa entrada como fuente */
@@ -2199,7 +2261,7 @@ function _applyStream(track, stream, type, label) {
   /* El video de archivo anterior deja de reproducirse: antes seguía de fondo
      (con audio) y su clip activo seguía controlando la pista. vidA/vidB no se
      vacían, para que los clips de archivo puedan volver a usarlos. */
-  if (track.activeClip && !track.activeClip.srcLive) deactivateClip(track);
+  if (track.activeClip && !track.activeClip.srcLive) deactivateClip(track, true);
   [track.vidA, track.vidB, track.still].forEach(v => { try { v.pause(); } catch(_) {} });
   stopTrackStream(track);
   revokeTrackObjectURL(track);
@@ -2225,7 +2287,9 @@ function _applyStream(track, stream, type, label) {
 
   const onDims = () => {
     if (track.i === 0) {
-      if (!S.outRes.locked) { cvs.width = lv.videoWidth || 1280; cvs.height = lv.videoHeight || 720; }
+      /* Un teléfono (que puede estar en vertical o girar en pleno show) no
+         cambia el tamaño de la salida: su imagen se encaja dentro de ella. */
+      if (!S.outRes.locked && type !== 'phone') { cvs.width = lv.videoWidth || 1280; cvs.height = lv.videoHeight || 720; }
       syncOutCanvasBuffers();
       document.getElementById('load-ov').classList.add('hide');
     }
@@ -2264,7 +2328,7 @@ function stopTrackStream(track) {
    tenía un clip activo), el clip activo seguía mandando sobre la pista y el
    video quedaba "atorado" sin forma de quitarlo ni de cambiarlo. */
 function releaseFileMedia(track) {
-  if (track.activeClip) deactivateClip(track);
+  if (track.activeClip) deactivateClip(track, true);
   track._pendingClip = null;
   [track.vidA, track.vidB].forEach(v => {
     try { v.pause(); v.removeAttribute('src'); v.load(); } catch(_) {}
@@ -2494,12 +2558,20 @@ function onMIDIMsg(ev) {
   if (isCC) {
     const ccId = 128 + num;
     setSt('st-note','CC'+num+':'+vel,'cc');
-    if (S.learning) { doAssign(S.learning, ccId); endLearn(); return; }
+    if (S.learning) {
+      if (S.learning.t === 'param') { asignarCCParam(S.learning.id, ccId); endLearn(); return; }
+      doAssign(S.learning, ccId); endLearn(); return;
+    }
+    /* Un CC mapeado a un parámetro es continuo: mueve el valor y no dispara
+       clips ni efectos (un fader pasaría 60 veces por segundo por 64). */
+    if (S.bankLearning === null && aplicarCC(ccId, vel)) return;
     if (vel >= 64) triggerOn(ccId, vel);
     else triggerOff(ccId);
     return;
   }
   setSt('st-note', dispMidi(num), '');
+  /* Una nota no tiene valor continuo: no sirve para un parámetro */
+  if (S.learning && S.learning.t === 'param') return;
   if (S.learning && isNoteOn) { doAssign(S.learning, num); endLearn(); return; }
   if (isNoteOn)  triggerOn(num, vel);
   if (isNoteOff) triggerOff(num);
@@ -2548,6 +2620,11 @@ function doAssign(target, midiId) {
   /* Clear same ID from everything first */
   S.tracks.forEach(t => t.clips.forEach(c => { if(c.midi===midiId) { c.midi=null; c.midiOrigen=null; } }));
   S.efxs.forEach(e => { if(e.midi===midiId) { e.midi=null; e.midiOrigen=null; } });
+  /* Ese CC deja de mover parámetros: ahora dispara el clip o el efecto */
+  if (S.ccMaps.some(m => m.midi === midiId)) {
+    S.ccMaps.forEach(m => { if (m.midi === midiId) { m.midi = null; m.origen = null; } });
+    renderPanelCCSiAbierto();
+  }
   /* midiOrigen recuerda si el mapeo se aprendió de un botón del celular */
   const origen = _origenMando ? {..._origenMando} : null;
   if (target.t==='clip') { const r=findClip(target.id); if(r) { r.clip.midi=midiId; r.clip.midiOrigen=origen; } }
@@ -2564,12 +2641,12 @@ function startLearn(t, id, ev) {
   ev.stopPropagation();
   S.learning = {t, id};
   document.getElementById('learn-banner').classList.add('vis');
-  renderClips(); renderEfxs();
+  renderClips(); renderEfxs(); renderPanelCCSiAbierto();
 }
 function endLearn() {
   S.learning = null;
   document.getElementById('learn-banner').classList.remove('vis');
-  renderClips(); renderEfxs();
+  renderClips(); renderEfxs(); renderPanelCCSiAbierto();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2628,7 +2705,7 @@ function delClip(id) {
     if (idx >= 0) {
       const dc = t.clips[idx];
       if (dc._revFileKey) revDBDel(dc._revFileKey);   // free the hosted reversed file
-      if (t.activeClip?.id===id) deactivateClip(t);
+      if (t.activeClip?.id===id) deactivateClip(t, true);
       t.clips.splice(idx,1);
     }
   }
@@ -2714,18 +2791,70 @@ function promoteBufferToActive(track) {
   });
 }
 
+/* ── TRANSICIONES ENTRE FUENTES ──
+   Cada clip puede tener su propia transición de entrada/salida; si no la
+   tiene, usa la de su pista (sección 🎞 AJUSTE Y TRANSICIÓN): así una pista
+   con la cámara de un teléfono entra y sale siempre igual, la dispare quien
+   la dispare. 'disolver' no tapa nada: funde la opacidad de la propia
+   pista, y si a la vez sale una fuente y entra otra se ve un fundido
+   encadenado. Las demás (negro, TV, flash, cortina) son un telón sobre toda
+   la salida: primero se cierra con la salida de la que se va, se cambia, y
+   abre con la entrada de la que llega. */
+function transEntrada(t, c) {
+  if (c && c.transIn && c.transIn !== 'none') return { tipo:c.transIn, dur:c.transDur ?? 0.5 };
+  return { tipo:t.transIn || 'none', dur:t.transDur ?? 0.5 };
+}
+function transSalida(t, c) {
+  if (c && c.transOut && c.transOut !== 'none') return { tipo:c.transOut, dur:c.transDur ?? 0.5 };
+  return { tipo:t.transOut || 'none', dur:t.transDur ?? 0.5 };
+}
+/* Opacidad extra (0..1) de la pista por un fundido en curso */
+function factorFundido(t) {
+  const f = t._fade;
+  if (!f) return 1;
+  const p = Math.min(1, (performance.now() - f.t0) / f.ms);
+  return f.desde + (f.hasta - f.desde) * p;
+}
+/* El final va por temporizador y no por el render: una pista oculta o un
+   lienzo sin dibujar igual termina su fundido. Cada fundido nuevo (o un
+   corte) invalida el aviso del anterior. */
+function fundirPista(t, desde, hasta, dur, alTerminar) {
+  const token = ++t._fadeSeq;
+  clearTimeout(t._fadeTimer);
+  const ms = Math.max(0.05, dur || 0.5) * 1000;
+  t._fade = { desde, hasta, t0: performance.now(), ms };
+  t._fadeTimer = setTimeout(() => {
+    if (t._fadeSeq !== token) return;
+    t._fade = null;
+    if (alTerminar) alTerminar();
+  }, ms);
+}
+function cancelarFundido(t) {
+  t._fadeSeq++;
+  clearTimeout(t._fadeTimer);
+  t._fade = null;
+}
+/* Sale fundiéndose y recién al final se apaga de verdad */
+function apagarConFundido(t, c, dur) {
+  fundirPista(t, factorFundido(t), 0, dur, () => { if (t.activeClip === c) deactivateClip(t, true); });
+}
+
 function trigClipLoaded(track, clip) {
   if (!track.loaded) return;
   if (clip.trigMode==='toggle' && track.activeClip===clip) { deactivateClip(track); return; }
 
-  /* ── EXCLUSIVE MODE: stop clips on all other tracks ── */
-  if (S.exclMode) {
-    S.tracks.forEach(other => {
-      if (other !== track && other.activeClip) deactivateClip(other);
-    });
-  }
-
   const prevClip = track.activeClip;
+  /* Lo que sale: el clip anterior de esta pista y, en modo exclusivo, los
+     activos de las demás pistas. Antes las demás se cortaban de golpe, sin
+     su transición de salida. */
+  const salen = S.exclMode
+    ? S.tracks.filter(o => o !== track && o.activeClip).map(o => ({ t:o, c:o.activeClip, ...transSalida(o, o.activeClip) }))
+    : [];
+  const propia = prevClip ? transSalida(track, prevClip) : { tipo:'none', dur:0 };
+  const telon = [propia, ...salen].find(x => x.tipo !== 'none' && x.tipo !== 'disolver') || null;
+  /* Fundido encadenado: si una pista que se disuelve está ENCIMA de la que
+     entra, al irse ya la descubre — la que entra arranca entera. */
+  const descubre = !telon && salen.some(s => s.tipo === 'disolver' && s.t.i > track.i);
 
   /* Inner function that actually switches the clip */
   const doSwitch = () => {
@@ -2757,25 +2886,52 @@ function trigClipLoaded(track, clip) {
       if (clip.loopMode === 'pingpong' && track.mediaKind !== 'image') ensureReverse(track, clip);
     }
 
-    /* TransIn: plays over the new clip as it starts */
-    if (clip.transIn !== 'none') startTX('in', clip.transIn, clip.transDur ?? 0.5);
+    /* Entrada: la del clip o, si no tiene, la de la pista */
+    const te = transEntrada(track, clip);
+    if (te.tipo === 'disolver' && !descubre) fundirPista(track, 0, 1, te.dur);
+    else {
+      cancelarFundido(track);
+      if (te.tipo !== 'none' && te.tipo !== 'disolver') startTX('in', te.tipo, te.dur);
+    }
 
     updateActiveLbl();
     refreshPlayBtns();
   };
 
-  /* If current clip has transOut, play it first THEN switch */
-  if (prevClip && prevClip.transOut !== 'none') {
-    startTX('out', prevClip.transOut, prevClip.transDur ?? 0.5, doSwitch);
-  } else {
-    doSwitch();
-  }
+  const cambiar = () => {
+    salen.forEach(s => {
+      if (s.t.activeClip !== s.c) return;            // ya cambió mientras tanto
+      if (telon || s.tipo !== 'disolver') { deactivateClip(s.t, true); return; }
+      if (s.t.i > track.i) apagarConFundido(s.t, s.c, s.dur);
+      /* Debajo de la que entra: se queda entera hasta quedar tapada y se apaga */
+      else fundirPista(s.t, factorFundido(s.t), factorFundido(s.t), s.dur, () => { if (s.t.activeClip === s.c) deactivateClip(s.t, true); });
+    });
+    if (!telon && prevClip && propia.tipo === 'disolver') {
+      /* Misma pista: no puede mostrar las dos fuentes a la vez → se funde a
+         cero, cambia y vuelve a subir con su entrada */
+      fundirPista(track, factorFundido(track), 0, propia.dur, () => { if (track.activeClip === prevClip) doSwitch(); });
+    } else doSwitch();
+  };
+
+  /* Telón: primero se cierra con la salida, después se cambia */
+  if (telon) startTX('out', telon.tipo, telon.dur, cambiar);
+  else cambiar();
 }
 
-function deactivateClip(track) {
-  if (track.activeClip?.transOut !== 'none') {
-    startTX('out', track.activeClip.transOut, track.activeClip.transDur ?? 0.5);
+/* inmediato = apagar ya, sin transición (quitar la fuente, borrar el clip,
+   abrir otra sesión…). Si no, sale con su transición: 'disolver' se funde y
+   las de telón cierran primero y apagan al final. */
+function deactivateClip(track, inmediato) {
+  const c = track.activeClip;
+  if (c && !inmediato) {
+    const ts = transSalida(track, c);
+    if (ts.tipo === 'disolver') { apagarConFundido(track, c, ts.dur); return; }
+    if (ts.tipo !== 'none') {
+      startTX('out', ts.tipo, ts.dur, () => { if (track.activeClip === c) deactivateClip(track, true); });
+      return;
+    }
   }
+  cancelarFundido(track);
   track.activeClip = null;
   track._onceEnded = false;
   track.prebuffering = false;
@@ -3027,6 +3183,31 @@ ${buildCamCfgHTML(t, idx)}
     onchange="setTrackOffsetText(this.value)" onkeydown="if(event.key==='Enter')this.blur()">
   <button class="hbtn" style="font-size:8px;padding:1px 6px;" onclick="setTrackOffset(0)">0</button>
 </div>
+${tiSec('fuente', '🎞 AJUSTE Y TRANSICIÓN DE LA FUENTE', '',
+  `<div class="opa-row" title="Cómo entra la imagen de la fuente en la salida. AUTO: la cámara del teléfono mantiene su proporción (vertical queda vertical, con bandas a los lados); el resto se estira como siempre.">
+  <span class="opa-lbl" style="width:44px;">AJUSTE</span>
+  <select class="tr-sel" onchange="setTrackAjuste(${idx}, this.value)">
+    <option value="auto"${(t.ajuste||'auto')==='auto'?' selected':''}>auto (${t.sourceType==='phone'?'mantener proporción':'estirar'})</option>
+    <option value="encajar"${t.ajuste==='encajar'?' selected':''}>mantener proporción (bandas)</option>
+    <option value="llenar"${t.ajuste==='llenar'?' selected':''}>llenar (recorta lo que sobra)</option>
+    <option value="estirar"${t.ajuste==='estirar'?' selected':''}>estirar a la salida</option>
+  </select>
+</div>
+<div class="opa-row" style="margin-top:4px;" title="Transición de esta fuente: la usan sus clips que no tienen una propia, al cambiar de una fuente a otra con el mando o el MIDI">
+  <span class="opa-lbl" style="width:44px;">ENTRA</span>
+  <select class="tr-sel" onchange="setTrackTrans(${idx},'in',this.value)">${transOpcionesHTML('— ninguna —', t.transIn)}</select>
+  <span class="opa-lbl">SALE</span>
+  <select class="tr-sel" onchange="setTrackTrans(${idx},'out',this.value)">${transOpcionesHTML('— ninguna —', t.transOut)}</select>
+</div>
+<div class="opa-row" style="margin-top:4px;">
+  <span class="opa-lbl" style="width:44px;">DURACIÓN</span>
+  <input type="range" class="opasl" min="0.1" max="3" step="0.1" value="${t.transDur ?? 0.5}" data-def="0.5"
+    oninput="setTrackTrans(${idx},'dur',this.value)">
+  <span class="opa-lbl" id="trdur-v">${(+(t.transDur ?? 0.5)).toFixed(1)} s</span>
+</div>
+<div style="font-family:var(--mono);font-size:7px;color:var(--text3);padding:3px 0;line-height:1.6;">
+  Al disparar un clip de otra fuente: primero sale la actual (su SALE) y luego entra la nueva (su ENTRA). <b>Disolver</b> funde suave las dos fuentes; las demás pasan por negro, blanco o TV. Un clip con transición propia usa la suya.
+</div>`)}
 ${tiSec('xform', `⛶ TRANSFORM · <span style="color:var(--yellow)">${t.layersLinked!==false ? 'TODAS LAS CAPAS' : escHtml(layerLabel(t, curLayer(t)))}</span>`,
   `<button class="hbtn${t.layersLinked!==false?' on':''}" style="font-size:8px;padding:1px 6px;margin-left:auto;" onclick="toggleLayersLinked(${idx})" title="${t.layersLinked!==false?'Vinculado: la transformación mueve todas las capas de la pista juntas (clic para transformar cada capa por separado)':'Suelto: cada capa tiene su propia transformación (clic para vincular todas)'}">🔗 CAPAS</button>
   <button class="hbtn" style="font-size:8px;padding:1px 6px;" onclick="resetTrackXform(${idx})" title="Volver esta pista a su posición/tamaño original">RESET</button>`,
@@ -3465,7 +3646,7 @@ function unlinkPlaylistClips(track, entryIds) {
   track.clips = track.clips.filter(c => !removedIds.has(c.id));
   allClips().forEach(c => { if (removedIds.has(c.nextClipId)) c.nextClipId = null; });
   if (S.selClipId && removedIds.has(S.selClipId)) S.selClipId = null;
-  if (wasActive) deactivateClip(track);
+  if (wasActive) deactivateClip(track, true);
 }
 
 function removePlaylistEntry(trackIdx, id) {
@@ -3908,17 +4089,7 @@ ${isLoop ? '<span class="next-lbl" style="color:var(--text3);font-size:7px;">(so
   /* Trans in/out row */
   const r5 = document.createElement('div');
   r5.className = 'clip-r4';
-  const TRANS_OPTS = `
-<option value="none">— ninguna —</option>
-<option value="fade-in">Fade In</option>
-<option value="fade-out">Fade Out</option>
-<option value="tv-on">TV Encendido</option>
-<option value="tv-off">TV Apagado</option>
-<option value="flash-in">Flash In</option>
-<option value="flash-out">Flash Out</option>
-<option value="wipe-r">Wipe →</option>
-<option value="wipe-l">Wipe ←</option>
-<option value="wipe-d">Wipe ↓</option>`;
+  const TRANS_OPTS = transOpcionesHTML('— la de la pista —');
   r5.innerHTML = `
 <span class="tr-lbl">▶ IN:</span>
 <select class="tr-sel" onchange="setTransIn('${c.id}',this.value)">${TRANS_OPTS}</select>
@@ -4209,6 +4380,276 @@ function setDefMode(m,el) {
   document.querySelectorAll('#def-mode .po').forEach(x=>x.classList.remove('on')); el.classList.add('on');
 }
 function renderAll() { renderTabs(); renderTrackInfo(); renderClips(); renderEfxs(); renderTL(); }
+
+/* ═══════════════════════════════════════════════════════
+   CONTROLES CONTINUOS — CC → PARÁMETRO
+   Un slider, palanca o pad XY del mando (o un fader/perilla de un
+   controlador físico) manda CC de 0 a 127. Aquí cada CC se asocia a uno o
+   varios parámetros (zoom, opacidad, posición, escala, intensidad de un
+   efecto, color de la pista, fundido a negro…) con su rango MÍN–MÁX.
+   S.ccMaps = [{ id, midi(128+cc), destino, min, max, inv, auto, origen }]
+═══════════════════════════════════════════════════════ */
+let _paramCat = null, _paramIdx = null;
+/* Catálogo fijo: las pistas y los efectos son los mismos objetos toda la
+   sesión, y cada get/set lee t.xform / t.vproc en el momento (se
+   reemplazan al hacer RESET o abrir una sesión). */
+function paramCatalogo() {
+  if (_paramCat) return _paramCat;
+  const out = [];
+  const xfDefs = efxParams({ type:'xform' });
+  S.tracks.forEach((t, i) => {
+    const grupo = 'PISTA ' + (i + 1);
+    const enPista = () => S.ati === i;
+    out.push({ id:`t${i}.opacidad`, grupo, nombre:`P${i+1} · Opacidad`, min:0, max:1, def:1, fmt:'pct',
+      get:() => t.opacity, set:v => { t.opacity = v; } });
+    out.push({ id:`t${i}.escala`, grupo, nombre:`P${i+1} · Zoom (escala X e Y)`, min:.1, max:3, def:1, fmt:'scale',
+      get:() => t.xform.scaleX ?? 1,
+      set:v => { t.xform.scaleX = v; t.xform.scaleY = v; },
+      ui:v => { if (enPista() && curXform(t) === t.xform) { setSliderRow('#track-info','scaleX',v,'scale'); setSliderRow('#track-info','scaleY',v,'scale'); } } });
+    xfDefs.forEach(p => out.push({ id:`t${i}.${p.key}`, grupo, nombre:`P${i+1} · ${p.lbl}`, min:p.min, max:p.max, def:p.def, fmt:p.fmt,
+      get:() => t.xform[p.key] ?? p.def,
+      set:v => {
+        t.xform[p.key] = v;
+        const otra = t.xform.scaleLink ? xformLinkedKey(p.key) : null;
+        if (otra) t.xform[otra] = v;
+      },
+      ui:v => {
+        if (!enPista() || curXform(t) !== t.xform) return;
+        setSliderRow('#track-info', p.key, v, p.fmt);
+        const otra = t.xform.scaleLink ? xformLinkedKey(p.key) : null;
+        if (otra) setSliderRow('#track-info', otra, v, p.fmt);
+      } }));
+    VPROC_PARAMS.forEach(p => out.push({ id:`t${i}.vproc.${p.key}`, grupo, nombre:`P${i+1} · Color: ${p.lbl}`, min:p.min, max:p.max, def:p.def, fmt:p.fmt,
+      get:() => t.vproc[p.key] ?? p.def,
+      set:v => { t.vproc[p.key] = v; t.vproc.on = true; },   // igual que el slider: moverlo lo enciende
+      ui:v => { if (enPista()) { setSliderRow('#vproc-params', p.key, v, p.fmt); syncVprocBtn(t); } } }));
+  });
+  S.efxs.forEach(e => efxParams(e).forEach(p => {
+    if (p.type === 'color') return;
+    out.push({ id:`fx.${e.id}.${p.key}`, grupo: e.type === 'xform' ? 'SALIDA (TRANSFORM GLOBAL)' : 'EFECTOS',
+      nombre:`${e.name} · ${p.lbl}`, min:p.min, max:p.max, def:p.def, fmt:p.fmt, efx:e,
+      get:() => e[p.key] ?? p.def,
+      set:v => {
+        e[p.key] = v;
+        const otra = e.type === 'xform' && e.scaleLink ? xformLinkedKey(p.key) : null;
+        if (otra) e[otra] = v;
+        if (e.type === 'slowmo' && e.on) S.tracks.forEach(t => { if (t.loaded) t.vid.playbackRate = v; });
+      },
+      ui:v => {
+        setSliderRow(`[data-eid="${e.id}"]`, p.key, v, p.fmt);
+        const otra = e.type === 'xform' && e.scaleLink ? xformLinkedKey(p.key) : null;
+        if (otra) setSliderRow(`[data-eid="${e.id}"]`, otra, v, p.fmt);
+        if (e.type === 'xform' && xovMode === 'global') syncXov();
+      } });
+  }));
+  out.push({ id:'salida.negro', grupo:'SALIDA (TRANSFORM GLOBAL)', nombre:'Fundido a negro de toda la salida', min:0, max:1, def:0, fmt:'pct',
+    get:() => S.negro, set:v => { S.negro = v; } });
+  _paramCat = out;
+  _paramIdx = new Map(out.map(p => [p.id, p]));
+  return out;
+}
+function paramDe(id) { paramCatalogo(); return _paramIdx.get(id) || null; }
+
+/* 0..127 → 0..1 con el 64 justo en el medio: una palanca en reposo (64)
+   deja la posición en su centro exacto, no 6 px corrida. */
+function ccNormal(v) { return v <= 64 ? v / 128 : 0.5 + (v - 64) / 126; }
+
+let _ccUiPend = new Map(), _ccUiRaf = 0;
+function aplicarCC(ccId, vel) {
+  let usado = false;
+  for (const m of S.ccMaps) {
+    if (m.midi !== ccId) continue;
+    const p = paramDe(m.destino);
+    if (!p) continue;
+    usado = true;
+    const n = m.inv ? 1 - ccNormal(vel) : ccNormal(vel);
+    const v = m.min + (m.max - m.min) * n;
+    p.set(v);
+    m._n = n;
+    /* AUTO: el efecto se enciende al salir del mínimo y se apaga al volver */
+    if (p.efx && p.efx.type !== 'xform' && m.auto !== false) {
+      const on = n > 0.004;
+      if (p.efx.on !== on) {
+        p.efx.on = on;
+        if (p.efx.type === 'slowmo') S.tracks.forEach(t => { if (t.loaded) t.vid.playbackRate = on ? (p.efx.rate ?? 0.25) : 1; });
+        _ccUiPend.set('efx-ui', refreshEfxUI);
+      }
+    }
+    if (p.ui) _ccUiPend.set(p.id, () => p.ui(v));
+    _ccUiPend.set('panel', pintarMedidoresCC);
+  }
+  /* La interfaz se pone al día una vez por cuadro, no por cada mensaje */
+  if (usado && !_ccUiRaf) _ccUiRaf = requestAnimationFrame(() => {
+    _ccUiRaf = 0;
+    const tareas = [..._ccUiPend.values()];
+    _ccUiPend.clear();
+    tareas.forEach(f => { try { f(); } catch (_) {} });
+  });
+  return usado;
+}
+
+function nuevoMapeoCC(p, midi, origen) {
+  return { id:'cm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), midi, destino:p.id,
+    min:p.min, max:p.max, inv:false, auto:true, origen: origen || null };
+}
+/* Un CC que pasa a mover un parámetro deja de disparar clips y efectos */
+function liberarCCDeDisparos(midi) {
+  S.tracks.forEach(t => t.clips.forEach(c => { if (c.midi === midi) { c.midi = null; c.midiOrigen = null; } }));
+  S.efxs.forEach(e => { if (e.midi === midi) { e.midi = null; e.midiOrigen = null; } });
+}
+function asignarCCParam(mapId, ccId) {
+  const m = S.ccMaps.find(x => x.id === mapId);
+  if (!m) return;
+  m.midi = ccId;
+  m.origen = _origenMando ? { ..._origenMando } : null;
+  liberarCCDeDisparos(ccId);
+  renderClips(); renderEfxs();
+  publicarInventarioPronto();
+}
+/* El mando eligió en su inspector qué mueve un CC (campo CONTROLA): esa
+   elección reemplaza lo que ese CC movía. destino null = ya no mueve nada. */
+function mapearParamDesdeMando(msg) {
+  const midi = msg.midi;
+  if (typeof midi !== 'number' || midi < 128 || midi > 255) return;
+  const p = msg.destino ? paramDe(msg.destino) : null;
+  if (msg.destino && !p) return;
+  const previo = S.ccMaps.find(m => m.midi === midi && (!p || m.destino === p.id));
+  S.ccMaps = S.ccMaps.filter(m => m.midi !== midi || m === previo);
+  if (p) {
+    if (!previo) S.ccMaps.push(nuevoMapeoCC(p, midi, msg.origen));
+    else previo.origen = msg.origen || previo.origen;
+    liberarCCDeDisparos(midi);
+    renderClips(); renderEfxs();
+  } else if (previo) {
+    S.ccMaps = S.ccMaps.filter(m => m !== previo);
+  }
+  appendNetLog('🎛 CC' + (midi - 128) + ' → ' + (p ? p.nombre : 'sin parámetro') + ' (desde el mando)');
+  renderPanelCCSiAbierto();
+  publicarInventarioPronto();
+}
+
+/* ── Panel ── */
+function abrirPanelCC() {
+  renderPanelCC();
+  document.getElementById('cc-fondo').classList.add('vis');
+}
+function cerrarPanelCC() {
+  if (S.learning?.t === 'param') endLearn();
+  document.getElementById('cc-fondo').classList.remove('vis');
+}
+function renderPanelCCSiAbierto() {
+  const f = document.getElementById('cc-fondo');
+  if (f && f.classList.contains('vis')) renderPanelCC();
+}
+function agregarMapeoCC() {
+  const p = paramDe('t' + S.ati + '.escala') || paramCatalogo()[0];
+  const m = nuevoMapeoCC(p, null, null);
+  S.ccMaps.push(m);
+  renderPanelCC();
+  /* Arranca escuchando: mover el control ya lo asigna */
+  startLearn('param', m.id, { stopPropagation(){} });
+}
+function quitarMapeoCC(id) {
+  S.ccMaps = S.ccMaps.filter(m => m.id !== id);
+  if (S.learning?.t === 'param' && S.learning.id === id) endLearn();
+  renderPanelCC();
+  publicarInventarioPronto();
+}
+function limpiarCCMapeo(id, ev) {
+  ev.preventDefault();
+  const m = S.ccMaps.find(x => x.id === id); if (!m) return;
+  m.midi = null; m.origen = null;
+  renderPanelCC();
+  publicarInventarioPronto();
+}
+function setMapeoCC(id, campo, valor) {
+  const m = S.ccMaps.find(x => x.id === id); if (!m) return;
+  if (campo === 'destino') {
+    const p = paramDe(valor); if (!p) return;
+    m.destino = p.id; m.min = p.min; m.max = p.max;   // rango completo del parámetro nuevo
+    renderPanelCC();
+    publicarInventarioPronto();
+    return;
+  }
+  if (campo === 'min' || campo === 'max') { const n = parseFloat(valor); if (Number.isFinite(n)) m[campo] = n; return; }
+  if (campo === 'inv') m.inv = !!valor;
+  if (campo === 'auto') m.auto = !!valor;
+}
+function etiquetaCC(m) {
+  if (m.midi === null || m.midi === undefined) return 'MAP';
+  const o = m.origen;
+  return (o ? 'M' + (o.mando || '?') + '·' + ((o.etiqueta || '').trim() || 'B' + o.fila + ',' + o.col) + ' ' : '') + 'CC' + (m.midi - 128);
+}
+function renderPanelCC() {
+  const cont = document.getElementById('cc-lista');
+  if (!cont) return;
+  if (!S.ccMaps.length) {
+    cont.innerHTML = '<div class="cc-vacio">Sin mapeos. Pulsa <b>+ MAPEO</b> y mueve un slider, palanca o pad del mando.</div>';
+    return;
+  }
+  const cat = paramCatalogo();
+  const grupos = [...new Set(cat.map(p => p.grupo))];
+  const opciones = sel => grupos.map(g => `<optgroup label="${escHtml(g)}">${cat.filter(p => p.grupo === g)
+    .map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${escHtml(p.nombre)}</option>`).join('')}</optgroup>`).join('');
+  cont.innerHTML = S.ccMaps.map(m => {
+    const p = paramDe(m.destino);
+    const lrn = S.learning?.t === 'param' && S.learning.id === m.id;
+    const cls = 'mbadge' + (lrn ? ' learning' : m.midi !== null ? (m.origen ? ' m-mando' : ' m-cc') : '');
+    const paso = p ? Math.max(0.001, +(((p.max - p.min) / 100).toPrecision(2))) : 0.01;
+    return `<div class="cc-fila" data-cc="${m.id}">
+      <span class="${cls}" onclick="startLearn('param','${m.id}',event)" oncontextmenu="limpiarCCMapeo('${m.id}',event)"
+        title="Clic = MAP (mueve el control) · Clic-der = quitar el CC">${lrn ? '???' : escHtml(etiquetaCC(m))}</span>
+      <select onchange="setMapeoCC('${m.id}','destino',this.value)">${opciones(m.destino)}</select>
+      <label>MÍN <input type="number" step="${paso}" value="${+(+m.min).toFixed(3)}" onchange="setMapeoCC('${m.id}','min',this.value)"></label>
+      <label>MÁX <input type="number" step="${paso}" value="${+(+m.max).toFixed(3)}" onchange="setMapeoCC('${m.id}','max',this.value)"></label>
+      <label title="Invertir el sentido"><input type="checkbox"${m.inv ? ' checked' : ''} onchange="setMapeoCC('${m.id}','inv',this.checked)">⇅</label>
+      ${p && p.efx && p.efx.type !== 'xform' ? `<label title="Encender el efecto al salir del mínimo y apagarlo al volver"><input type="checkbox"${m.auto !== false ? ' checked' : ''} onchange="setMapeoCC('${m.id}','auto',this.checked)">AUTO</label>` : ''}
+      <span class="cc-medidor"><i></i></span><span class="cc-val"></span>
+      <button class="rp-btn" style="padding:3px 7px;color:var(--hot);" onclick="quitarMapeoCC('${m.id}')" title="Quitar este mapeo">✕</button>
+    </div>`;
+  }).join('');
+  pintarMedidoresCC();
+}
+/* Medidor de cada fila: dónde está el parámetro dentro de su rango */
+function pintarMedidoresCC() {
+  const f = document.getElementById('cc-fondo');
+  if (!f || !f.classList.contains('vis')) return;
+  S.ccMaps.forEach(m => {
+    const fila = document.querySelector(`#cc-lista [data-cc="${m.id}"]`);
+    const p = paramDe(m.destino);
+    if (!fila || !p) return;
+    const v = p.get();
+    const n = m.max !== m.min ? Math.max(0, Math.min(1, (v - m.min) / (m.max - m.min))) : 0;
+    fila.querySelector('.cc-medidor i').style.width = (n * 100).toFixed(1) + '%';
+    fila.querySelector('.cc-val').textContent = EFX_FMT[p.fmt] ? EFX_FMT[p.fmt](v) : (+v).toFixed(2);
+  });
+}
+
+/* ── Ajuste y transición de la fuente (sección del panel de pista) ── */
+const TRANS_TIPOS = [
+  ['disolver', 'Disolver (fundido suave)'],
+  ['fade-in', 'Fade In (desde negro)'], ['fade-out', 'Fade Out (a negro)'],
+  ['tv-on', 'TV Encendido'], ['tv-off', 'TV Apagado'],
+  ['flash-in', 'Flash In'], ['flash-out', 'Flash Out'],
+  ['wipe-r', 'Wipe →'], ['wipe-l', 'Wipe ←'], ['wipe-d', 'Wipe ↓'],
+];
+function transOpcionesHTML(textoNinguna, sel) {
+  return `<option value="none"${!sel || sel === 'none' ? ' selected' : ''}>${textoNinguna}</option>` +
+    TRANS_TIPOS.map(([v, l]) => `<option value="${v}"${sel === v ? ' selected' : ''}>${l}</option>`).join('');
+}
+function setTrackAjuste(idx, v) {
+  S.tracks[idx].ajuste = ['auto','encajar','llenar','estirar'].includes(v) ? v : 'auto';
+  syncXov();
+}
+function setTrackTrans(idx, campo, v) {
+  const t = S.tracks[idx];
+  if (campo === 'in') t.transIn = v || 'none';
+  else if (campo === 'out') t.transOut = v || 'none';
+  else if (campo === 'dur') {
+    t.transDur = Math.max(0.1, Math.min(3, parseFloat(v) || 0.5));
+    const l = document.getElementById('trdur-v'); if (l) l.textContent = t.transDur.toFixed(1) + ' s';
+  }
+}
 
 /* ═══════════════════════════════════════════════════════
    TIMELINE — Zoom + Scroll + 4-track rows + drag handles
@@ -5178,7 +5619,13 @@ let lastZd = { zdx:0, zdy:0, zdw:1280, zdh:720 };
 const efxXform = () => S.efxs.find(e => e.type === 'xform');
 
 function xovXf()       { return xovMode === 'track' ? (S.tracks[S.ati] ? curXform(S.tracks[S.ati]) : null) : xovMode === 'global' ? efxXform() : null; }
-function xovBaseRect() { return xovMode === 'track' ? [lastZd.zdx, lastZd.zdy, lastZd.zdw, lastZd.zdh] : [0, 0, cvs.width, cvs.height]; }
+function xovBaseRect() {
+  if (xovMode !== 'track') return [0, 0, cvs.width, cvs.height];
+  /* La caja de la fuente principal sigue su AJUSTE (encajada, recortada…) */
+  const t = S.tracks[S.ati], l = t && curLayer(t);
+  if (t && l && l.kind === 'media') return rectMedia(t, lastZd.zdx, lastZd.zdy, lastZd.zdw, lastZd.zdh);
+  return [lastZd.zdx, lastZd.zdy, lastZd.zdw, lastZd.zdh];
+}
 function xovReady()    { if (xovMode === 'track') { const t = S.tracks[S.ati]; if (!t) return false; const l = curLayer(t); return l && l.kind !== 'media' ? true : !!t.loaded; } return xovMode === 'global'; }
 
 function toggleTrackBoxEdit()  { xovMode = xovMode === 'track'  ? null : 'track';  syncXov(); }
@@ -5462,7 +5909,8 @@ function canvasPointFromEvent(e) {
    Siempre la capa MEDIA, sin importar qué capa esté seleccionada para el
    transform: borrador/corte tapan "el video", no una capa cualquiera. */
 function trackMediaUV(t, p) {
-  const rect = trackXformRect(lastZd.zdx, lastZd.zdy, lastZd.zdw, lastZd.zdh, t.xform);
+  const [bx, by, bw, bh] = rectMedia(t, lastZd.zdx, lastZd.zdy, lastZd.zdw, lastZd.zdh);
+  const rect = trackXformRect(bx, by, bw, bh, t.xform);
   if (!rect.dw || !rect.dh) return null;
   return { u:(p.x-rect.dx)/rect.dw, v:(p.y-rect.dy)/rect.dh, rect };
 }
@@ -5911,11 +6359,15 @@ const TX = { out:_mkCh(), in:_mkCh() };
 function startTX(chan, type, dur, onComplete) {
   if (!type || type==='none') { onComplete?.(); return; }
   const ch   = TX[chan];
+  /* Si el canal ya esperaba para hacer algo (un cambio de fuente, apagar un
+     clip), no se pierde: corre también al terminar la nueva. Antes la
+     segunda pisaba a la primera y ese clip no se apagaba nunca. */
+  const previo = ch.active ? ch.onComplete : null;
   ch.active  = true;
   ch.type    = type;
   ch.dur     = Math.max(0.05, dur??0.5);
   ch.t0      = performance.now();
-  ch.onComplete = onComplete || null;
+  ch.onComplete = previo && onComplete ? () => { previo(); onComplete(); } : (onComplete || previo || null);
 }
 
 /* Compatibilidad con llamadas antiguas: startTrans → usa canal 'in' o 'out' según tipo */
@@ -5990,9 +6442,14 @@ function renderTransition(W, H) {
 /* ── Capa MEDIA de una pista: la fuente principal (archivo / galería /
    en vivo) con toda la lógica de clips, reversa y buffers. Era el cuerpo
    del bucle de pistas del render loop; ahora es una capa más. ── */
-function drawTrackMedia(t, ti, zdx, zdy, zdw, zdh, mH, mV, rgb) {
+function drawTrackMedia(t, ti, zdx0, zdy0, zdw0, zdh0, mH, mV, rgb) {
     const tf = trackFrame[ti];
     const W = cvs.width, H = cvs.height;
+    /* Rect base según el AJUSTE de la fuente (p. ej. un teléfono vertical
+       queda vertical dentro de la salida horizontal) y opacidad con el
+       fundido de transición en curso. */
+    const [zdx, zdy, zdw, zdh] = rectMedia(t, zdx0, zdy0, zdw0, zdh0);
+    const opa = t.opacity * factorFundido(t);
     /* ── Out-of-range check: if masterTime is outside this track's video window → black ──
        When a clip is active it manages its own playback, so skip this check for active clips.
        For idle tracks (no active clip), show black if cursor is outside videoOffset…videoOffset+dur */
@@ -6024,7 +6481,7 @@ function drawTrackMedia(t, ti, zdx, zdy, zdw, zdh, mH, mV, rgb) {
         }
       }
 
-      ctx.globalAlpha = t.opacity;
+      ctx.globalAlpha = opa;
       { const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
         drawTrackWarped(vprocApply(t, lv), tr.dx, tr.dy, tr.dw, tr.dh, t.xform, false, false, trackGridOn && ti===S.ati, {crop:t._cropRect, erase:t._eraseMask}); }
       ctx.globalAlpha = 1;
@@ -6036,7 +6493,7 @@ function drawTrackMedia(t, ti, zdx, zdy, zdw, zdh, mH, mV, rgb) {
                     (S.masterTime >= vo && S.masterTime <= vo + t.dur);
     if (!inRange) { tf.hasFrame=false; return; }
 
-    ctx.globalAlpha = t.opacity;
+    ctx.globalAlpha = opa;
 
     const c      = t.activeClip;
     const inRev  = c && (c.loopMode==='reverse' || (c.loopMode==='pingpong' && t.pingDir===-1));
@@ -6067,11 +6524,14 @@ function drawTrackMedia(t, ti, zdx, zdy, zdw, zdh, mH, mV, rgb) {
       if (rgb) {
         const off=rgb.offset||20;
         if (offCvs.width!==W||offCvs.height!==H){ offCvs.width=W; offCvs.height=H; }
+        /* offCvs se reutiliza: sin limpiarlo, una fuente encajada (con
+           bandas) dejaría ver el cuadro anterior en las bandas */
+        offCtx.clearRect(0,0,W,H);
         offCtx.drawImage(vsrc,zdx,zdy,zdw,zdh);
         ctx.globalCompositeOperation='screen';
-        ctx.save(); ctx.filter='saturate(6)'; ctx.globalAlpha=t.opacity*.7; ctx.drawImage(offCvs,-off,0); ctx.restore();
-        ctx.save(); ctx.filter='saturate(0) brightness(.4)'; ctx.globalAlpha=t.opacity*.5; ctx.drawImage(offCvs,0,0); ctx.restore();
-        ctx.save(); ctx.filter='hue-rotate(175deg) saturate(6)'; ctx.globalAlpha=t.opacity*.7; ctx.drawImage(offCvs,off,0); ctx.restore();
+        ctx.save(); ctx.filter='saturate(6)'; ctx.globalAlpha=opa*.7; ctx.drawImage(offCvs,-off,0); ctx.restore();
+        ctx.save(); ctx.filter='saturate(0) brightness(.4)'; ctx.globalAlpha=opa*.5; ctx.drawImage(offCvs,0,0); ctx.restore();
+        ctx.save(); ctx.filter='hue-rotate(175deg) saturate(6)'; ctx.globalAlpha=opa*.7; ctx.drawImage(offCvs,off,0); ctx.restore();
         ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1; ctx.filter='none';
       } else {
         const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
@@ -6087,6 +6547,27 @@ function drawTrackMedia(t, ti, zdx, zdy, zdw, zdh, mH, mV, rgb) {
       ctx.drawImage(tf.cvs, 0, 0);
     }
     ctx.globalAlpha=1;
+}
+
+/* ── AJUSTE de la fuente principal dentro de la salida ──
+   'estirar' = llena el lienzo deformando (lo de siempre); 'encajar' =
+   mantiene la proporción con bandas negras (un teléfono vertical queda
+   vertical dentro de la salida horizontal); 'llenar' = mantiene la
+   proporción y recorta lo que sobra. 'auto' = encajar para la cámara del
+   teléfono, estirar para el resto (así las sesiones de antes no cambian). */
+function modoAjuste(t) {
+  const a = t.ajuste || 'auto';
+  return a === 'auto' ? (t.sourceType === 'phone' ? 'encajar' : 'estirar') : a;
+}
+function rectMedia(t, zdx, zdy, zdw, zdh) {
+  const modo = modoAjuste(t);
+  if (modo === 'estirar') return [zdx, zdy, zdw, zdh];
+  const src = t.sourceType !== 'file' ? t.liveVid : t.vid;
+  const sw = src ? (src.videoWidth || 0) : 0, sh = src ? (src.videoHeight || 0) : 0;
+  if (!sw || !sh || !zdw || !zdh) return [zdx, zdy, zdw, zdh];
+  const k = modo === 'llenar' ? Math.max(zdw / sw, zdh / sh) : Math.min(zdw / sw, zdh / sh);
+  const w = sw * k, h = sh * k;
+  return [zdx + (zdw - w) / 2, zdy + (zdh - h) / 2, w, h];
 }
 
 /* ── Capas estáticas: color / imagen / video en loop / en vivo ── */
@@ -6245,6 +6726,9 @@ function loop() {
 
   /* ── Transitions overlay ── */
   renderTransition(W, H);
+
+  /* Fundido a negro de toda la salida (sólo se mueve por CC, ver CONTROLES) */
+  if (S.negro > 0.001) { ctx.globalAlpha = Math.min(1, S.negro); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
 
   pushToOut();
   if (S.frame%15===0) _syncMasterFromClips();
@@ -6881,6 +7365,7 @@ async function saveProject() {
     version:6, name,
     media: { folderHint: MEDIA.library?.rootName || '' },
     tracks: S.tracks.map(t=>({id:t.id,name:t.name,opacity:t.opacity,videoOffset:t.videoOffset||0,
+      ajuste:t.ajuste||'auto', transIn:t.transIn||'none', transOut:t.transOut||'none', transDur:t.transDur ?? 0.5,
       xform:{...t.xform},
       vproc:{...t.vproc},
       media:t.sourceType==='file' ? serializeMediaRef(t.mediaRef) : null,
@@ -6897,6 +7382,7 @@ async function saveProject() {
         xform:{ ...l.xform, pin:{ ...l.xform.pin } }, liveType:l.liveType||null, browserURL:l.browserURL||'',
         media:serializeMediaRef(l.mediaRef) }))})),
     efxs:   S.efxs.map(e=>({...e,on:false})),
+    ccMaps: S.ccMaps.map(m=>({ id:m.id, midi:m.midi, destino:m.destino, min:m.min, max:m.max, inv:!!m.inv, auto:m.auto!==false, origen:m.origen||null })),
     banks:  S.banks.map(b=>({...b})),
     outRes: {...S.outRes},
     mando:  await obtenerMandoLayoutActual(),
@@ -7111,6 +7597,7 @@ function netConnect() {
         return;
       }
       if (msg.type === 'presencia') { pintarPresenciaMandos(msg); return; }
+      if (msg.type === 'mapear-param') { mapearParamDesdeMando(msg); return; }
       if (msg.type === 'reemplazado') {
         appendNetLog('⚠ otra pestaña de MIDIVJ tomó la sala');
         setSt('st-net','otra instancia tomó la sala','act');
@@ -7740,7 +8227,11 @@ function publicarInventario() {
       id: c.id, nombre: 'T'+(t.i+1)+' · '+c.name, midi: c.midi
     }))),
     efectos: S.efxs.map(e => ({ id: e.id, nombre: e.name, midi: e.midi })),
-    bancos: S.banks.map((b,i) => ({ id: 'banco'+i, nombre: b.name, midi: b.midi }))
+    bancos: S.banks.map((b,i) => ({ id: 'banco'+i, nombre: b.name, midi: b.midi })),
+    /* Para los sliders, palancas y pads del mando: qué se puede mover y qué
+       CC mueve qué (el mando lo ofrece en su inspector, campo CONTROLA). */
+    parametros: paramCatalogo().map(p => ({ id: p.id, nombre: p.nombre, grupo: p.grupo })),
+    mapeos: S.ccMaps.filter(m => m.midi !== null).map(m => ({ midi: m.midi, destino: m.destino }))
   };
   const firma = JSON.stringify(payload);
   if (firma === _mandoInvPrev) return;   // nada cambió: no saturamos la red
