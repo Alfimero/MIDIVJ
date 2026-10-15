@@ -123,6 +123,39 @@ body.mapeando .pad{outline:1px dashed var(--accent2);outline-offset:-3px;}
 body.editando .pad{outline:1px dashed var(--border2);outline-offset:-3px;}
 body.editando .pad.sel-edit{outline:2px solid var(--accent2);outline-offset:-2px;}
 
+/* ── Controles continuos: slider, palanca (joystick) y pad XY ──
+   El relleno y la marca usan el color de TEXTO del control, así se
+   personalizan desde el mismo inspector que los botones. */
+.pad.ctl{touch-action:none;padding:0;cursor:default;}
+.pad.ctl .txt{position:absolute;left:6px;top:4px;z-index:3;font-size:.8em;opacity:.9;pointer-events:none;}
+.ctl-val{position:absolute;right:5px;bottom:3px;z-index:3;font-family:var(--mono);font-size:9px;opacity:.8;pointer-events:none;}
+.ctl-fill{position:absolute;left:0;bottom:0;width:100%;height:0;background:currentColor;opacity:.28;pointer-events:none;}
+.ctl-linea{position:absolute;left:0;width:100%;height:3px;background:currentColor;box-shadow:0 0 8px currentColor;pointer-events:none;}
+.ctl-slider.horiz .ctl-fill{top:0;bottom:auto;height:100%;width:0;}
+.ctl-slider.horiz .ctl-linea{top:0;width:3px;height:100%;}
+.ctl-cruz-h,.ctl-cruz-v{position:absolute;background:currentColor;opacity:.35;pointer-events:none;}
+.ctl-cruz-h{left:0;width:100%;height:1px;}
+.ctl-cruz-v{top:0;height:100%;width:1px;}
+.ctl-punto{
+  position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
+  background:currentColor;box-shadow:0 0 14px currentColor;opacity:.9;pointer-events:none;
+}
+/* La palanca se mide en cqmin (lado menor de su celda): el círculo ocupa el
+   80% y el punto viaja dentro de él, sea la celda cuadrada o no. */
+.ctl-base{
+  position:absolute;left:50%;top:50%;width:80cqmin;height:80cqmin;border-radius:50%;
+  border:2px solid currentColor;opacity:.35;transform:translate(-50%,-50%);pointer-events:none;
+}
+.ctl-palanca .ctl-punto{width:30cqmin;height:30cqmin;margin:0;transform:translate(-50%,-50%);}
+.pad.ctl.tocando{filter:brightness(1.25);}
+/* En modo MAPEAR los controles de dos ejes se parten en X | Y: cada mitad
+   manda sólo su CC, para que MIDIVJ aprenda un eje a la vez. */
+.ctl-map{display:none;position:absolute;top:0;bottom:0;width:50%;z-index:4;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;font-size:15px;background:rgba(0,194,255,.14);color:var(--accent2);}
+.ctl-map.x{left:0;border-right:1px dashed var(--accent2);}
+.ctl-map.y{right:0;}
+body.mapeando .ctl-map{display:flex;}
+
 /* Formas */
 .pad.rect{border-radius:2px;}
 .pad.pastilla{border-radius:999px;}
@@ -236,8 +269,9 @@ legend{font-family:var(--mono);font-size:9px;color:var(--text3);padding:0 5px;}
 <div id="tabs"></div>
 
 <div id="barra-edit">
-  <label>FILAS <input type="number" id="e-filas" min="1" max="10"></label>
-  <label>COLS <input type="number" id="e-cols" min="1" max="10"></label>
+  <label title="Filas de ESTE grupo: los demás grupos conservan las suyas">FILAS <input type="number" id="e-filas" min="1" max="10"></label>
+  <label title="Columnas de ESTE grupo: los demás grupos conservan las suyas">COLS <input type="number" id="e-cols" min="1" max="10"></label>
+  <span id="e-grupo-lbl" style="color:var(--accent)"></span>
   <span class="sep"></span>
   <label>SEP <input type="number" id="e-sep" min="0" max="40"></label>
   <label>RADIO <input type="number" id="e-radio" min="0" max="40"></label>
@@ -265,6 +299,43 @@ legend{font-family:var(--mono);font-size:9px;color:var(--text3);padding:0 5px;}
   <h3 id="insp-titulo">BOTÓN</h3>
 
   <fieldset>
+    <legend>tipo de control</legend>
+    <div class="fila">
+      <label class="ancho">CONTROL
+        <select id="i-control">
+          <option value="boton">Botón</option>
+          <option value="slider">Slider (fader)</option>
+          <option value="palanca">Palanca (joystick, vuelve al centro)</option>
+          <option value="xy">Pad XY (kaospad, se queda donde lo sueltas)</option>
+        </select>
+      </label>
+      <label id="i-wrap-orient">ORIENTACIÓN
+        <select id="i-orient">
+          <option value="auto">automática</option>
+          <option value="vertical">vertical</option>
+          <option value="horizontal">horizontal</option>
+        </select>
+      </label>
+    </div>
+    <p class="aviso" id="i-control-aviso">Un slider manda un CC de 0 a 127; la palanca y el pad XY mandan dos (eje X y eje Y). Agrándalos con ANCHO y ALTO.</p>
+  </fieldset>
+
+  <fieldset id="i-fs-param">
+    <legend>parámetro en MIDIVJ</legend>
+    <div class="fila">
+      <label class="ancho"><span id="i-txt-param-x">CONTROLA</span>
+        <select id="i-param-x"></select>
+      </label>
+    </div>
+    <div class="fila" id="i-fila-param-y">
+      <label class="ancho">EJE Y CONTROLA
+        <select id="i-param-y"></select>
+      </label>
+    </div>
+    <p class="aviso" id="i-param-aviso"></p>
+  </fieldset>
+
+  <fieldset id="i-fs-texto">
     <legend>texto y destino</legend>
     <div class="fila">
       <label class="ancho">ETIQUETA
@@ -274,7 +345,7 @@ legend{font-family:var(--mono);font-size:9px;color:var(--text3);padding:0 5px;}
         <button class="tbtn" id="i-sugerir" title="Usar el nombre del clip, efecto o banco al que apunta el mensaje">✨ SUGERIR</button>
       </label>
     </div>
-    <div class="fila">
+    <div class="fila" id="i-fila-destino">
       <label class="ancho">DESTINO EN MIDIVJ
         <select id="i-destino"></select>
       </label>
@@ -282,7 +353,7 @@ legend{font-family:var(--mono);font-size:9px;color:var(--text3);padding:0 5px;}
     <p class="aviso" id="i-destino-aviso"></p>
   </fieldset>
 
-  <fieldset>
+  <fieldset id="i-fs-accion">
     <legend>qué hace el botón</legend>
     <div class="fila">
       <label>ACCIÓN
@@ -305,10 +376,11 @@ legend{font-family:var(--mono);font-size:9px;color:var(--text3);padding:0 5px;}
       <label>TIPO
         <select id="i-clase"><option value="nota">Nota</option><option value="cc">CC</option></select>
       </label>
-      <label>Nº <input type="number" id="i-num" min="0" max="127"></label>
+      <label><span id="i-txt-num">Nº</span> <input type="number" id="i-num" min="0" max="127"></label>
+      <label id="i-wrap-num-y">CC EJE Y <input type="number" id="i-num-y" min="0" max="127"></label>
       <label>&nbsp;<button class="tbtn" id="i-libre" title="Tomar un mensaje que no use ningún otro botón">🎲 LIBRE</button></label>
       <label>CANAL <input type="number" id="i-canal" min="1" max="16"></label>
-      <label>MODO
+      <label id="i-wrap-modo">MODO
         <select id="i-modo">
           <option value="pulso">Pulso (on+off)</option>
           <option value="hold">Mantener</option>
@@ -316,7 +388,7 @@ legend{font-family:var(--mono);font-size:9px;color:var(--text3);padding:0 5px;}
         </select>
       </label>
     </div>
-    <p class="aviso">En MIDIVJ pulsa <b>MAP</b> en el clip, efecto o banco y luego toca este botón: queda mapeado igual que un controlador físico. Cada botón nace con un mensaje libre, así que normalmente no hay que tocar estos campos.</p>
+    <p class="aviso" id="i-midi-aviso">En MIDIVJ pulsa <b>MAP</b> en el clip, efecto o banco y luego toca este botón: queda mapeado igual que un controlador físico. Cada botón nace con un mensaje libre, así que normalmente no hay que tocar estos campos.</p>
     <p class="aviso" id="i-choque" style="color:#ff3366;display:none"></p>
   </fieldset>
 
@@ -361,7 +433,7 @@ legend{font-family:var(--mono);font-size:9px;color:var(--text3);padding:0 5px;}
     </div>
   </fieldset>
 
-  <fieldset>
+  <fieldset id="i-fs-submenu">
     <legend>submenú de efectos</legend>
     <div class="fila">
       <label class="ancho">AL DISPARAR, ABRIR
@@ -454,7 +526,7 @@ const M = {
   slot: null,
   maxMandos: 4,
   layout: null,
-  inventario: { clips: [], efectos: [], bancos: [] },
+  inventario: { clips: [], efectos: [], bancos: [], parametros: null, mapeos: [] },
   paginaId: null,
   paginaPrevia: null,      // a dónde volver al cerrar el submenú
   esperandoFin: null,      // { midiId, retorno, temporizador }
@@ -464,6 +536,7 @@ const M = {
   bloqueado: false,       // el relay negó el slot: no reintentar solo
   botonEdit: null,
   activos: new Set(),      // ids de botones en estado "encendido" (hold/toggle)
+  valores: new Map(),      // id de control → { x, y } en 0..1 (posición de sliders, palancas y pads)
   reintento: 0,
   timerReintento: 0
 };
@@ -541,8 +614,14 @@ function recibir(msg) {
       break;
 
     case 'inventario':
-      M.inventario = { clips: msg.clips || [], efectos: msg.efectos || [], bancos: msg.bancos || [] };
-      if ($('inspector').classList.contains('vis')) llenarDestinos();
+      /* parametros = null: la app es de antes de los controles continuos y no
+         sabe mapear un CC a un parámetro desde aquí (se usa su MAP). */
+      M.inventario = {
+        clips: msg.clips || [], efectos: msg.efectos || [], bancos: msg.bancos || [],
+        parametros: Array.isArray(msg.parametros) ? msg.parametros : null,
+        mapeos: Array.isArray(msg.mapeos) ? msg.mapeos : []
+      };
+      if ($('inspector').classList.contains('vis')) { llenarDestinos(); llenarParametros(); }
       break;
 
     case 'presencia':
@@ -604,17 +683,21 @@ function mostrarBloqueo(slot, ocupados) {
    INTRO" en la pastilla en vez de un nombre de nota suelto, y se distingue
    de un controlador físico. El campo es opcional y el relay lo reenvía tal
    cual, así que ningún cliente viejo se entera. */
-function enviarMIDI(bytes, boton) {
+function enviarMIDI(bytes, boton, eje) {
   if (!M.ws || M.ws.readyState !== 1) { toast('sin conexión'); return false; }
   const paquete = { type: 'midi', data: bytes };
   if (boton) {
+    /* Los controles de dos ejes llevan "X"/"Y" en la etiqueta: así la
+       pastilla de MIDIVJ dice "M1·PAD Y" y no se confunden los dos CC. */
+    const sufijo = eje && esControl2D(boton) ? ' ' + eje.toUpperCase() : '';
     paquete.origen = {
       mando: M.slot || 0,
       boton: boton.id,
-      etiqueta: boton.etiqueta || '',
+      etiqueta: ((boton.etiqueta || (esControl(boton) ? boton.control.toUpperCase() : '')) + sufijo).trim(),
       fila: boton.fila + 1,
       col: boton.col + 1
     };
+    if (eje) paquete.origen.eje = eje;
   }
   M.ws.send(JSON.stringify(paquete));
   return true;
@@ -648,6 +731,16 @@ function midiDesdeId(id, canal = 1) {
 function pagina(id) { return M.layout?.paginas.find(p => p.id === id) || null; }
 function paginaActual() { return pagina(M.paginaId) || M.layout?.paginas[0] || null; }
 
+/* Filas y columnas de un grupo. Cada grupo puede tener las suyas; los que
+   no las tienen (layouts de antes) usan las generales de la rejilla. */
+function dimsDe(pg) {
+  const r = M.layout.rejilla;
+  return {
+    filas: pg && pg.filas >= 1 ? pg.filas : r.filas,
+    columnas: pg && pg.columnas >= 1 ? pg.columnas : r.columnas
+  };
+}
+
 function guardarLayout() {
   if (!M.layout) return;
   M.layout.actualizado = Date.now();
@@ -664,7 +757,7 @@ function guardarLayout() {
 function botonesDeCuadricula(pg) {
   /* Devuelve la matriz completa: cada celda de la rejilla tiene botón,
      aunque esté vacío, para poder tocarla y configurarla. */
-  const { filas, columnas } = M.layout.rejilla;
+  const { filas, columnas } = dimsDe(pg);
   const usados = new Set();
   const mapa = new Map();
   for (const b of pg.botones) mapa.set(b.fila + ':' + b.col, b);
@@ -717,6 +810,8 @@ function mensajesDeBotones() {
     for (const b of (p.botones || [])) {
       const m = b.accion && b.accion.midi;
       if (m) usados.add(clave(m.clase, m.num));
+      const my = b.accion && b.accion.midiY;
+      if (my && esControl2D(b)) usados.add(clave('cc', my.num));
     }
   }
   return usados;
@@ -751,12 +846,34 @@ function mensajeLibre() {
   return buscar(union) || buscar(deBotones) || { clase: 'nota', num: 0, canal: 1, modo: 'pulso', valor: 127 };
 }
 
+/* CC libre para un slider, palanca o pad: sólo CC (llevan un valor de 0 a
+   127, una nota no sirve) y empezando en el 20, el rango que el estándar
+   MIDI deja sin asignar. `evitar` = CC que ya tomó el otro eje del mismo
+   control. */
+function ccLibre(evitar = []) {
+  const deBotones = mensajesDeBotones();
+  const deApp = mensajesDeMIDIVJ();
+  const extra = new Set(evitar.map(n => clave('cc', n)));
+  const orden = [];
+  for (let n = 20; n <= 127; n++) orden.push(n);
+  for (let n = 0; n < 20; n++) orden.push(n);
+  const buscar = evita => orden.find(n => !evita.has(clave('cc', n)) && !extra.has(clave('cc', n)));
+  const num = buscar(new Set([...deBotones, ...deApp])) ?? buscar(deBotones) ?? 20;
+  return { clase: 'cc', num, canal: 1, modo: 'pulso', valor: 127 };
+}
+
 /* Layouts creados antes de este cambio (o celdas sin tocar) traen botones sin
    mensaje: se los damos al vuelo para que se puedan mapear. */
 function asegurarMensajes() {
   let cambios = 0;
   for (const p of (M.layout?.paginas || [])) {
     for (const b of (p.botones || [])) {
+      /* Un control de dos ejes sin CC para el eje Y (llegó así de otro
+         dispositivo o de un layout recortado) recibe uno libre. */
+      if (esControl2D(b) && b.accion && b.accion.midi && !b.accion.midiY) {
+        b.accion.midiY = ccLibre([b.accion.midi.num]);
+        cambios++;
+      }
       if (b.tocado) continue;                       // configurado a mano: no se toca
       if (b.accion && b.accion.tipo !== 'nada') continue;
       if (b.accion && b.accion.midi) continue;
@@ -797,12 +914,13 @@ function pintarRejilla() {
   if (!pg) return;
   M.celdasNuevas = 0;
   const rej = M.layout.rejilla;
-  cont.style.gridTemplateColumns = `repeat(${rej.columnas}, 1fr)`;
-  cont.style.gridTemplateRows = `repeat(${rej.filas}, 1fr)`;
+  const dim = dimsDe(pg);
+  cont.style.gridTemplateColumns = `repeat(${dim.columnas}, 1fr)`;
+  cont.style.gridTemplateRows = `repeat(${dim.filas}, 1fr)`;
   cont.style.gap = rej.separacion + 'px';
 
   for (const b of botonesDeCuadricula(pg)) {
-    if (b.fila >= rej.filas || b.col >= rej.columnas) continue;
+    if (b.fila >= dim.filas || b.col >= dim.columnas) continue;
     cont.appendChild(elementoBoton(b));
   }
 
@@ -812,7 +930,9 @@ function pintarRejilla() {
 }
 
 function elementoBoton(b) {
+  if (esControl(b)) return elementoControl(b);
   const el = document.createElement('div');
+  el.dataset.id = b.id;
   const vacio = b.accion.tipo === 'nada' && !b.etiqueta && !b.imagen;
   el.className = 'pad ' + b.forma + (vacio ? ' vacio' : '') +
     (b.imagen ? ' con-imagen' : '') +
@@ -865,6 +985,226 @@ function elementoBoton(b) {
   return el;
 }
 
+/* ── Controles continuos: slider, palanca y pad XY ───────
+   Mandan CC con valor de 0 a 127 en vez de nota on/off. MIDIVJ los recibe
+   por la misma ruta que un fader físico y los aplica al parámetro mapeado
+   en su ventana 🎛 CONTROLES (zoom, opacidad, posición, intensidad…). */
+
+function esControl(b) { return !!b && !!b.control && b.control !== 'boton'; }
+function esControl2D(b) { return !!b && (b.control === 'palanca' || b.control === 'xy'); }
+
+/* Vertical salvo que el control sea más ancho que alto (o se fije a mano) */
+function orientacionDe(b) {
+  if (b.orientacion === 'vertical' || b.orientacion === 'horizontal') return b.orientacion;
+  return (b.ancho || 1) > (b.alto || 1) ? 'horizontal' : 'vertical';
+}
+
+function valorDe(b) {
+  const v = M.valores.get(b.id);
+  if (v) return v;
+  return b.control === 'slider' ? { x: 0, y: 0 } : { x: 0.5, y: 0.5 };
+}
+
+/* La posición de cada control sobrevive a recargar la página: así el mando
+   no "salta" a 0 la primera vez que se toca después de un refresco. */
+const CLAVE_VALORES = 'midivj-mando-valores';
+try {
+  const guardados = JSON.parse(localStorage.getItem(CLAVE_VALORES) || '{}');
+  for (const [id, v] of Object.entries(guardados)) {
+    if (v && Number.isFinite(v.x) && Number.isFinite(v.y)) M.valores.set(id, { x: v.x, y: v.y });
+  }
+} catch (_) {}
+let timerValores = 0;
+function guardarValoresPronto() {
+  clearTimeout(timerValores);
+  timerValores = setTimeout(() => {
+    try { localStorage.setItem(CLAVE_VALORES, JSON.stringify(Object.fromEntries(M.valores))); } catch (_) {}
+  }, 400);
+}
+
+function elementoControl(b) {
+  const el = document.createElement('div');
+  el.dataset.id = b.id;
+  const horiz = b.control === 'slider' && orientacionDe(b) === 'horizontal';
+  el.className = 'pad ctl ctl-' + b.control + ' ' + b.forma + (horiz ? ' horiz' : '') +
+    (b.imagen ? ' con-imagen' : '') + (b.ajusteImagen === 'contain' ? ' contain' : '') +
+    (b.brillo ? ' brillo' : '') +
+    (M.editando && M.botonEdit?.id === b.id ? ' sel-edit' : '');
+  /* Sin animaciones: un control que gira o late bajo el dedo no se puede usar */
+  el.style.gridArea = `${b.fila + 1} / ${b.col + 1} / span ${b.alto || 1} / span ${b.ancho || 1}`;
+  el.style.background = b.color;
+  el.style.color = b.colorTexto;
+  el.style.borderColor = b.borde;
+  el.style.fontSize = M.layout.rejilla.fuente + 'px';
+  if (M.layout.rejilla.radio && b.forma === 'redondo') el.style.borderRadius = M.layout.rejilla.radio + 'px';
+  if (b.imagen) el.style.backgroundImage = `url("${b.imagen}")`;
+  if (b.control === 'palanca') el.style.containerType = 'size';
+
+  const capa = cls => { const d = document.createElement('div'); d.className = cls; el.appendChild(d); return d; };
+  if (b.control === 'slider') {
+    capa('ctl-fill'); capa('ctl-linea');
+  } else {
+    if (b.control === 'palanca') capa('ctl-base');
+    capa('ctl-cruz-h'); capa('ctl-cruz-v'); capa('ctl-punto');
+  }
+
+  const txt = document.createElement('span');
+  txt.className = 'txt';
+  txt.textContent = b.etiqueta || (M.editando ? b.control.toUpperCase() : '');
+  el.appendChild(txt);
+
+  const val = document.createElement('span');
+  val.className = 'ctl-val';
+  el.appendChild(val);
+
+  const a = b.accion || {};
+  if (a.midi) {
+    const marca = document.createElement('span');
+    marca.className = 'marca';
+    marca.textContent = 'CC' + a.midi.num + (esControl2D(b) && a.midiY ? '·' + a.midiY.num : '');
+    marca.style.display = (M.editando || M.mapeando) ? '' : 'none';
+    el.appendChild(marca);
+  }
+  if (esControl2D(b)) {
+    for (const eje of ['x', 'y']) {
+      const m = document.createElement('span');
+      m.className = 'ctl-map ' + eje;
+      m.textContent = eje.toUpperCase();
+      el.appendChild(m);
+    }
+  }
+
+  pintarValorControl(el, b);
+  conectarControl(el, b);
+  return el;
+}
+
+function pintarValorControl(el, b) {
+  const v = valorDe(b);
+  const q = sel => el.querySelector(sel);
+  if (b.control === 'slider') {
+    const pct = (v.x * 100).toFixed(2) + '%';
+    if (orientacionDe(b) === 'horizontal') {
+      q('.ctl-fill').style.width = pct;
+      q('.ctl-linea').style.left = `calc(${pct} - 1.5px)`;
+    } else {
+      q('.ctl-fill').style.height = pct;
+      q('.ctl-linea').style.top = `calc(${(100 - v.x * 100).toFixed(2)}% - 1.5px)`;
+    }
+    q('.ctl-val').textContent = Math.round(v.x * 127);
+    return;
+  }
+  /* Palanca: el punto se mueve dentro del círculo (80% del lado menor) */
+  const izq = b.control === 'palanca' ? `calc(50% + ${((v.x - 0.5) * 80).toFixed(2)}cqmin)` : (v.x * 100).toFixed(2) + '%';
+  const arr = b.control === 'palanca' ? `calc(50% - ${((v.y - 0.5) * 80).toFixed(2)}cqmin)` : ((1 - v.y) * 100).toFixed(2) + '%';
+  q('.ctl-punto').style.left = izq;
+  q('.ctl-punto').style.top = arr;
+  q('.ctl-cruz-v').style.left = izq;
+  q('.ctl-cruz-h').style.top = arr;
+  q('.ctl-val').textContent = Math.round(v.x * 127) + '·' + Math.round(v.y * 127);
+}
+
+/* Posición del dedo → valor 0..1 de cada eje (Y crece hacia arriba) */
+function posicionDe(el, b, ev) {
+  const r = el.getBoundingClientRect();
+  const lim = n => Math.max(0, Math.min(1, n));
+  const px = (ev.clientX - r.left) / (r.width || 1);
+  const py = (ev.clientY - r.top) / (r.height || 1);
+  if (b.control === 'slider') {
+    const x = orientacionDe(b) === 'horizontal' ? lim(px) : lim(1 - py);
+    return { x, y: 0 };
+  }
+  if (b.control === 'xy') return { x: lim(px), y: lim(1 - py) };
+  /* Palanca: desvío desde el centro, recortado al círculo */
+  const radio = Math.min(r.width, r.height) * 0.4 || 1;
+  let dx = (ev.clientX - (r.left + r.width / 2)) / radio;
+  let dy = ((r.top + r.height / 2) - ev.clientY) / radio;
+  const largo = Math.hypot(dx, dy);
+  if (largo > 1) { dx /= largo; dy /= largo; }
+  return { x: 0.5 + dx / 2, y: 0.5 + dy / 2 };
+}
+
+/* Envío con freno: un dedo genera más de 100 movimientos por segundo y no
+   hace falta mandarlos todos. Sale como mucho uno cada 16 ms por eje (más
+   el último, para que el valor final siempre llegue) y nunca un valor
+   repetido, salvo que se fuerce (modo MAPEAR, palanca que vuelve al centro). */
+const enviosCC = new Map();
+function enviarCC(b, eje, v01, forzar) {
+  const midi = eje === 'y' ? b.accion?.midiY : b.accion?.midi;
+  if (!midi) return;
+  const valor = Math.round(Math.max(0, Math.min(1, v01)) * 127);
+  const k = b.id + ':' + eje;
+  let e = enviosCC.get(k);
+  if (!e) enviosCC.set(k, e = { enviado: -1, pendiente: null, timer: 0, ts: 0 });
+  if (forzar) e.enviado = -1;
+  e.pendiente = valor;
+  const salir = () => {
+    e.timer = 0;
+    if (e.pendiente === null || e.pendiente === e.enviado) { e.pendiente = null; return; }
+    const canal = Math.max(0, Math.min(15, (midi.canal || 1) - 1));
+    if (enviarMIDI([0xB0 | canal, midi.num, e.pendiente], b, eje)) e.enviado = e.pendiente;
+    e.pendiente = null;
+    e.ts = performance.now();
+  };
+  const espera = 16 - (performance.now() - e.ts);
+  if (espera <= 0 || forzar) { clearTimeout(e.timer); salir(); }
+  else if (!e.timer) e.timer = setTimeout(salir, espera);
+}
+
+function fijarValor(el, b, v, forzar) {
+  M.valores.set(b.id, v);
+  pintarValorControl(el, b);
+  enviarCC(b, 'x', v.x, forzar);
+  if (esControl2D(b)) enviarCC(b, 'y', v.y, forzar);
+  guardarValoresPronto();
+}
+
+function conectarControl(el, b) {
+  let puntero = null;
+
+  el.addEventListener('pointerdown', ev => {
+    ev.preventDefault();
+    if (M.editando) { abrirInspector(b); return; }
+    if (M.mapeando) { mapearControl(el, b, ev); return; }
+    if (puntero !== null) return;              // ya lo mueve otro dedo
+    puntero = ev.pointerId;
+    /* Con la captura el control sigue al dedo aunque salga de su celda */
+    try { el.setPointerCapture(ev.pointerId); } catch (_) {}
+    el.classList.add('tocando');
+    if (navigator.vibrate) navigator.vibrate(8);
+    fijarValor(el, b, posicionDe(el, b, ev));
+  });
+  el.addEventListener('pointermove', ev => {
+    if (ev.pointerId !== puntero) return;
+    fijarValor(el, b, posicionDe(el, b, ev));
+  });
+  const soltar = ev => {
+    if (ev.pointerId !== puntero) return;
+    puntero = null;
+    el.classList.remove('tocando');
+    /* La palanca vuelve al centro como un joystick; el slider y el pad XY
+       se quedan donde se soltaron. */
+    if (b.control === 'palanca') fijarValor(el, b, { x: 0.5, y: 0.5 }, true);
+  };
+  el.addEventListener('pointerup', soltar);
+  el.addEventListener('pointercancel', soltar);
+  el.addEventListener('contextmenu', ev => ev.preventDefault());
+}
+
+/* Modo MAPEAR: tocar manda sólo el CC del eje tocado (mitad izquierda = X,
+   derecha = Y), con su valor actual, para que el MAP de MIDIVJ lo aprenda. */
+function mapearControl(el, b, ev) {
+  let eje = 'x';
+  if (esControl2D(b)) {
+    const r = el.getBoundingClientRect();
+    eje = ev.clientX - r.left < r.width / 2 ? 'x' : 'y';
+  }
+  const v = valorDe(b);
+  enviarCC(b, eje, eje === 'y' ? v.y : v.x, true);
+  const midi = eje === 'y' ? b.accion?.midiY : b.accion?.midi;
+  $('mapeo-ultimo').textContent = 'enviado ' + nombreMensaje(midi) + (esControl2D(b) ? ' (eje ' + eje.toUpperCase() + ')' : '');
+}
+
 /* ── Interacción ──────────────────────────────────────── */
 
 function conectarBoton(el, b) {
@@ -914,10 +1254,10 @@ function accionAbajo(b) {
   if (modo === 'toggle') {
     if (M.activos.has(b.id)) { enviarMIDI(bytesOff(a.midi), b); M.activos.delete(b.id); }
     else { enviarMIDI(bytesOn(a.midi), b); M.activos.add(b.id); }
-    pintarRejilla();
+    pintarActivo(b);
   } else {
     enviarMIDI(bytesOn(a.midi), b);
-    if (modo === 'hold') { M.activos.add(b.id); pintarRejilla(); }
+    if (modo === 'hold') { M.activos.add(b.id); pintarActivo(b); }
   }
 
   /* Submenú: el botón lanza su clip y este mando salta al grupo de efectos */
@@ -936,8 +1276,15 @@ function accionArriba(b) {
   } else if (modo === 'hold') {
     enviarMIDI(bytesOff(a.midi), b);
     M.activos.delete(b.id);
-    pintarRejilla();
+    pintarActivo(b);
   }
+}
+
+/* Encendido/apagado de un botón sin rehacer la rejilla: rehacerla cortaría
+   un slider o una palanca que otro dedo esté moviendo en ese momento. */
+function pintarActivo(b) {
+  const el = document.querySelector(`#rejilla [data-id="${b.id}"]`);
+  if (el) el.classList.toggle('activo', M.activos.has(b.id));
 }
 
 function irAPagina(id, esSubmenu) {
@@ -1041,8 +1388,11 @@ $('btn-volver').onclick = volverDelSubmenu;
 
 function sincronizarBarraEdit() {
   const r = M.layout.rejilla;
-  $('e-filas').value = r.filas;
-  $('e-cols').value = r.columnas;
+  const pg = paginaActual();
+  const dim = dimsDe(pg);
+  $('e-filas').value = dim.filas;
+  $('e-cols').value = dim.columnas;
+  $('e-grupo-lbl').textContent = pg ? '· ' + pg.nombre : '';
   $('e-sep').value = r.separacion;
   $('e-radio').value = r.radio;
   $('e-fuente').value = r.fuente;
@@ -1052,8 +1402,14 @@ function sincronizarBarraEdit() {
 ['e-filas', 'e-cols', 'e-sep', 'e-radio', 'e-fuente', 'e-tema'].forEach(id => {
   $(id).addEventListener('change', () => {
     const r = M.layout.rejilla;
-    r.filas = Math.max(1, Math.min(10, parseInt($('e-filas').value, 10) || r.filas));
-    r.columnas = Math.max(1, Math.min(10, parseInt($('e-cols').value, 10) || r.columnas));
+    /* Filas y columnas son del grupo que se está viendo: cambiar las de un
+       grupo ya no rehace la cuadrícula de los demás. */
+    const pg = paginaActual();
+    if (pg) {
+      const dim = dimsDe(pg);
+      pg.filas = Math.max(1, Math.min(10, parseInt($('e-filas').value, 10) || dim.filas));
+      pg.columnas = Math.max(1, Math.min(10, parseInt($('e-cols').value, 10) || dim.columnas));
+    }
     r.separacion = Math.max(0, Math.min(40, parseInt($('e-sep').value, 10) || 0));
     r.radio = Math.max(0, Math.min(40, parseInt($('e-radio').value, 10) || 0));
     r.fuente = Math.max(8, Math.min(40, parseInt($('e-fuente').value, 10) || r.fuente));
@@ -1071,6 +1427,7 @@ $('btn-grupo').onclick = () => {
     nombre: nombre.slice(0, 24).toUpperCase(),
     tipo: confirm('¿Es un grupo de EFECTOS?\n\nAceptar = efectos · Cancelar = principal') ? 'efectos' : 'principal',
     color: '#00c2ff',
+    ...dimsDe(paginaActual()),        // nace del tamaño del grupo que se estaba viendo
     botones: []
   };
   M.layout.paginas.push(p);
@@ -1159,7 +1516,7 @@ function elegirPlantilla(id, card) {
   /* "azar" genera una combinación nueva en cada toque: es la forma de pedir
      "otra" antes de decidirse a aplicarla. */
   plSeleccionada = id === 'azar'
-    ? PlantillasMando.azar(M.layout.rejilla.filas, M.layout.rejilla.columnas)
+    ? PlantillasMando.azar(dimsDe(paginaActual()).filas, dimsDe(paginaActual()).columnas)
     : PlantillasMando.lista.find(p => p.id === id);
   if (!plSeleccionada) return;
   document.querySelectorAll('.pl-card').forEach(c => c.classList.remove('sel'));
@@ -1170,12 +1527,13 @@ function elegirPlantilla(id, card) {
 
 function pintarPreviaPlantilla() {
   const rej = M.layout.rejilla;
+  const dim = dimsDe(paginaActual());
   const cont = $('pl-previa');
   const grid = document.createElement('div');
   grid.id = 'pl-previa-grid';
-  grid.style.gridTemplateColumns = `repeat(${rej.columnas}, 1fr)`;
-  grid.style.gridTemplateRows = `repeat(${rej.filas}, 1fr)`;
-  const m = PlantillasMando.matriz(plSeleccionada, rej.filas, rej.columnas);
+  grid.style.gridTemplateColumns = `repeat(${dim.columnas}, 1fr)`;
+  grid.style.gridTemplateRows = `repeat(${dim.filas}, 1fr)`;
+  const m = PlantillasMando.matriz(plSeleccionada, dim.filas, dim.columnas);
   for (const fila of m) for (const celda of fila) {
     const d = document.createElement('div');
     d.style.background = celda.color;
@@ -1196,13 +1554,13 @@ $('pl-aplicar').onclick = () => {
   if (!plSeleccionada) return;
   const todasPaginas = $('pl-todas-paginas').checked;
   const opciones = { forma: $('pl-forma').checked };
-  const rej = M.layout.rejilla;
   const destino = todasPaginas ? M.layout.paginas : [paginaActual()].filter(Boolean);
   if (!destino.length) return;
   if (!confirm(`¿Aplicar "${plSeleccionada.nombre}" a ${todasPaginas ? 'todos los grupos' : 'este grupo'}?\n\nCambia colores${opciones.forma ? ', formas' : ''} y animaciones. Etiquetas, imágenes y mensajes MIDI no se tocan.`)) return;
   for (const pg of destino) {
     botonesDeCuadricula(pg);           // asegura que existan todas las celdas
-    PlantillasMando.aplicar(plSeleccionada, pg, rej.filas, rej.columnas, opciones);
+    const dim = dimsDe(pg);            // cada grupo con su propio tamaño
+    PlantillasMando.aplicar(plSeleccionada, pg, dim.filas, dim.columnas, opciones);
   }
   guardarLayout();
   $('panel-plantillas').classList.remove('vis');
@@ -1214,7 +1572,7 @@ $('pl-aplicar').onclick = () => {
 
 function abrirInspector(b) {
   M.botonEdit = b;
-  $('insp-titulo').textContent = `BOTÓN · fila ${b.fila + 1} · columna ${b.col + 1}`;
+  $('insp-titulo').textContent = `${esControl(b) ? 'CONTROL' : 'BOTÓN'} · fila ${b.fila + 1} · columna ${b.col + 1}`;
   $('i-etiqueta').value = b.etiqueta || '';
   $('i-color').value = colorHex(b.color, '#1b1f27');
   $('i-colortexto').value = colorHex(b.colorTexto, '#e8e8ea');
@@ -1233,10 +1591,17 @@ function abrirInspector(b) {
   $('i-modo').value = midi.modo;
 
   $('i-tipo').value = b.accion.tipo === 'nada' && !b.etiqueta ? 'midi' : b.accion.tipo;
+  $('i-control').value = esControl(b) ? b.control : 'boton';
+  $('i-orient').value = b.orientacion || 'auto';
+  $('i-num-y').value = b.accion.midiY ? b.accion.midiY.num : '';
+  $('i-param-x').dataset.tocado = '';
+  $('i-param-y').dataset.tocado = '';
   llenarDestinos();
   llenarSubmenus();
   llenarPaginasDestino(b.accion.paginaDestino);
   sincronizarTipoAccion();
+  sincronizarControl();
+  llenarParametros();
   avisarChoque();
   $('i-retorno').value = b.submenu?.retorno || 'clip-fin';
   $('i-segundos').value = b.submenu?.segundos || 30;
@@ -1305,6 +1670,109 @@ function sincronizarTipoAccion() {
 
 $('i-tipo').addEventListener('change', sincronizarTipoAccion);
 
+/* Botón o control continuo: cada tipo muestra sólo lo que le sirve. Un
+   control siempre manda CC, no abre submenús ni navega entre grupos. */
+const AVISO_MIDI_BOTON = $('i-midi-aviso').innerHTML;
+function sincronizarControl() {
+  const ctl = $('i-control').value;
+  const es = ctl !== 'boton';
+  const dos = ctl === 'palanca' || ctl === 'xy';
+  const ver = (id, si) => { $(id).style.display = si ? '' : 'none'; };
+  ver('i-wrap-orient', ctl === 'slider');
+  ver('i-control-aviso', es);
+  ver('i-fs-param', es);
+  ver('i-fila-param-y', dos);
+  ver('i-fila-destino', !es);
+  ver('i-destino-aviso', !es);
+  ver('i-fs-accion', !es);
+  ver('i-fs-submenu', !es);
+  ver('i-wrap-modo', !es);
+  ver('i-wrap-num-y', dos);
+  if (es) ver('i-fs-midi', true);
+  else sincronizarTipoAccion();
+  $('i-txt-param-x').textContent = dos ? 'EJE X CONTROLA' : 'CONTROLA';
+  $('i-txt-num').textContent = es ? (dos ? 'CC EJE X' : 'CC') : 'Nº';
+  $('i-clase').disabled = es;
+  if (es) $('i-clase').value = 'cc';
+  $('i-midi-aviso').innerHTML = es
+    ? 'Cada eje manda su propio CC (0 a 127). Elige arriba qué mueve, o en MIDIVJ abre <b>🎛 CONTROLES</b>, pulsa <b>MAP</b> y mueve este control.'
+    : AVISO_MIDI_BOTON;
+}
+
+$('i-control').addEventListener('change', () => {
+  const ctl = $('i-control').value;
+  if (ctl !== 'boton') {
+    /* Al volverse control necesita CC: si traía una nota (o nada), se le da
+       un CC libre; si es de dos ejes, otro distinto para Y. */
+    const num = parseInt($('i-num').value, 10);
+    if ($('i-clase').value !== 'cc' || !(num >= 0 && num <= 127)) $('i-num').value = ccLibre().num;
+    const x = parseInt($('i-num').value, 10);
+    const y = parseInt($('i-num-y').value, 10);
+    if ((ctl === 'palanca' || ctl === 'xy') && (!(y >= 0 && y <= 127) || y === x)) $('i-num-y').value = ccLibre([x]).num;
+  }
+  sincronizarControl();
+  llenarParametros();
+  avisarChoque();
+});
+
+/* Parámetros de MIDIVJ que puede mover un control (los publica la app con
+   su inventario). Lo elegido se manda al GUARDAR. */
+function mapeoDeCC(num) {
+  const m = (M.inventario.mapeos || []).find(x => x.midi === 128 + num);
+  return m ? m.destino : '';
+}
+
+function llenarParametros() {
+  const lista = M.inventario.parametros;
+  const pares = [['i-param-x', 'i-num'], ['i-param-y', 'i-num-y']];
+  for (const [idSel, idNum] of pares) {
+    const sel = $(idSel);
+    const previo = sel.dataset.tocado ? sel.value : null;   // lo que eligió la persona y aún no guarda
+    sel.innerHTML = '';
+    if (!lista) {
+      sel.innerHTML = '<option value="">— MIDIVJ no publicó sus parámetros —</option>';
+      sel.disabled = true;
+      continue;
+    }
+    sel.disabled = false;
+    sel.appendChild(new Option('— ninguno (o mapéalo desde MIDIVJ) —', ''));
+    const grupos = new Map();
+    for (const p of lista) {
+      if (!grupos.has(p.grupo)) {
+        const g = document.createElement('optgroup');
+        g.label = p.grupo || 'OTROS';
+        grupos.set(p.grupo, g);
+        sel.appendChild(g);
+      }
+      grupos.get(p.grupo).appendChild(new Option(p.nombre, p.id));
+    }
+    const num = parseInt($(idNum).value, 10);
+    const actual = num >= 0 && num <= 127 ? mapeoDeCC(num) : '';
+    if (actual && !lista.some(p => p.id === actual)) sel.appendChild(new Option('(' + actual + ')', actual));
+    sel.value = previo !== null ? previo : actual;
+  }
+  $('i-param-aviso').innerHTML = lista
+    ? 'Se aplica al <b>GUARDAR</b>. El rango y la inversión se ajustan en MIDIVJ, ventana <b>🎛 CONTROLES</b>.'
+    : 'Conecta MIDIVJ al mismo relay y sala para elegir aquí el parámetro. Mientras tanto: en MIDIVJ abre 🎛 CONTROLES, pulsa MAP y mueve este control.';
+}
+
+['i-param-x', 'i-param-y'].forEach(id => $(id).addEventListener('change', () => { $(id).dataset.tocado = '1'; }));
+['i-num', 'i-num-y'].forEach(id => $(id).addEventListener('change', () => { if ($('i-control').value !== 'boton') llenarParametros(); }));
+
+function enviarMapeo(num, destino, b, eje) {
+  if (!M.inventario.parametros) return;
+  if ((destino || '') === mapeoDeCC(num)) return;          // no cambió nada
+  if (!M.ws || M.ws.readyState !== 1) { toast('sin conexión: el parámetro no se pudo mapear'); return; }
+  M.ws.send(JSON.stringify({
+    type: 'mapear-param', midi: 128 + num, destino: destino || null,
+    origen: { mando: M.slot || 0, boton: b.id, etiqueta: b.etiqueta || b.control.toUpperCase(), fila: b.fila + 1, col: b.col + 1, eje }
+  }));
+  /* Se anota ya, sin esperar el inventario nuevo de la app, para que el
+     inspector no muestre el mapeo viejo si se vuelve a abrir enseguida. */
+  M.inventario.mapeos = (M.inventario.mapeos || []).filter(m => m.midi !== 128 + num);
+  if (destino) M.inventario.mapeos.push({ midi: 128 + num, destino });
+}
+
 function llenarSubmenus() {
   const sel = $('i-submenu');
   sel.innerHTML = '<option value="">— sin submenú —</option>';
@@ -1335,9 +1803,17 @@ $('i-destino').addEventListener('change', () => {
 });
 
 $('i-libre').onclick = () => {
-  const m = mensajeLibre();
-  $('i-clase').value = m.clase;
-  $('i-num').value = m.num;
+  const ctl = $('i-control').value;
+  if (ctl !== 'boton') {
+    const x = ccLibre().num;
+    $('i-num').value = x;
+    if (ctl === 'palanca' || ctl === 'xy') $('i-num-y').value = ccLibre([x]).num;
+    llenarParametros();
+  } else {
+    const m = mensajeLibre();
+    $('i-clase').value = m.clase;
+    $('i-num').value = m.num;
+  }
   avisarChoque();
 };
 
@@ -1346,13 +1822,24 @@ $('i-libre').onclick = () => {
 function avisarChoque() {
   const clase = $('i-clase').value;
   const num = parseInt($('i-num').value, 10);
+  const ctl = $('i-control').value;
+  const numY = parseInt($('i-num-y').value, 10);
+  /* Mensajes que va a mandar este botón o control (dos si tiene eje Y) */
+  const propios = [{ clase, num }];
+  if (ctl === 'palanca' || ctl === 'xy') propios.push({ clase: 'cc', num: numY });
   const aviso = $('i-choque');
   let choque = null;
+  if (propios.length === 2 && propios[1].num === num) {
+    aviso.style.display = '';
+    aviso.textContent = '⚠ el eje X y el eje Y usan el mismo CC: se moverían juntos.';
+    return;
+  }
   for (const p of M.layout.paginas) {
     for (const b of p.botones) {
       if (b === M.botonEdit) continue;
-      const m = b.accion && b.accion.midi;
-      if (m && m.clase === clase && m.num === num) { choque = { p, b }; break; }
+      const suyos = [b.accion && b.accion.midi];
+      if (esControl2D(b)) suyos.push(b.accion && b.accion.midiY && { clase: 'cc', num: b.accion.midiY.num });
+      if (suyos.some(m => m && propios.some(x => m.clase === x.clase && m.num === x.num))) { choque = { p, b }; break; }
     }
     if (choque) break;
   }
@@ -1366,6 +1853,7 @@ function avisarChoque() {
 
 $('i-clase').addEventListener('change', avisarChoque);
 $('i-num').addEventListener('input', avisarChoque);
+$('i-num-y').addEventListener('input', avisarChoque);
 
 /* Sugerencia de texto a partir de la dirección del mensaje configurado */
 $('i-sugerir').onclick = () => {
@@ -1441,6 +1929,31 @@ $('i-guardar').onclick = () => {
   b.ajusteImagen = $('i-ajuste').value;
 
   b.tocado = true;              // configurado a mano: nadie le reasigna el mensaje
+  const ctl = $('i-control').value;
+  if (ctl !== 'boton') {
+    const dos = ctl === 'palanca' || ctl === 'xy';
+    const canal = Math.max(1, Math.min(16, parseInt($('i-canal').value, 10) || 1));
+    const num = Math.max(0, Math.min(127, parseInt($('i-num').value, 10) || 0));
+    let numY = parseInt($('i-num-y').value, 10);
+    if (dos && (!(numY >= 0 && numY <= 127) || numY === num)) numY = ccLibre([num]).num;
+    const cc = n => ({ clase: 'cc', num: n, canal, modo: 'pulso', valor: 127 });
+    /* La posición guardada de otro tipo de control no sirve (un slider en 0
+       sería una palanca pegada a la esquina). */
+    if (b.control !== ctl) M.valores.delete(b.id);
+    b.control = ctl;
+    b.orientacion = $('i-orient').value;
+    b.accion = { tipo: 'midi', midi: cc(num), midiY: dos ? cc(numY) : null, paginaDestino: null };
+    b.submenu = null;
+    M.activos.delete(b.id);
+    enviarMapeo(num, $('i-param-x').value, b, 'x');
+    if (dos) enviarMapeo(numY, $('i-param-y').value, b, 'y');
+    guardarLayout();
+    cerrarInspector();
+    pintarRejilla();
+    toast('control guardado');
+    return;
+  }
+  b.control = 'boton';
   const tipo = $('i-tipo').value;
   b.accion = {
     tipo,
