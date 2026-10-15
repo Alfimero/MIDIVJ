@@ -25,6 +25,7 @@ body{
   display:flex;flex-direction:column;
   padding-top:var(--safe-t);padding-bottom:var(--safe-b);
   user-select:none;-webkit-user-select:none;touch-action:manipulation;
+  -webkit-touch-callout:none;
 }
 body.claro{--bg:#f2f4f8;--bg2:#ffffff;--bg3:#e8ebf1;--border:#d3d8e2;--border2:#bcc4d2;--text:#101319;--text2:#4c5566;--text3:#7c8697;}
 
@@ -99,7 +100,29 @@ body.mapeando .pad{outline:1px dashed var(--accent2);outline-offset:-3px;}
 }
 
 /* ── Cuadrícula ── */
-#rejilla{flex:1;display:grid;padding:8px;min-height:0;}
+/* touch-action:none: con varios dedos a la vez el navegador NO debe tomar el
+   toque como un gesto de zoom o desplazamiento. Si lo hace, cancela los
+   toques en curso (el botón que se mantenía apretado se suelta solo) y
+   los toques nuevos no llegan hasta levantar todos los dedos. */
+#rejilla{flex:1;display:grid;padding:8px;min-height:0;touch-action:none;position:relative;}
+#rejilla .pad{touch-action:none;}
+
+/* ── Unir celdas ── */
+#union-barra{
+  display:none;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap;
+  padding:8px;background:rgba(0,194,255,.12);border-bottom:1px solid var(--accent2);
+  font-family:var(--mono);font-size:10px;color:var(--accent2);
+}
+#union-barra.vis{display:flex;}
+#union-txt{flex:1;min-width:150px;}
+.tbtn:disabled{opacity:.35;}
+body.uniendo #rejilla .pad{opacity:.55;}
+.sel-union{
+  pointer-events:none;z-index:6;border:2px dashed var(--accent2);background:rgba(0,194,255,.22);
+  border-radius:10px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;font-size:16px;color:var(--accent2);text-shadow:0 1px 3px #000;
+}
+.fila input[type=range]{padding:0;height:26px;background:none;border:0;width:100%;}
 .pad{
   position:relative;overflow:hidden;border:1px solid var(--border2);
   background:var(--bg2);color:var(--text);
@@ -286,6 +309,14 @@ legend{font-family:var(--mono);font-size:9px;color:var(--text3);padding:0 5px;}
   <span class="sep"></span>
   <button class="tbtn" id="btn-plantillas">🎨 PLANTILLAS</button>
   <button class="tbtn" id="btn-dispositivos">📱 DISPOSITIVOS</button>
+  <span class="sep"></span>
+  <button class="tbtn" id="btn-unir" title="Une varias celdas en un solo botón grande (luego puedes volverlo slider, palanca o pad XY)">⊞ UNIR CELDAS</button>
+</div>
+
+<div id="union-barra">
+  <span id="union-txt">Toca y arrastra sobre las celdas que quieres unir</span>
+  <button class="tbtn act" id="btn-union-ok" disabled>✓ UNIR</button>
+  <button class="tbtn" id="btn-union-x">✕ CANCELAR</button>
 </div>
 
 <div id="volver-barra">
@@ -317,6 +348,15 @@ legend{font-family:var(--mono);font-size:9px;color:var(--text3);padding:0 5px;}
         </select>
       </label>
     </div>
+    <div class="fila" id="i-fila-mov">
+      <label class="ancho">EASING · <span id="i-easing-v">0%</span>
+        <input type="range" id="i-easing" min="0" max="100" step="1" value="0">
+      </label>
+      <label class="ancho">SENSIBILIDAD · <span id="i-sens-v">1×</span>
+        <input type="range" id="i-sens" min="-2" max="2" step="0.1" value="0">
+      </label>
+    </div>
+    <p class="aviso" id="i-mov-aviso"></p>
     <p class="aviso" id="i-control-aviso">Un slider manda un CC de 0 a 127; la palanca y el pad XY mandan dos (eje X y eje Y). Agrándalos con ANCHO y ALTO.</p>
   </fieldset>
 
@@ -411,6 +451,7 @@ legend{font-family:var(--mono);font-size:9px;color:var(--text3);padding:0 5px;}
     <div class="fila">
       <label>ANCHO <input type="number" id="i-ancho" min="1" max="10"></label>
       <label>ALTO <input type="number" id="i-alto" min="1" max="10"></label>
+      <label id="i-wrap-separar">&nbsp;<button class="tbtn" id="i-separar" title="Vuelve a dejar las celdas que ocupa este botón como botones sueltos">⊟ SEPARAR</button></label>
       <label>ANIMACIÓN
         <select id="i-animacion">
           <option value="ninguna">ninguna</option>
@@ -902,7 +943,7 @@ function pintarTabs() {
     t.className = 'tab' + (p.id === M.paginaId ? ' sel' : '') + (p.tipo === 'efectos' ? ' efectos' : '');
     t.textContent = p.nombre;
     if (p.id === M.paginaId && p.color) t.style.background = p.color;
-    t.onclick = () => { M.paginaId = p.id; cancelarEsperaSubmenu(); pintarTodo(); };
+    t.onclick = () => { M.paginaId = p.id; M.selUnion = null; cancelarEsperaSubmenu(); pintarTodo(); };
     cont.appendChild(t);
   }
 }
@@ -927,6 +968,7 @@ function pintarRejilla() {
   /* Las celdas que se acaban de crear ya traen su mensaje MIDI: hay que
      guardarlas para que el resto de dispositivos vean los mismos números. */
   if (M.celdasNuevas) { M.celdasNuevas = 0; guardarLayout(); }
+  if (M.uniendo) pintarSeleccionUnion();
 }
 
 function elementoBoton(b) {
@@ -940,6 +982,7 @@ function elementoBoton(b) {
     (b.brillo ? ' brillo' : '') +
     (b.animacion && b.animacion !== 'ninguna' ? ' anim-' + b.animacion : '') +
     (M.activos.has(b.id) ? ' activo' : '') +
+    (botonApretado(b.id) ? ' presionado' : '') +      // sigue apretado aunque se redibuje
     (M.editando && M.botonEdit?.id === b.id ? ' sel-edit' : '');
   el.style.gridArea = `${b.fila + 1} / ${b.col + 1} / span ${b.alto || 1} / span ${b.ancho || 1}`;
   el.style.background = b.color;
@@ -1029,6 +1072,7 @@ function elementoControl(b) {
   el.className = 'pad ctl ctl-' + b.control + ' ' + b.forma + (horiz ? ' horiz' : '') +
     (b.imagen ? ' con-imagen' : '') + (b.ajusteImagen === 'contain' ? ' contain' : '') +
     (b.brillo ? ' brillo' : '') +
+    (controlTocado(b.id) ? ' tocando' : '') +
     (M.editando && M.botonEdit?.id === b.id ? ' sel-edit' : '');
   /* Sin animaciones: un control que gira o late bajo el dedo no se puede usar */
   el.style.gridArea = `${b.fila + 1} / ${b.col + 1} / span ${b.alto || 1} / span ${b.ancho || 1}`;
@@ -1104,23 +1148,58 @@ function pintarValorControl(el, b) {
   q('.ctl-val').textContent = Math.round(v.x * 127) + '·' + Math.round(v.y * 127);
 }
 
-/* Posición del dedo → valor 0..1 de cada eje (Y crece hacia arriba) */
-function posicionDe(el, b, ev) {
+/* ── Movimiento: SENSIBILIDAD y EASING de cada control ──
+   SENSIBILIDAD (0.25× a 4×). Slider y pad: en 1× el valor va directo al
+   dedo; con otro valor se arrastra desde donde estaba, más fino (<1×) o
+   más rápido (>1×), sin saltos al tocar. Palanca: curva de respuesta; <1×
+   = fina cerca del centro, >1× = fuerte con poco movimiento (en las dos el
+   tope se alcanza al fondo del recorrido).
+   EASING (0 a 100%): el valor que se manda llega al dedo de forma suave,
+   con inercia; 0% = inmediato. La palanca también vuelve al centro suave. */
+function sensDe(b) {
+  const s = Math.max(0.25, Math.min(4, +b.sensibilidad || 1));
+  return Math.abs(s - 1) < 0.01 ? 1 : s;
+}
+function tauDe(b) {
+  const e = Math.max(0, Math.min(1, +b.easing || 0));
+  /* Constante de tiempo en segundos: llega al 95% del camino en 3×tau.
+     50% → 0.15 s (≈ medio segundo), 100% → 0.6 s (≈ 2 segundos). */
+  return e * e * 0.6;
+}
+
+/* Posición del dedo → valor 0..1 de cada eje (Y crece hacia arriba).
+   d = el toque en curso (dónde empezó y desde qué valor). */
+function posicionDe(b, ev, d) {
+  const el = elDe(b);
+  if (!el) return objetivoDe(b);
   const r = el.getBoundingClientRect();
   const lim = n => Math.max(0, Math.min(1, n));
   const px = (ev.clientX - r.left) / (r.width || 1);
   const py = (ev.clientY - r.top) / (r.height || 1);
+  const s = sensDe(b);
   if (b.control === 'slider') {
-    const x = orientacionDe(b) === 'horizontal' ? lim(px) : lim(1 - py);
-    return { x, y: 0 };
+    const horiz = orientacionDe(b) === 'horizontal';
+    if (s === 1) return { x: horiz ? lim(px) : lim(1 - py), y: 0 };
+    const delta = horiz ? (ev.clientX - d.x0) / (r.width || 1) : (d.y0 - ev.clientY) / (r.height || 1);
+    return { x: lim(d.v0.x + delta * s), y: 0 };
   }
-  if (b.control === 'xy') return { x: lim(px), y: lim(1 - py) };
-  /* Palanca: desvío desde el centro, recortado al círculo */
+  if (b.control === 'xy') {
+    if (s === 1) return { x: lim(px), y: lim(1 - py) };
+    return {
+      x: lim(d.v0.x + (ev.clientX - d.x0) / (r.width || 1) * s),
+      y: lim(d.v0.y + (d.y0 - ev.clientY) / (r.height || 1) * s)
+    };
+  }
+  /* Palanca: desvío desde el centro, recortado al círculo y con su curva */
   const radio = Math.min(r.width, r.height) * 0.4 || 1;
   let dx = (ev.clientX - (r.left + r.width / 2)) / radio;
   let dy = ((r.top + r.height / 2) - ev.clientY) / radio;
   const largo = Math.hypot(dx, dy);
-  if (largo > 1) { dx /= largo; dy /= largo; }
+  if (largo > 0) {
+    const curva = Math.pow(Math.min(1, largo), 1 / s);
+    dx = dx / largo * curva;
+    dy = dy / largo * curva;
+  }
   return { x: 0.5 + dx / 2, y: 0.5 + dy / 2 };
 }
 
@@ -1151,43 +1230,71 @@ function enviarCC(b, eje, v01, forzar) {
   else if (!e.timer) e.timer = setTimeout(salir, espera);
 }
 
-function fijarValor(el, b, v, forzar) {
+/* Valor ya alcanzado: lo pinta y lo manda */
+function aplicarValor(b, v, forzar) {
   M.valores.set(b.id, v);
-  pintarValorControl(el, b);
+  const el = elDe(b);
+  if (el) pintarValorControl(el, b);
   enviarCC(b, 'x', v.x, forzar);
   if (esControl2D(b)) enviarCC(b, 'y', v.y, forzar);
   guardarValoresPronto();
 }
 
-function conectarControl(el, b) {
-  let puntero = null;
+/* Hacia dónde va el control: el dedo si hay easing en curso, si no el valor */
+const animCtl = new Map();        // id de control → { obj, raf, ts, forzar }
+function objetivoDe(b) {
+  const a = animCtl.get(b.id);
+  return a && a.obj ? { ...a.obj } : { ...valorDe(b) };
+}
+function moverHacia(b, v, forzar) {
+  if (!tauDe(b)) {
+    const a = animCtl.get(b.id);
+    if (a) { cancelAnimationFrame(a.raf); animCtl.delete(b.id); }
+    aplicarValor(b, v, forzar);
+    return;
+  }
+  let a = animCtl.get(b.id);
+  if (!a) animCtl.set(b.id, a = { obj: v, raf: 0, ts: 0, forzar: false });
+  a.obj = v;
+  a.forzar = a.forzar || !!forzar;
+  if (!a.raf) { a.ts = performance.now(); animarControl(b); }
+}
+/* Acercamiento exponencial: cada cuadro recorre una fracción de lo que
+   falta, así se ve como inercia y no como un retraso fijo. */
+function animarControl(b) {
+  const a = animCtl.get(b.id);
+  if (!a) return;
+  a.raf = requestAnimationFrame(ahora => {
+    a.raf = 0;
+    const dt = Math.min(0.1, Math.max(0, (ahora - a.ts) / 1000));
+    a.ts = ahora;
+    const tau = tauDe(b) || 0.0001;
+    const k = 1 - Math.exp(-dt / tau);
+    const c = valorDe(b);
+    let n = { x: c.x + (a.obj.x - c.x) * k, y: c.y + (a.obj.y - c.y) * k };
+    /* A menos de medio paso de CC (1/254) ya no cambia lo que se manda */
+    const llego = Math.abs(a.obj.x - n.x) < 0.004 && Math.abs(a.obj.y - n.y) < 0.004;
+    if (llego) n = { ...a.obj };
+    aplicarValor(b, n, llego && a.forzar);
+    if (llego) animCtl.delete(b.id);
+    else animarControl(b);
+  });
+}
 
+function conectarControl(el, b) {
   el.addEventListener('pointerdown', ev => {
     ev.preventDefault();
     if (M.editando) { abrirInspector(b); return; }
     if (M.mapeando) { mapearControl(el, b, ev); return; }
-    if (puntero !== null) return;              // ya lo mueve otro dedo
-    puntero = ev.pointerId;
+    if (controlTocado(b.id)) return;           // ya lo mueve otro dedo
+    const d = { b, x0: ev.clientX, y0: ev.clientY, v0: objetivoDe(b) };
+    dedosCtl.set(ev.pointerId, d);
     /* Con la captura el control sigue al dedo aunque salga de su celda */
     try { el.setPointerCapture(ev.pointerId); } catch (_) {}
     el.classList.add('tocando');
     if (navigator.vibrate) navigator.vibrate(8);
-    fijarValor(el, b, posicionDe(el, b, ev));
+    moverHacia(b, posicionDe(b, ev, d));
   });
-  el.addEventListener('pointermove', ev => {
-    if (ev.pointerId !== puntero) return;
-    fijarValor(el, b, posicionDe(el, b, ev));
-  });
-  const soltar = ev => {
-    if (ev.pointerId !== puntero) return;
-    puntero = null;
-    el.classList.remove('tocando');
-    /* La palanca vuelve al centro como un joystick; el slider y el pad XY
-       se quedan donde se soltaron. */
-    if (b.control === 'palanca') fijarValor(el, b, { x: 0.5, y: 0.5 }, true);
-  };
-  el.addEventListener('pointerup', soltar);
-  el.addEventListener('pointercancel', soltar);
   el.addEventListener('contextmenu', ev => ev.preventDefault());
 }
 
@@ -1207,30 +1314,69 @@ function mapearControl(el, b, ev) {
 
 /* ── Interacción ──────────────────────────────────────── */
 
-function conectarBoton(el, b) {
-  let pulsado = false;
+/* ── Dedos en pantalla ──
+   Cada dedo que aprieta un botón o mueve un control se sigue por su
+   pointerId a nivel de documento. Antes cada botón guardaba su estado en
+   el propio elemento: si la rejilla se redibujaba con un dedo encima
+   (abrir un submenú, un layout que llega de otro dispositivo) ese botón
+   nunca mandaba su note-off. Así varios dedos a la vez no se pisan. */
+const dedosBoton = new Map();     // pointerId → { b }
+const dedosCtl = new Map();       // pointerId → { b, x0, y0, v0 }
+function elDe(b) { return document.querySelector(`#rejilla [data-id="${b.id}"]`); }
+function botonApretado(id) { for (const d of dedosBoton.values()) if (d.b.id === id) return true; return false; }
+function controlTocado(id) { for (const d of dedosCtl.values()) if (d.b.id === id) return true; return false; }
 
-  const abajo = ev => {
+function soltarBoton(pid) {
+  const d = dedosBoton.get(pid);
+  if (!d) return;
+  dedosBoton.delete(pid);
+  const el = elDe(d.b);
+  if (el && !botonApretado(d.b.id)) el.classList.remove('presionado');
+  if (!M.editando) accionArriba(d.b);
+}
+function soltarControl(pid) {
+  const d = dedosCtl.get(pid);
+  if (!d) return;
+  dedosCtl.delete(pid);
+  const el = elDe(d.b);
+  if (el) el.classList.remove('tocando');
+  /* La palanca vuelve al centro como un joystick; el slider y el pad XY
+     se quedan donde se soltaron. */
+  if (d.b.control === 'palanca') moverHacia(d.b, { x: 0.5, y: 0.5 }, true);
+}
+document.addEventListener('pointermove', ev => {
+  const d = dedosCtl.get(ev.pointerId);
+  if (d) moverHacia(d.b, posicionDe(d.b, ev, d));
+}, true);
+['pointerup', 'pointercancel'].forEach(tipo => document.addEventListener(tipo, ev => {
+  soltarBoton(ev.pointerId);
+  soltarControl(ev.pointerId);
+}, true));
+/* Si el teléfono cambia de app o se apaga la pantalla con dedos encima,
+   se suelta todo: ningún efecto queda pegado en MIDIVJ. */
+function soltarTodo() {
+  [...dedosBoton.keys()].forEach(soltarBoton);
+  [...dedosCtl.keys()].forEach(soltarControl);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') soltarTodo(); });
+addEventListener('pagehide', soltarTodo);
+addEventListener('blur', soltarTodo);
+
+function conectarBoton(el, b) {
+  el.addEventListener('pointerdown', ev => {
     ev.preventDefault();
     if (M.editando) { abrirInspector(b); return; }
-    if (pulsado) return;
-    pulsado = true;
+    if (botonApretado(b.id)) return;           // ya lo aprieta otro dedo
+    dedosBoton.set(ev.pointerId, { b });
     el.classList.add('presionado');
     if (navigator.vibrate) navigator.vibrate(12);
     accionAbajo(b);
-  };
-  const arriba = ev => {
-    if (ev) ev.preventDefault();
-    if (!pulsado) return;
-    pulsado = false;
-    el.classList.remove('presionado');
-    if (!M.editando) accionArriba(b);
-  };
-
-  el.addEventListener('pointerdown', abajo);
-  el.addEventListener('pointerup', arriba);
-  el.addEventListener('pointercancel', arriba);
-  el.addEventListener('pointerleave', ev => { if (pulsado) arriba(ev); });
+  });
+  /* Con el mouse, salir del botón lo suelta; un dedo queda unido a su botón
+     hasta que se levanta (así lo hace el navegador en pantallas táctiles). */
+  el.addEventListener('pointerleave', ev => {
+    if (ev.pointerType === 'mouse' && dedosBoton.get(ev.pointerId)?.b.id === b.id) soltarBoton(ev.pointerId);
+  });
   el.addEventListener('contextmenu', ev => ev.preventDefault());
 }
 
@@ -1349,8 +1495,155 @@ $('btn-edit').onclick = () => {
   document.body.classList.toggle('editando', M.editando);
   $('btn-edit').classList.toggle('act', M.editando);
   $('btn-edit').textContent = M.editando ? '✓ LISTO' : '✎ EDITAR';
-  if (!M.editando) cerrarInspector();
+  if (!M.editando) { cerrarInspector(); salirDeUnion(); }
   pintarRejilla();
+};
+
+/* ── Unir celdas: varias celdas → un solo botón grande ──
+   ⊞ UNIR CELDAS, tocar y arrastrar (o tocar una esquina y luego la
+   opuesta) y ✓ UNIR. El botón de la esquina superior izquierda crece
+   hasta cubrir la selección y conserva su configuración; los demás quedan
+   guardados debajo (⊟ SEPARAR los devuelve tal como estaban). Si la
+   selección corta un botón grande, se agranda para incluirlo entero. */
+function salirDeUnion() {
+  M.uniendo = false;
+  M.selUnion = null;
+  M.unionPuntero = null;
+  document.body.classList.remove('uniendo');
+  $('union-barra').classList.remove('vis');
+  $('btn-unir').classList.remove('act');
+  document.querySelectorAll('#rejilla .sel-union').forEach(e => e.remove());
+}
+$('btn-unir').onclick = () => {
+  if (M.uniendo) { salirDeUnion(); pintarRejilla(); return; }
+  cerrarInspector();
+  M.uniendo = true;
+  M.selUnion = null;
+  document.body.classList.add('uniendo');
+  $('btn-unir').classList.add('act');
+  $('union-barra').classList.add('vis');
+  pintarSeleccionUnion();
+};
+$('btn-union-x').onclick = () => { salirDeUnion(); pintarRejilla(); };
+
+/* Celda de la rejilla bajo el dedo (por geometría: sirve aunque el dedo
+   esté sobre un botón grande o en el hueco entre dos celdas) */
+function celdaEn(ev) {
+  const rej = $('rejilla');
+  const r = rej.getBoundingClientRect();
+  const cs = getComputedStyle(rej);
+  const pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0;
+  const pt = parseFloat(cs.paddingTop) || 0, pb = parseFloat(cs.paddingBottom) || 0;
+  const gap = M.layout.rejilla.separacion || 0;
+  const { filas, columnas } = dimsDe(paginaActual());
+  const w = (r.width - pl - pr - gap * (columnas - 1)) / columnas;
+  const h = (r.height - pt - pb - gap * (filas - 1)) / filas;
+  const lim = (n, max) => Math.max(0, Math.min(max - 1, n));
+  return {
+    f: lim(Math.floor((ev.clientY - r.top - pt + gap / 2) / (h + gap)), filas),
+    c: lim(Math.floor((ev.clientX - r.left - pl + gap / 2) / (w + gap)), columnas)
+  };
+}
+
+function rectUnion() {
+  const s = M.selUnion;
+  if (!s) return null;
+  let f0 = Math.min(s.a.f, s.b.f), f1 = Math.max(s.a.f, s.b.f);
+  let c0 = Math.min(s.a.c, s.b.c), c1 = Math.max(s.a.c, s.b.c);
+  const visibles = botonesDeCuadricula(paginaActual());
+  for (let cambio = true; cambio;) {
+    cambio = false;
+    for (const b of visibles) {
+      const bf1 = b.fila + (b.alto || 1) - 1, bc1 = b.col + (b.ancho || 1) - 1;
+      const toca = !(bf1 < f0 || b.fila > f1 || bc1 < c0 || b.col > c1);
+      if (toca && (b.fila < f0 || bf1 > f1 || b.col < c0 || bc1 > c1)) {
+        f0 = Math.min(f0, b.fila); f1 = Math.max(f1, bf1);
+        c0 = Math.min(c0, b.col); c1 = Math.max(c1, bc1);
+        cambio = true;
+      }
+    }
+  }
+  const { filas, columnas } = dimsDe(paginaActual());
+  return { f0, c0, f1: Math.min(f1, filas - 1), c1: Math.min(c1, columnas - 1) };
+}
+
+function pintarSeleccionUnion() {
+  document.querySelectorAll('#rejilla .sel-union').forEach(e => e.remove());
+  const r = rectUnion();
+  const ok = $('btn-union-ok');
+  if (!r) {
+    $('union-txt').textContent = 'Toca y arrastra sobre las celdas que quieres unir';
+    ok.disabled = true;
+    return;
+  }
+  const alto = r.f1 - r.f0 + 1, ancho = r.c1 - r.c0 + 1;
+  const d = document.createElement('div');
+  d.className = 'sel-union';
+  d.style.gridArea = `${r.f0 + 1} / ${r.c0 + 1} / span ${alto} / span ${ancho}`;
+  d.textContent = alto + '×' + ancho;
+  $('rejilla').appendChild(d);
+  const una = alto === 1 && ancho === 1;
+  ok.disabled = una;
+  $('union-txt').textContent = una
+    ? 'Ahora toca la celda de la esquina opuesta (o arrastra)'
+    : `Unir ${alto}×${ancho} = ${alto * ancho} celdas en un solo botón`;
+}
+
+/* En modo UNIR la rejilla recibe los toques antes que los botones (fase de
+   captura): tocar elige celdas en vez de disparar o abrir el inspector. */
+$('rejilla').addEventListener('pointerdown', ev => {
+  if (!M.uniendo) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const c = celdaEn(ev);
+  const s = M.selUnion;
+  /* Toque-toque: si ya había una celda sola elegida, este toque es la esquina opuesta */
+  if (s && s.a.f === s.b.f && s.a.c === s.b.c && (s.a.f !== c.f || s.a.c !== c.c)) s.b = c;
+  else M.selUnion = { a: c, b: c };
+  M.unionPuntero = ev.pointerId;
+  try { $('rejilla').setPointerCapture(ev.pointerId); } catch (_) {}
+  pintarSeleccionUnion();
+}, true);
+$('rejilla').addEventListener('pointermove', ev => {
+  if (!M.uniendo || M.unionPuntero !== ev.pointerId || !M.selUnion) return;
+  ev.stopPropagation();
+  const c = celdaEn(ev);
+  if (c.f === M.selUnion.b.f && c.c === M.selUnion.b.c) return;
+  M.selUnion.b = c;
+  pintarSeleccionUnion();
+}, true);
+['pointerup', 'pointercancel'].forEach(t => $('rejilla').addEventListener(t, ev => {
+  if (M.unionPuntero === ev.pointerId) M.unionPuntero = null;
+}, true));
+
+$('btn-union-ok').onclick = () => {
+  const r = rectUnion();
+  if (!r || (r.f0 === r.f1 && r.c0 === r.c1)) return;
+  const pg = paginaActual();
+  const base = botonesDeCuadricula(pg).find(b => b.fila === r.f0 && b.col === r.c0);
+  if (!base) return;
+  /* Los de adentro quedan guardados como celdas sueltas debajo del grande */
+  for (const b of pg.botones) {
+    if (b === base) continue;
+    if (b.fila >= r.f0 && b.fila <= r.f1 && b.col >= r.c0 && b.col <= r.c1) { b.ancho = 1; b.alto = 1; }
+  }
+  base.ancho = r.c1 - r.c0 + 1;
+  base.alto = r.f1 - r.f0 + 1;
+  const n = base.ancho * base.alto;
+  salirDeUnion();
+  guardarLayout();
+  pintarRejilla();
+  abrirInspector(base);
+  toast(`${n} celdas unidas: elige CONTROL para volverlo palanca o pad XY`);
+};
+
+$('i-separar').onclick = () => {
+  const b = M.botonEdit;
+  if (!b) return;
+  b.ancho = 1; b.alto = 1;
+  $('i-ancho').value = 1; $('i-alto').value = 1;
+  guardarLayout();
+  abrirInspector(b);          // repinta y deja el inspector al día
+  toast('celdas separadas');
 };
 
 function apagarMapeo() {
@@ -1593,6 +1886,10 @@ function abrirInspector(b) {
   $('i-tipo').value = b.accion.tipo === 'nada' && !b.etiqueta ? 'midi' : b.accion.tipo;
   $('i-control').value = esControl(b) ? b.control : 'boton';
   $('i-orient').value = b.orientacion || 'auto';
+  $('i-easing').value = Math.round((+b.easing || 0) * 100);
+  $('i-sens').value = Math.log2(Math.max(0.25, Math.min(4, +b.sensibilidad || 1))).toFixed(1);
+  pintarMovimiento();
+  $('i-wrap-separar').style.display = (b.ancho || 1) > 1 || (b.alto || 1) > 1 ? '' : 'none';
   $('i-num-y').value = b.accion.midiY ? b.accion.midiY.num : '';
   $('i-param-x').dataset.tocado = '';
   $('i-param-y').dataset.tocado = '';
@@ -1679,6 +1976,9 @@ function sincronizarControl() {
   const dos = ctl === 'palanca' || ctl === 'xy';
   const ver = (id, si) => { $(id).style.display = si ? '' : 'none'; };
   ver('i-wrap-orient', ctl === 'slider');
+  ver('i-fila-mov', es);
+  ver('i-mov-aviso', es);
+  pintarMovimiento();
   ver('i-control-aviso', es);
   ver('i-fs-param', es);
   ver('i-fila-param-y', dos);
@@ -1942,6 +2242,8 @@ $('i-guardar').onclick = () => {
     if (b.control !== ctl) M.valores.delete(b.id);
     b.control = ctl;
     b.orientacion = $('i-orient').value;
+    b.easing = Math.max(0, Math.min(100, parseInt($('i-easing').value, 10) || 0)) / 100;
+    b.sensibilidad = +Math.pow(2, Math.max(-2, Math.min(2, parseFloat($('i-sens').value) || 0))).toFixed(2);
     b.accion = { tipo: 'midi', midi: cc(num), midiY: dos ? cc(numY) : null, paginaDestino: null };
     b.submenu = null;
     M.activos.delete(b.id);
@@ -1980,6 +2282,19 @@ $('i-guardar').onclick = () => {
   pintarRejilla();
   toast('botón guardado');
 };
+
+/* Valores y explicación de EASING y SENSIBILIDAD según el tipo de control */
+function pintarMovimiento() {
+  const e = parseInt($('i-easing').value, 10) || 0;
+  const s = Math.pow(2, parseFloat($('i-sens').value) || 0);
+  $('i-easing-v').textContent = e ? e + '%' : '0% (inmediato)';
+  $('i-sens-v').textContent = (+s.toFixed(2)) + '×';
+  const ctl = $('i-control').value;
+  $('i-mov-aviso').textContent = ctl === 'palanca'
+    ? 'EASING: el valor sigue al dedo con inercia y la palanca vuelve al centro suave. SENSIBILIDAD: 1× lineal · menos = más fino cerca del centro · más = responde fuerte con poco movimiento.'
+    : 'EASING: el valor llega al dedo de forma suave, con inercia (0% = inmediato). SENSIBILIDAD: 1× = el control va donde tocas · menos = movimiento fino, arrastras desde donde estaba · más = rápido.';
+}
+['i-easing', 'i-sens'].forEach(id => $(id).addEventListener('input', pintarMovimiento));
 
 $('i-borrar').onclick = () => {
   const b = M.botonEdit;
