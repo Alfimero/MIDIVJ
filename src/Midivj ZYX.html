@@ -159,6 +159,29 @@ input[type=color].epcol{width:28px;height:18px;border:1px solid var(--border2);b
 .ep-link:hover{border-color:var(--accent);color:var(--accent);}
 .ep-link.on{border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.12);}
 .ep-row.linked .ep-lbl{color:var(--accent);}
+/* ── Modo 🎯 MAPEO ──
+   Fuera del modo los sliders se ven como siempre. Dentro, todo lo que se
+   puede mover con un CC se resalta (y se abren los paneles que lo tienen),
+   y cada uno muestra su pastilla: MAP (libre), CC/M1·… (mapeado), ??? (escuchando). */
+.pmap{display:none;font-size:7px;padding:1px 4px;max-width:64px;overflow:hidden;text-overflow:ellipsis;}
+.pmap-zona{display:inline-flex;align-items:center;gap:3px;}
+body.mapeo-modo .pmap{display:inline-block;}
+body.mapeo-modo .ep-row:has(.pmap),
+body.mapeo-modo .pmap-zona{outline:1px dashed var(--blue);outline-offset:1px;cursor:pointer;}
+body.mapeo-modo .ep-row:has(.pmap):hover,
+body.mapeo-modo .pmap-zona:hover{background:rgba(0,170,255,.12);}
+body.mapeo-modo .ep-row:has(.pmap.m-cc), body.mapeo-modo .ep-row:has(.pmap.m-mando),
+body.mapeo-modo .pmap-zona:has(.pmap.m-cc), body.mapeo-modo .pmap-zona:has(.pmap.m-mando){outline-style:solid;}
+body.mapeo-modo .ep-row:has(.pmap.learning),
+body.mapeo-modo .pmap-zona:has(.pmap.learning){outline:1px solid var(--yellow);background:rgba(255,204,0,.14);}
+/* el slider no se mueve con el clic: el clic elige el parámetro */
+body.mapeo-modo .ep-row:has(.pmap) input[type=range],
+body.mapeo-modo .pmap-zona input[type=range]{pointer-events:none;}
+body.mapeo-modo .efx-params:has(.pmap){display:flex;}
+body.mapeo-modo .ti-sec:has(.pmap) .ti-sec-body{display:block;}
+#mapeo-banner{display:none;align-items:center;gap:6px;background:var(--blue);color:#000;font-family:var(--mono);font-size:9px;font-weight:700;padding:3px 10px;flex-shrink:0;}
+body.mapeo-modo #mapeo-banner{display:flex;}
+#mapeo-btn.on{border-color:var(--blue);color:#000;background:var(--blue);}
 select.epsel{flex:1;min-width:0;background:var(--panel);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:8px;padding:2px 3px;outline:none;}
 select.epsel:focus{border-color:var(--accent);}
 
@@ -348,7 +371,9 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <div id="logo">◼ MIDIVJ</div>
   <input id="proj-name" type="text" value="untitled" spellcheck="false">
   <div id="learn-banner">● MIDI LEARN — toca nota o mueve CC</div>
+  <div id="mapeo-banner">🎯 MODO MAPEO — clic en un parámetro resaltado y mueve un control del mando o una perilla MIDI · ESC sale</div>
   <div class="spacer"></div>
+  <button class="hbtn" id="mapeo-btn" onclick="toggleModoMapeo()" title="Muestra todo lo que se puede mover con un slider, palanca o pad del mando (o una perilla/fader MIDI): clic en un parámetro y mueve el control para mapearlo">🎯 MAPEO</button>
   <button class="hbtn out" onclick="openOutputWindow()">⊡ HDMI</button>
   <button class="hbtn" onclick="window.open(salidaURL(),'_blank','noopener')" title="Abre la página que agregarías en OBS como Fuente de navegador (también en 📡 RELAY → 5)">🎥 OBS</button>
   <button class="hbtn" onclick="abrirPanelRes()" title="Resolución y tamaño del video de salida">⛶ SALIDA</button>
@@ -1796,7 +1821,7 @@ async function applyProjectData(d) {
     inv: !!m.inv, auto: m.auto !== false, origen: m.origen || null
   })) : [];
   S.negro = 0;
-  renderPanelCCSiAbierto();
+  refrescarMapeosUI();
   if (d.banks) d.banks.forEach((db,i)=>{ if(i<S.banks.length) Object.assign(S.banks[i],db); });
   if (d.outRes && d.outRes.locked && d.outRes.w && d.outRes.h) applyOutRes(d.outRes.w, d.outRes.h, true);
   if (d.audio) audioRestaurar(d.audio);
@@ -2571,7 +2596,10 @@ function onMIDIMsg(ev) {
   }
   setSt('st-note', dispMidi(num), '');
   /* Una nota no tiene valor continuo: no sirve para un parámetro */
-  if (S.learning && S.learning.t === 'param') return;
+  if (S.learning && S.learning.t === 'param') {
+    if (isNoteOn) document.getElementById('learn-banner').textContent = '⚠ eso fue un botón (nota): un parámetro necesita un slider, palanca, pad o perilla (CC)';
+    return;
+  }
   if (S.learning && isNoteOn) { doAssign(S.learning, num); endLearn(); return; }
   if (isNoteOn)  triggerOn(num, vel);
   if (isNoteOff) triggerOff(num);
@@ -2623,7 +2651,7 @@ function doAssign(target, midiId) {
   /* Ese CC deja de mover parámetros: ahora dispara el clip o el efecto */
   if (S.ccMaps.some(m => m.midi === midiId)) {
     S.ccMaps.forEach(m => { if (m.midi === midiId) { m.midi = null; m.origen = null; } });
-    renderPanelCCSiAbierto();
+    refrescarMapeosUI();
   }
   /* midiOrigen recuerda si el mapeo se aprendió de un botón del celular */
   const origen = _origenMando ? {..._origenMando} : null;
@@ -2640,13 +2668,18 @@ function clearMidi(t, id, ev) {
 function startLearn(t, id, ev) {
   ev.stopPropagation();
   S.learning = {t, id};
+  limpiarMapeosVacios(t === 'param' ? id : null);
+  document.getElementById('learn-banner').textContent = t === 'param'
+    ? '● MAPEO — mueve un slider, palanca o pad del mando (o una perilla/fader MIDI)'
+    : '● MIDI LEARN — toca nota o mueve CC';
   document.getElementById('learn-banner').classList.add('vis');
-  renderClips(); renderEfxs(); renderPanelCCSiAbierto();
+  renderClips(); renderEfxs(); refrescarMapeosUI();
 }
 function endLearn() {
   S.learning = null;
+  limpiarMapeosVacios(null);
   document.getElementById('learn-banner').classList.remove('vis');
-  renderClips(); renderEfxs(); renderPanelCCSiAbierto();
+  renderClips(); renderEfxs(); refrescarMapeosUI();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -3340,7 +3373,7 @@ function renderLayersPanel(t) {
       <span class="ti-name" style="cursor:pointer;${sel?'color:var(--yellow);':''}${liveOff?'opacity:.5;':''}" onclick="selectLayer(${idx},'${l.id}')" title="${escHtml(l.kind==='live'&&l.browserURL?l.browserURL:layerLabel(t,l))} — clic: editar su TRANSFORM">${escHtml(layerLabel(t, l))}${liveOff?' <span class="ti-dur">(sin señal)</span>':''}</span>
       ${l.kind==='color' ? `<input type="color" value="${l.color}" oninput="setLayerColor(${idx},'${l.id}',this.value)" title="Tono" style="width:22px;height:16px;padding:0;border:1px solid var(--border2);background:none;cursor:pointer;">` : ''}
       ${liveOff ? `<button class="hbtn save" style="font-size:8px;padding:1px 5px;" onclick="captureLayerLive(${idx},'${l.id}')" title="Volver a capturar esta fuente">📡</button>` : ''}
-      <input type="range" class="opasl" style="width:44px;" min="0" max="1" step=".05" value="${opa}" data-def="1" oninput="setLayerOpacity(${idx},'${l.id}',this.value)" title="Opacidad ${Math.round(opa*100)}%">
+      ${isMedia ? `<span class="pmap-zona" data-zona="t${idx}.opacidad">` : ''}<input type="range" class="opasl" style="width:44px;" min="0" max="1" step=".05" value="${opa}" data-def="1" oninput="setLayerOpacity(${idx},'${l.id}',this.value)" title="Opacidad ${Math.round(opa*100)}%">${isMedia ? badgeParamHTML(`t${idx}.opacidad`) + '</span>' : ''}
       ${isMedia ? '<span style="width:18px;"></span>' : `<button class="hbtn" style="font-size:8px;padding:1px 5px;border-color:var(--hot);color:var(--hot);" onclick="removeLayer(${idx},'${l.id}')" title="Quitar capa">✕</button>`}
     </div>`;
   }).join('');
@@ -3498,6 +3531,9 @@ function toggleLayersLinked(idx) {
 function buildTrackXformHTML(t) {
   const xf = curXform(t);
   const linked = !!xf.scaleLink;
+  /* El MAP mueve el TRANSFORM de la fuente (t.xform): con las capas sueltas
+     y otra capa elegida, estos sliders son de esa capa y no llevan MAP */
+  const conMap = xf === t.xform;
   return trackXformSliderParams().map(p => {
     const cur = xf[p.key] !== undefined ? xf[p.key] : p.def;
     const disp = EFX_FMT[p.fmt] ? EFX_FMT[p.fmt](cur) : cur;
@@ -3509,7 +3545,7 @@ function buildTrackXformHTML(t) {
       <span class="ep-lbl">${p.lbl}</span>
       <input type="range" class="epsl" min="${p.min}" max="${p.max}" step="${p.step}" value="${cur}" data-def="${p.def}"
         oninput="trackXformInput('${p.key}',this.value,'${p.fmt}')">
-      <span class="ep-val">${disp}</span>${linkBtn}
+      <span class="ep-val">${disp}</span>${linkBtn}${conMap ? badgeParamHTML(`t${t.i}.${p.key}`) : ''}
     </div>`;
   }).join('');
 }
@@ -4299,7 +4335,7 @@ function buildParamHTML(e) {
       <span class="ep-lbl">${p.lbl}</span>
       <input type="range" class="epsl" min="${p.min}" max="${p.max}" step="${p.step}" value="${cur}" data-def="${p.def}"
         oninput="efxParamInput('${e.id}','${p.key}',this.value,'${p.fmt}')">
-      <span class="ep-val">${disp}</span>${linkBtn}
+      <span class="ep-val">${disp}</span>${linkBtn}${badgeParamHTML(`fx.${e.id}.${p.key}`)}
     </div>`;
   }).join('');
 }
@@ -4401,7 +4437,8 @@ function paramCatalogo() {
     const grupo = 'PISTA ' + (i + 1);
     const enPista = () => S.ati === i;
     out.push({ id:`t${i}.opacidad`, grupo, nombre:`P${i+1} · Opacidad`, min:0, max:1, def:1, fmt:'pct',
-      get:() => t.opacity, set:v => { t.opacity = v; } });
+      get:() => t.opacity, set:v => { t.opacity = v; },
+      ui:v => { const s = document.querySelector(`.pmap-zona[data-zona="t${i}.opacidad"] input`); if (s) s.value = v; } });
     out.push({ id:`t${i}.escala`, grupo, nombre:`P${i+1} · Zoom (escala X e Y)`, min:.1, max:3, def:1, fmt:'scale',
       get:() => t.xform.scaleX ?? 1,
       set:v => { t.xform.scaleX = v; t.xform.scaleY = v; },
@@ -4444,11 +4481,14 @@ function paramCatalogo() {
   }));
   out.push({ id:'salida.negro', grupo:'SALIDA (TRANSFORM GLOBAL)', nombre:'Fundido a negro de toda la salida', min:0, max:1, def:0, fmt:'pct',
     get:() => S.negro, set:v => { S.negro = v; } });
-  _paramCat = out;
-  _paramIdx = new Map(out.map(p => [p.id, p]));
+  /* Sólo se fija cuando ya existen todas las pistas: los paneles de efectos
+     piden el catálogo al dibujarse y eso puede pasar antes de crearlas. */
+  const idx = new Map(out.map(p => [p.id, p]));
+  if (S.tracks.length >= N_TRACKS) { _paramCat = out; _paramIdx = idx; }
+  else _paramIdx = idx;
   return out;
 }
-function paramDe(id) { paramCatalogo(); return _paramIdx.get(id) || null; }
+function paramDe(id) { if (!_paramCat) paramCatalogo(); return _paramIdx.get(id) || null; }
 
 /* 0..127 → 0..1 con el 64 justo en el medio: una palanca en reposo (64)
    deja la posición en su centro exacto, no 6 px corrida. */
@@ -4500,6 +4540,7 @@ function liberarCCDeDisparos(midi) {
 function asignarCCParam(mapId, ccId) {
   const m = S.ccMaps.find(x => x.id === mapId);
   if (!m) return;
+  delete m._nuevo;           // ya tiene CC: deja de ser un mapeo provisorio
   m.midi = ccId;
   m.origen = _origenMando ? { ..._origenMando } : null;
   liberarCCDeDisparos(ccId);
@@ -4524,7 +4565,7 @@ function mapearParamDesdeMando(msg) {
     S.ccMaps = S.ccMaps.filter(m => m !== previo);
   }
   appendNetLog('🎛 CC' + (midi - 128) + ' → ' + (p ? p.nombre : 'sin parámetro') + ' (desde el mando)');
-  renderPanelCCSiAbierto();
+  refrescarMapeosUI();
   publicarInventarioPronto();
 }
 
@@ -4552,14 +4593,14 @@ function agregarMapeoCC() {
 function quitarMapeoCC(id) {
   S.ccMaps = S.ccMaps.filter(m => m.id !== id);
   if (S.learning?.t === 'param' && S.learning.id === id) endLearn();
-  renderPanelCC();
+  refrescarMapeosUI();
   publicarInventarioPronto();
 }
 function limpiarCCMapeo(id, ev) {
   ev.preventDefault();
   const m = S.ccMaps.find(x => x.id === id); if (!m) return;
   m.midi = null; m.origen = null;
-  renderPanelCC();
+  refrescarMapeosUI();
   publicarInventarioPronto();
 }
 function setMapeoCC(id, campo, valor) {
@@ -4567,7 +4608,7 @@ function setMapeoCC(id, campo, valor) {
   if (campo === 'destino') {
     const p = paramDe(valor); if (!p) return;
     m.destino = p.id; m.min = p.min; m.max = p.max;   // rango completo del parámetro nuevo
-    renderPanelCC();
+    refrescarMapeosUI();
     publicarInventarioPronto();
     return;
   }
@@ -4623,6 +4664,97 @@ function pintarMedidoresCC() {
     fila.querySelector('.cc-medidor i').style.width = (n * 100).toFixed(1) + '%';
     fila.querySelector('.cc-val').textContent = EFX_FMT[p.fmt] ? EFX_FMT[p.fmt](v) : (+v).toFixed(2);
   });
+}
+
+/* ── MAP junto a cada slider ──
+   Cada slider de efecto, de TRANSFORM y de color de la pista lleva su
+   pastilla MAP: clic → mover un slider, palanca o pad del mando (o un
+   fader MIDI) y queda mapeado ahí mismo, sin abrir 🎛 CONTROLES. Por
+   dentro es el mismo S.ccMaps: el rango y la inversión se ajustan allá. */
+function mapeosDe(pid) { return S.ccMaps.filter(m => m.destino === pid); }
+function aprendiendoParam(pid) {
+  return S.learning?.t === 'param' && S.ccMaps.some(m => m.id === S.learning.id && m.destino === pid);
+}
+function estadoBadgeParam(pid) {
+  if (aprendiendoParam(pid)) return { cls:'mbadge pmap learning', txt:'???' };
+  const con = mapeosDe(pid).filter(m => m.midi !== null);
+  if (!con.length) return { cls:'mbadge pmap', txt:'MAP' };
+  const m = con[0], o = m.origen;
+  const txt = (o ? 'M' + (o.mando || '?') + '·' + ((o.etiqueta || '').trim() || 'CC' + (m.midi - 128)) : 'CC' + (m.midi - 128))
+    + (con.length > 1 ? ' +' + (con.length - 1) : '');
+  return { cls:'mbadge pmap ' + (o ? 'm-mando' : 'm-cc'), txt };
+}
+function tituloBadgeParam(pid) {
+  const con = mapeosDe(pid).filter(m => m.midi !== null);
+  const ahora = con.length ? 'Mapeado a: ' + con.map(m => etiquetaCC(m)).join(', ') + '\n' : '';
+  return ahora + 'Clic = MAP: mueve un slider, palanca o pad del mando (o un fader MIDI)\nClic-der = quitar · Rango e inversión en 🎛 CONTROLES';
+}
+function badgeParamHTML(pid) {
+  if (!paramDe(pid)) return '';
+  const e = estadoBadgeParam(pid);
+  return `<span class="${e.cls}" data-pid="${pid}" title="${escHtml(tituloBadgeParam(pid))}">${escHtml(e.txt)}</span>`;
+}
+
+/* El modo 🎯 MAPEO: el clic sobre una fila resaltada (la etiqueta, el
+   slider o su pastilla) elige ese parámetro y queda escuchando; clic
+   derecho le quita el mapeo. Se sigue en el modo para mapear otro. */
+let modoMapeo = false;
+function toggleModoMapeo(forzar) {
+  modoMapeo = forzar === undefined ? !modoMapeo : !!forzar;
+  document.body.classList.toggle('mapeo-modo', modoMapeo);
+  const b = document.getElementById('mapeo-btn');
+  if (b) { b.classList.toggle('on', modoMapeo); b.textContent = modoMapeo ? '✓ LISTO' : '🎯 MAPEO'; }
+  if (!modoMapeo && S.learning?.t === 'param') endLearn();
+  pintarBadgesParam();
+}
+function filaMapeable(el) {
+  if (!modoMapeo || !el || !el.closest) return null;
+  if (el.closest('.ep-link')) return null;          // 🔗 de las escalas sigue funcionando
+  const fila = el.closest('.ep-row, .pmap-zona');
+  return fila ? fila.querySelector('.pmap[data-pid]') : null;
+}
+document.addEventListener('click', ev => {
+  const b = filaMapeable(ev.target);
+  if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  aprenderParam(b.dataset.pid, ev);
+}, true);
+document.addEventListener('contextmenu', ev => {
+  const b = filaMapeable(ev.target);
+  if (!b) return;
+  olvidarParam(b.dataset.pid, ev);
+}, true);
+/* Los paneles de efectos no se reconstruyen en cada render: las pastillas
+   se ponen al día en su lugar */
+function pintarBadgesParam() {
+  document.querySelectorAll('.pmap[data-pid]').forEach(el => {
+    const e = estadoBadgeParam(el.dataset.pid);
+    el.className = e.cls;
+    el.textContent = e.txt;
+    el.title = tituloBadgeParam(el.dataset.pid);
+  });
+}
+function refrescarMapeosUI() { renderPanelCCSiAbierto(); pintarBadgesParam(); }
+function aprenderParam(pid, ev) {
+  ev.stopPropagation();
+  const p = paramDe(pid); if (!p) return;
+  if (aprendiendoParam(pid)) { endLearn(); return; }   // segundo clic = cancelar
+  /* Si ya tiene mapeo, se vuelve a aprender ese (cambia de CC); si no, uno
+     provisorio que desaparece si se cancela sin mover nada */
+  let m = mapeosDe(pid)[0];
+  if (!m) { m = nuevoMapeoCC(p, null, null); m._nuevo = true; S.ccMaps.push(m); }
+  startLearn('param', m.id, ev);
+}
+function olvidarParam(pid, ev) {
+  ev.preventDefault(); ev.stopPropagation();
+  if (aprendiendoParam(pid)) endLearn();
+  S.ccMaps = S.ccMaps.filter(m => m.destino !== pid);
+  refrescarMapeosUI();
+  publicarInventarioPronto();
+}
+/* Un MAP que se canceló (ESC, otro MAP) sin recibir CC no deja filas vacías */
+function limpiarMapeosVacios(excepto) {
+  S.ccMaps = S.ccMaps.filter(m => !(m._nuevo && m.midi === null && m.id !== excepto));
 }
 
 /* ── Ajuste y transición de la fuente (sección del panel de pista) ── */
@@ -5978,7 +6110,7 @@ function buildVprocHTML(t) {
       <span class="ep-lbl wide" title="${p.tip}">${p.lbl}</span>
       <input type="range" class="epsl" min="${p.min}" max="${p.max}" step="${p.step}" value="${cur}" data-def="${p.def}"
         oninput="vprocInput(${t.i},'${p.key}',this.value,'${p.fmt}')">
-      <span class="ep-val">${disp}</span>
+      <span class="ep-val">${disp}</span>${badgeParamHTML(`t${t.i}.vproc.${p.key}`)}
     </div>`;
   }).join('');
 }
@@ -7382,7 +7514,7 @@ async function saveProject() {
         xform:{ ...l.xform, pin:{ ...l.xform.pin } }, liveType:l.liveType||null, browserURL:l.browserURL||'',
         media:serializeMediaRef(l.mediaRef) }))})),
     efxs:   S.efxs.map(e=>({...e,on:false})),
-    ccMaps: S.ccMaps.map(m=>({ id:m.id, midi:m.midi, destino:m.destino, min:m.min, max:m.max, inv:!!m.inv, auto:m.auto!==false, origen:m.origen||null })),
+    ccMaps: S.ccMaps.filter(m=>!(m._nuevo && m.midi===null)).map(m=>({ id:m.id, midi:m.midi, destino:m.destino, min:m.min, max:m.max, inv:!!m.inv, auto:m.auto!==false, origen:m.origen||null })),
     banks:  S.banks.map(b=>({...b})),
     outRes: {...S.outRes},
     mando:  await obtenerMandoLayoutActual(),
@@ -8479,7 +8611,8 @@ document.addEventListener('keydown',e=>{
   if (e.key==='Escape' && panelRelayVisible()) { cerrarPanelRelay(); return; }
   if (e.key==='Escape' && document.getElementById('res-fondo').classList.contains('vis')) { cerrarPanelRes(); return; }
   if (e.target.tagName==='INPUT') return;
-  if (e.key==='Escape') endLearn();
+  /* ESC: primero cancela lo que esté escuchando; si no había nada, sale del modo MAPEO */
+  if (e.key==='Escape') { if (S.learning) endLearn(); else if (modoMapeo) toggleModoMapeo(false); }
   if (e.key===' ') { e.preventDefault(); masterPlayPause(); }
   /* S — stop live stream on active track */
   if (e.key==='s'||e.key==='S') {
