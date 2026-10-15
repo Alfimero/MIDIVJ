@@ -292,6 +292,10 @@ function saneaBoton(b) {
     return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
   };
   const texto = (v, largo, def = '') => (typeof v === 'string' ? v.slice(0, largo) : def);
+  const decimal = (v, min, max, def) => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+  };
   const imagen = typeof b.imagen === 'string' && b.imagen.startsWith('data:image/') && b.imagen.length < 1500000
     ? b.imagen : null;
 
@@ -350,6 +354,9 @@ function saneaBoton(b) {
     submenu: control === 'boton' ? submenu : null,
     control,
     orientacion: ['vertical', 'horizontal'].includes(b.orientacion) ? b.orientacion : 'auto',
+    /* Movimiento de los controles: suavizado 0..1 y sensibilidad 0.25×..4× */
+    easing: decimal(b.easing, 0, 1, 0),
+    sensibilidad: decimal(b.sensibilidad, 0.25, 4, 1),
     /* true = lo configuró una persona; el mando no le reasigna el mensaje */
     tocado: !!b.tocado
   };
