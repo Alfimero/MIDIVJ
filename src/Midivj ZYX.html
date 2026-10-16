@@ -379,7 +379,7 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <button class="hbtn" onclick="abrirPanelRes()" title="Resolución y tamaño del video de salida">⛶ SALIDA</button>
   <button class="hbtn" id="mando-btn" onclick="abrirPanelRelay()" title="Relay, conexión y códigos QR de los mandos">📡 RELAY <span id="mando-count">—</span></button>
   <button class="hbtn" id="audio-btn" onclick="abrirPanelAudio()" title="Entradas de audio, análisis y mapeos audio → visual">🔊 AUDIO</button>
-  <button id="excl-btn" class="hbtn" onclick="toggleExcl()" title="Exclusivo: disparar un clip detiene los clips de otros tracks" style="border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.08);">EXCL ●</button>
+  <button id="excl-btn" class="hbtn" onclick="toggleExcl()" title="Exclusivo: disparar un clip detiene los de las otras pistas de su tipo (un video a otro video, una fuente en vivo a otra). Una cámara encima de un video no lo detiene. Por pista: 🎞 AJUSTE Y TRANSICIÓN → EXCL (capa = se superpone siempre)" style="border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.08);">EXCL ●</button>
   <button class="hbtn danger" onclick="resetAll()">RESET</button>
   <button class="hbtn" onclick="abrirPanelSesiones()" title="Lista las sesiones guardadas en Sessions/ y permite elegir la carpeta de MEDIA">ABRIR</button>
   <button class="hbtn save" onclick="saveProject()">GUARDAR</button>
@@ -1138,6 +1138,10 @@ function makeTrack(i) {
     /* Transición de la fuente: la usan sus clips que no tienen una propia
        (ver TRANSICIONES ENTRE FUENTES) */
     transIn:'none', transOut:'none', transDur:0.5,
+    /* Con EXCL ●: 'auto' (los videos se reemplazan entre sí y las fuentes en
+       vivo entre sí), 'capa' (se superpone: ni apaga ni la apagan) o 'todas'
+       (corta a cualquier pista). Ver grupoExcl(). */
+    excl:'auto',
     _fade:null, _fadeSeq:0, _fadeTimer:0,   // fundido de opacidad en curso ('disolver')
     selLayerId:'media',    // capa que editan TRANSFORM DE PISTA y la caja interactiva (sólo si layersLinked=false)
     layersLinked:true,     // true = todas las capas comparten t.xform (el color marca dónde va todo); false = transform por capa
@@ -1785,6 +1789,7 @@ async function applyProjectData(d) {
       S.tracks[i].transIn = td.transIn || 'none';
       S.tracks[i].transOut = td.transOut || 'none';
       S.tracks[i].transDur = td.transDur !== undefined ? td.transDur : 0.5;
+      S.tracks[i].excl = EXCL_MODOS.includes(td.excl) ? td.excl : 'auto';
       if(td.videoOffset!==undefined) S.tracks[i].videoOffset=clampOffset(td.videoOffset);
       if(td.xform) S.tracks[i].xform=xformDefault(td.xform);
       /* Capas: se desechan las actuales (streams, URLs) y se reconstruyen */
@@ -2872,16 +2877,36 @@ function apagarConFundido(t, c, dur) {
   fundirPista(t, factorFundido(t), 0, dur, () => { if (t.activeClip === c) deactivateClip(t, true); });
 }
 
+/* ── EXCL POR GRUPOS ──
+   Con EXCL ●, disparar un clip apaga los clips activos de las pistas de su
+   mismo grupo: los videos se reemplazan entre sí y las fuentes en vivo
+   (cámara, captura, pantalla, navegador) entre sí. Una cámara puesta
+   encima de un video de fondo ya no lo detiene, ni el video a la cámara:
+   son capas. Por pista (🎞 AJUSTE Y TRANSICIÓN → EXCL): 'capa' se superpone
+   siempre (p. ej. dos videos a la vez, el de arriba al 50 %) y 'todas'
+   corta a cualquier pista, como antes de los grupos. */
+const EXCL_MODOS = ['auto', 'capa', 'todas'];
+function grupoExcl(t) {
+  const m = t.excl || 'auto';
+  if (m === 'capa') return null;
+  if (m === 'todas') return '*';
+  return t.sourceType === 'file' ? 'video' : 'vivo';
+}
+function seExcluyen(a, b) {
+  const ga = grupoExcl(a), gb = grupoExcl(b);
+  return !!ga && !!gb && (ga === '*' || gb === '*' || ga === gb);
+}
+
 function trigClipLoaded(track, clip) {
   if (!track.loaded) return;
   if (clip.trigMode==='toggle' && track.activeClip===clip) { deactivateClip(track); return; }
 
   const prevClip = track.activeClip;
   /* Lo que sale: el clip anterior de esta pista y, en modo exclusivo, los
-     activos de las demás pistas. Antes las demás se cortaban de golpe, sin
-     su transición de salida. */
+     activos de las demás pistas de su grupo (ver EXCL POR GRUPOS). Antes las
+     demás se cortaban de golpe, sin su transición de salida. */
   const salen = S.exclMode
-    ? S.tracks.filter(o => o !== track && o.activeClip).map(o => ({ t:o, c:o.activeClip, ...transSalida(o, o.activeClip) }))
+    ? S.tracks.filter(o => o !== track && o.activeClip && seExcluyen(track, o)).map(o => ({ t:o, c:o.activeClip, ...transSalida(o, o.activeClip) }))
     : [];
   const propia = prevClip ? transSalida(track, prevClip) : { tipo:'none', dur:0 };
   const telon = [propia, ...salen].find(x => x.tipo !== 'none' && x.tipo !== 'disolver') || null;
@@ -3207,6 +3232,7 @@ function renderTrackInfo() {
 </div>${offerRow}${navRow}
 ${renderLayersPanel(t)}
 ${buildCamCfgHTML(t, idx)}
+${buildCamTelHTML(t, idx)}
 <div class="opa-row" title="Desplazamiento del video en el timeline, sin límite: el timeline se alarga solo. Shift+arrastra el bloque del video en el timeline, o escribe el tiempo (segundos, m:ss o h:mm:ss) y pulsa Enter.">
   <span class="opa-lbl">OFFSET</span>
   <input type="range" class="opasl" min="0" max="${offsetSliderMax(t)}" step="1" value="${Math.round(t.videoOffset||0)}" data-def="0"
@@ -3226,6 +3252,14 @@ ${tiSec('fuente', '🎞 AJUSTE Y TRANSICIÓN DE LA FUENTE', '',
     <option value="estirar"${t.ajuste==='estirar'?' selected':''}>estirar a la salida</option>
   </select>
 </div>
+<div class="opa-row" style="margin-top:4px;" title="Qué apaga esta pista al disparar un clip con EXCL ● (botón de la cabecera). AUTO: un video reemplaza a otro video y una fuente en vivo a otra, pero una cámara encima de un video no lo detiene. CAPA: se superpone siempre — ni apaga a las demás ni la apagan (dos videos a la vez; bajale la opacidad para ver los dos).">
+  <span class="opa-lbl" style="width:44px;">EXCL</span>
+  <select class="tr-sel" onchange="setTrackExcl(${idx}, this.value)">
+    <option value="auto"${(t.excl||'auto')==='auto'?' selected':''}>auto (${t.sourceType==='file'?'entre videos':'entre fuentes en vivo'})</option>
+    <option value="capa"${t.excl==='capa'?' selected':''}>capa (se superpone)</option>
+    <option value="todas"${t.excl==='todas'?' selected':''}>apaga todas las pistas</option>
+  </select>
+</div>
 <div class="opa-row" style="margin-top:4px;" title="Transición de esta fuente: la usan sus clips que no tienen una propia, al cambiar de una fuente a otra con el mando o el MIDI">
   <span class="opa-lbl" style="width:44px;">ENTRA</span>
   <select class="tr-sel" onchange="setTrackTrans(${idx},'in',this.value)">${transOpcionesHTML('— ninguna —', t.transIn)}</select>
@@ -3239,7 +3273,8 @@ ${tiSec('fuente', '🎞 AJUSTE Y TRANSICIÓN DE LA FUENTE', '',
   <span class="opa-lbl" id="trdur-v">${(+(t.transDur ?? 0.5)).toFixed(1)} s</span>
 </div>
 <div style="font-family:var(--mono);font-size:7px;color:var(--text3);padding:3px 0;line-height:1.6;">
-  Al disparar un clip de otra fuente: primero sale la actual (su SALE) y luego entra la nueva (su ENTRA). <b>Disolver</b> funde suave las dos fuentes; las demás pasan por negro, blanco o TV. Un clip con transición propia usa la suya.
+  Al disparar un clip de otra fuente: primero sale la actual (su SALE) y luego entra la nueva (su ENTRA). <b>Disolver</b> funde suave las dos fuentes; las demás pasan por negro, blanco o TV. Un clip con transición propia usa la suya.<br>
+  Las pistas son capas (T1 al fondo): con <b>EXCL capa</b> y la opacidad de la de arriba al 50 % se ven las dos reproduciéndose.
 </div>`)}
 ${tiSec('xform', `⛶ TRANSFORM · <span style="color:var(--yellow)">${t.layersLinked!==false ? 'TODAS LAS CAPAS' : escHtml(layerLabel(t, curLayer(t)))}</span>`,
   `<button class="hbtn${t.layersLinked!==false?' on':''}" style="font-size:8px;padding:1px 6px;margin-left:auto;" onclick="toggleLayersLinked(${idx})" title="${t.layersLinked!==false?'Vinculado: la transformación mueve todas las capas de la pista juntas (clic para transformar cada capa por separado)':'Suelto: cada capa tiene su propia transformación (clic para vincular todas)'}">🔗 CAPAS</button>
@@ -4785,6 +4820,10 @@ function setTrackAjuste(idx, v) {
   S.tracks[idx].ajuste = ['auto','encajar','llenar','estirar'].includes(v) ? v : 'auto';
   syncXov();
 }
+function setTrackExcl(idx, v) {
+  S.tracks[idx].excl = EXCL_MODOS.includes(v) ? v : 'auto';
+  renderTL();
+}
 function setTrackTrans(idx, campo, v) {
   const t = S.tracks[idx];
   if (campo === 'in') t.transIn = v || 'none';
@@ -4915,7 +4954,7 @@ function renderTL() {
     /* Track label */
     tlCtx.font = 'bold 8px Space Mono,monospace'; tlCtx.textAlign='center';
     tlCtx.fillStyle = track.loaded ? track.acc : track.acc+'44';
-    tlCtx.fillText('T'+(ti+1), TL_PAD/2, rowY+rowH/2+3);
+    tlCtx.fillText('T'+(ti+1)+(track.excl==='capa' ? ' ⧉' : ''), TL_PAD/2, rowY+rowH/2+3);   // ⧉ = capa: EXCL no la apaga
 
     /* Center line */
     tlCtx.fillStyle='#181835'; tlCtx.fillRect(TL_PAD, rowY+rowH/2-1, W-TL_PAD-TL_RP, 2);
@@ -4926,7 +4965,25 @@ function renderTL() {
        don't need vidA to have loaded anything yet. Only the "video block"
        below genuinely needs track.dur, which is unknown until loaded. */
     const vo = track.videoOffset || 0;
-    if (track.loaded) {
+    if (track.loaded && track.sourceType !== 'file') {
+      /* ── Fuente en vivo: no tiene duración ni posición — está en cualquier
+         punto del cursor, así que ocupa todo el timeline (rayado = señal en
+         vivo). Más tenue mientras su interruptor la tiene oculta. ── */
+      const vis = vivoVisible(track);
+      const x1 = TL_PAD, x2 = W - TL_RP;
+      tlCtx.save();
+      tlCtx.beginPath(); tlCtx.rect(x1, rowY+1, x2-x1, rowH-2); tlCtx.clip();
+      tlCtx.globalAlpha = vis ? .14 : .05;
+      tlCtx.fillStyle = track.acc; tlCtx.fillRect(x1, rowY+1, x2-x1, rowH-2);
+      tlCtx.globalAlpha = vis ? .12 : .05;
+      tlCtx.strokeStyle = track.acc; tlCtx.lineWidth = 1;
+      tlCtx.beginPath();
+      for (let sx = x1 - rowH; sx < x2; sx += 10) { tlCtx.moveTo(sx, rowY+rowH); tlCtx.lineTo(sx + rowH, rowY); }
+      tlCtx.stroke();
+      tlCtx.globalAlpha = vis ? .45 : .2;
+      tlCtx.strokeRect(x1+.5, rowY+1.5, x2-x1-1, rowH-3);
+      tlCtx.restore();
+    } else if (track.loaded) {
       /* ── Video block (shows where the video sits in the timeline) ── */
       const vx1 = Math.max(TL_PAD, toPx(vo));
       const vx2 = Math.min(W-TL_RP, toPx(vo + track.dur));
@@ -5006,6 +5063,18 @@ function renderTL() {
         }
       }
     });
+
+    /* Etiqueta de la fuente en vivo, encima de sus clips y a la derecha (a la
+       izquierda va el nombre del clip-interruptor, si lo hay) */
+    if (track.loaded && track.sourceType !== 'file') {
+      const vis = vivoVisible(track);
+      tlCtx.font = 'bold 7px Space Mono,monospace'; tlCtx.textAlign = 'right';
+      const lbl = (vis ? '● EN VIVO' : '○ OCULTA') + ' · ' + srcIcon(track.sourceType) + ' ' + (track.loadedName || '');
+      const lx = W - TL_RP - 4, lw = tlCtx.measureText(lbl).width + 6;
+      tlCtx.fillStyle = 'rgba(8,8,24,.75)'; tlCtx.fillRect(lx - lw + 3, rowY + rowH/2 - 5, lw, 11);
+      tlCtx.fillStyle = vis ? '#ff3366' : '#55556a';
+      tlCtx.fillText(lbl, lx, rowY + rowH/2 + 3);
+    }
 
     /* No per-track cursors — master cursor drawn below */
   }
@@ -6334,6 +6403,13 @@ function buildCamCfgHTML(t, idx) {
   rows.push(`<div class="ep-row"><span class="ep-lbl wide">Resolución</span>
     <select class="epsel" onchange="camApplyRes(${idx},this.value,null)">${res.map(([w, h]) => `<option value="${w}x${h}"${`${w}x${h}`===curRes?' selected':''}>${w}×${h}</option>`).join('')}</select>
     <select class="epsel" style="flex:0 0 58px;" onchange="camApplyRes(${idx},null,this.value)" title="Cuadros por segundo">${fpsList.map(f => `<option value="${f}"${f===curFps?' selected':''}>${f} fps</option>`).join('')}</select></div>`);
+  /* Formato (proporción): el navegador recorta la imagen del dispositivo si
+     declara resizeMode 'crop-and-scale' (Chrome/Edge lo hacen con casi todas) */
+  if (Array.isArray(caps.resizeMode) && caps.resizeMode.includes('crop-and-scale')) {
+    const curF = t._camCons?.formato || 'original';
+    rows.push(`<div class="ep-row" title="Proporción de la imagen: recorta el centro de lo que entrega el dispositivo"><span class="ep-lbl wide">Formato</span>
+      <select class="epsel" id="cam-formato" onchange="camApplyFormato(${idx},this.value)">${CAM_FORMATOS.map(([v, l]) => `<option value="${v}"${v===curF?' selected':''}>${l}</option>`).join('')}</select></div>`);
+  }
   rows.push(`<div class="ep-row"><span class="ep-note" id="cam-st">${camStatusText(st)}</span></div>`);
 
   /* Controles del driver, en el orden de CAM_CTRL y después el resto alfabético */
@@ -6420,8 +6496,8 @@ async function camPush(t) {
   q.busy = true;
   while (q.dirty) {
     q.dirty = false;
-    try { await mt.applyConstraints(camBuildConstraints(t)); }
-    catch (e) { console.warn('Cámara: applyConstraints', e); setSt('st-active', 'Cámara: ' + (e.message || e.name), 'err'); }
+    try { await mt.applyConstraints(camBuildConstraints(t)); q.error = null; }
+    catch (e) { q.error = e; console.warn('Cámara: applyConstraints', e); setSt('st-active', 'Cámara: ' + (e.message || e.name), 'err'); }
   }
   q.busy = false;
   camRefreshStatus(t);
@@ -6451,6 +6527,26 @@ async function camApplyRes(idx, res, fps) {
   if (res) { const [w, h] = res.split('x').map(Number); c.basic.width = { ideal:w }; c.basic.height = { ideal:h }; }
   if (fps) c.basic.frameRate = { ideal:+fps };
   await camPush(t);
+}
+const CAM_FORMATOS = [['original','original (del dispositivo)'], ['16:9','16:9'], ['4:3','4:3'], ['1:1','1:1 cuadrado'], ['9:16','9:16 vertical']];
+const CAM_FORMATO_R = { '16:9':16/9, '4:3':4/3, '1:1':1, '9:16':9/16 };
+async function camApplyFormato(idx, v) {
+  const t = S.tracks[idx]; const c = camCons(t);
+  const antes = { formato: c.formato, ar: c.basic.aspectRatio, rm: c.basic.resizeMode };
+  c.formato = CAM_FORMATO_R[v] ? v : 'original';
+  /* Hace falta 'exact': con 'ideal' Chrome prefiere no recortar */
+  if (CAM_FORMATO_R[v]) { c.basic.aspectRatio = { exact: CAM_FORMATO_R[v] }; c.basic.resizeMode = 'crop-and-scale'; }
+  else { delete c.basic.aspectRatio; delete c.basic.resizeMode; }
+  await camPush(t);
+  if (t._camQ?.error) {
+    /* El dispositivo no lo aceptó: se vuelve al formato anterior para no
+       arrastrar una restricción imposible en los próximos cambios */
+    c.formato = antes.formato;
+    if (antes.ar) c.basic.aspectRatio = antes.ar; else delete c.basic.aspectRatio;
+    if (antes.rm) c.basic.resizeMode = antes.rm; else delete c.basic.resizeMode;
+    await camPush(t);
+    const sel = document.getElementById('cam-formato'); if (sel) sel.value = c.formato || 'original';
+  }
 }
 /* Refleja lo que el driver aceptó realmente (selects, checks, línea de estado) sin tocar los sliders */
 function camRefreshStatus(t) {
@@ -6604,26 +6700,7 @@ function drawTrackMedia(t, ti, zdx0, zdy0, zdw0, zdh0, mH, mV, rgb) {
     if (isLive) {
       const lv = t.liveVid;
       if (lv.readyState < 2) { ctx.globalAlpha=1; return; }
-
-      /* Clips-interruptor (srcLive, ⚡ GENERAR CLIPS sobre una fuente en
-         vivo): si la pista tiene alguno, la fuente sólo se ve mientras uno
-         esté activo. Si no, ventana de visibilidad clásica por rango. */
-      if (t.clips.some(c => c.srcLive)) {
-        if (!t.activeClip || !t.activeClip.srcLive) { ctx.globalAlpha=1; return; }
-      } else {
-        /* Ventana clásica por rango, sólo con clips propios de la pista: los
-           clips atados a un archivo de la lista de medios (srcRef) o a una
-           capa no cuentan — antes, los clips del video anterior dejaban la
-           fuente nueva invisible y parecía que no se podía cambiar. */
-        const winClips = t.clips.filter(c => !c.srcRef && !c.playlistEntryId && !c.layerId);
-        if (winClips.length) {
-          const visible = winClips.some(c => {
-            const tlIn=vo+c.in, tlOut=vo+c.out;
-            return S.masterTime>=tlIn && S.masterTime<=tlOut;
-          });
-          if (!visible) { ctx.globalAlpha=1; return; }
-        }
-      }
+      if (!vivoVisible(t)) { ctx.globalAlpha=1; return; }
 
       ctx.globalAlpha = opa;
       { const tr = trackXformRect(zdx, zdy, zdw, zdh, t.xform);
@@ -6691,6 +6768,22 @@ function drawTrackMedia(t, ti, zdx0, zdy0, zdw0, zdh0, mH, mV, rgb) {
       ctx.drawImage(tf.cvs, 0, 0);
     }
     ctx.globalAlpha=1;
+}
+
+/* ¿Se ve ahora la fuente en vivo de la pista? Sin clips, siempre: ocupa
+   todo el timeline, encima o debajo de los videos de las otras pistas. */
+function vivoVisible(t) {
+  /* Clips-interruptor (srcLive, ⚡ GENERAR CLIPS sobre una fuente en
+     vivo): si la pista tiene alguno, la fuente sólo se ve mientras uno
+     esté activo. Si no, ventana de visibilidad clásica por rango. */
+  if (t.clips.some(c => c.srcLive)) return !!(t.activeClip && t.activeClip.srcLive);
+  /* Ventana clásica por rango, sólo con clips propios de la pista: los
+     clips atados a un archivo de la lista de medios (srcRef) o a una
+     capa no cuentan — antes, los clips del video anterior dejaban la
+     fuente nueva invisible y parecía que no se podía cambiar. */
+  const vo = t.videoOffset || 0;
+  const winClips = t.clips.filter(c => !c.srcRef && !c.playlistEntryId && !c.layerId);
+  return !winClips.length || winClips.some(c => S.masterTime >= vo + c.in && S.masterTime <= vo + c.out);
 }
 
 /* ── AJUSTE de la fuente principal dentro de la salida ──
@@ -7510,6 +7603,7 @@ async function saveProject() {
     media: { folderHint: MEDIA.library?.rootName || '' },
     tracks: S.tracks.map(t=>({id:t.id,name:t.name,opacity:t.opacity,videoOffset:t.videoOffset||0,
       ajuste:t.ajuste||'auto', transIn:t.transIn||'none', transOut:t.transOut||'none', transDur:t.transDur ?? 0.5,
+      excl:t.excl||'auto',
       xform:{...t.xform},
       vproc:{...t.vproc},
       media:t.sourceType==='file' ? serializeMediaRef(t.mediaRef) : null,
@@ -7752,6 +7846,7 @@ function netConnect() {
       if (msg.type === 'rtc-candidato') { _camRecibirCandidato(msg.slot, msg.candidato); return; }
       if (msg.type === 'camara-colgar') { _camColgarRecibido(msg.slot, msg.motivo); return; }
       if (msg.type === 'camara-error')  { _camError(msg.slot, msg.motivo); return; }
+      if (msg.type === 'camara-estado') { _camEstadoRecibido(msg.slot, msg); return; }
       if (msg.type === 'salida-hola')      { _salIniciar(msg.id); return; }
       if (msg.type === 'salida-respuesta') { _salRecibirRespuesta(msg.id, msg.sdp); return; }
       if (msg.type === 'salida-candidato') { _salRecibirCandidato(msg.id, msg.candidato); return; }
@@ -7976,6 +8071,105 @@ function _camError(slot, motivo) {
   _camCerrar(trackIdx, false, 'error reportado por el teléfono: '+(motivo || 'sin especificar'));
 }
 
+/* ── CONFIG. DE CÁMARA DEL TELÉFONO ──
+   Resolución, FPS, formato, calidad y lente de la toma. El teléfono es
+   quien la guarda y la aplica (también se cambia desde su ⚙ en /camara):
+   la app le manda 'camara-config' y él responde 'camara-estado' con lo que
+   de verdad envía. 'Llega' es lo que mide el receptor (getStats). */
+const TEL_OPC = {
+  res:     [['480','480p'], ['720','720p (HD)'], ['1080','1080p (Full HD)'], ['2160','2160p (4K)']],
+  fps:     [15, 24, 25, 30, 60].map(f => [String(f), f + ' fps']),
+  formato: [['original','original (como el teléfono)'], ['16:9','16:9 horizontal'], ['9:16','9:16 vertical'], ['4:3','4:3'], ['3:4','3:4 vertical'], ['1:1','1:1 cuadrado']],
+  calidad: [['auto','auto'], ['2','2 Mbps'], ['4','4 Mbps'], ['8','8 Mbps'], ['15','15 Mbps']],
+  lente:   [['environment','trasera'], ['user','frontal (selfie)']],
+};
+const TEL_RES_PX = { '480':480, '720':720, '1080':1080, '2160':2160 };
+
+function _camEstadoRecibido(slot, msg) {
+  const idx = CAM.porSlot.get(slot);
+  const ses = idx !== undefined ? CAM.sesiones.get(idx) : null;
+  if (!ses) return;
+  clearTimeout(ses.telEspera);
+  const primera = !ses.tel;
+  const r = msg.real || {};
+  ses.tel = {
+    config: msg.config && typeof msg.config === 'object' ? msg.config : {},
+    real: { w: +r.w || 0, h: +r.h || 0, fps: +r.fps || 0 },
+    caps: msg.caps && typeof msg.caps === 'object' ? msg.caps : null,
+    error: msg.error ? String(msg.error).slice(0, 200) : null,
+  };
+  if (ses.tel.error) _camLog('⚠ cámara '+slot+' (pista '+idx+'): '+ses.tel.error);
+  if (S.ati !== idx) return;
+  const box = document.getElementById('camtel');
+  if (box) box.innerHTML = camTelCuerpoHTML(idx, ses);
+  else if (primera) renderTrackInfo();
+}
+
+function buildCamTelHTML(t, idx) {
+  const ses = CAM.sesiones.get(idx);
+  if (t.sourceType !== 'phone' || !ses) return '';
+  return tiSec('camtel', '⚙ CONFIG. DE CÁMARA · 📱 ' + ses.slot, '',
+    `<div class="efx-params open" id="camtel" style="padding:6px 0 0;">${camTelCuerpoHTML(idx, ses)}</div>`);
+}
+function camTelCuerpoHTML(idx, ses) {
+  const tel = ses.tel;
+  if (!tel) return `<div class="ep-row"><span class="ep-note">⏳ Esperando que el teléfono informe su configuración… Si no aparece, recargá /camara en el teléfono (puede tener la versión anterior) y reiniciá el relay.</span></div>`;
+  const cfg = tel.config, k = tel.caps || {};
+  const tope = k.maxW && k.maxH ? Math.min(k.maxW, k.maxH) : Infinity;
+  /* sólo lo que la cámara declara poder dar; lo elegido siempre queda */
+  const vale = {
+    res:   v => TEL_RES_PX[v] <= tope || v === String(cfg.res),
+    fps:   v => !k.maxFps || +v <= k.maxFps + .5 || +v === +cfg.fps,
+    lente: v => v === 'environment' || k.frontal !== false || v === cfg.lente,
+  };
+  const sel = (campo, lbl, tip) => `<div class="ep-row" title="${tip}"><span class="ep-lbl wide">${lbl}</span>
+    <select class="epsel" data-tcampo="${campo}" onchange="camTelSet(${idx},'${campo}',this.value)">${TEL_OPC[campo]
+      .filter(([v]) => !vale[campo] || vale[campo](v))
+      .map(([v, l]) => `<option value="${v}"${String(cfg[campo]) === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>`;
+  const r = tel.real;
+  const envia = r.w ? `📱 Envía: ${r.w}×${r.h} · ${r.fps} fps · ${r.h > r.w ? 'vertical' : 'horizontal'}` : '📱 Envía: —';
+  return [
+    sel('res', 'Resolución', 'Lado corto de la toma (720p = 1280×720 en horizontal)'),
+    sel('fps', 'FPS', 'Cuadros por segundo de la toma'),
+    sel('formato', 'Formato', 'Proporción de lo que envía el teléfono. Original = como lo tenga (vertical u horizontal); las demás recortan el centro de la toma en el teléfono'),
+    sel('calidad', 'Calidad', 'Tope de Mbps del envío: más = más nitidez, pero necesita buena Wi-Fi'),
+    sel('lente', 'Lente', 'Cámara trasera o frontal del teléfono'),
+    `<div class="ep-row"><span class="ep-note" id="camtel-st"${tel.error ? ' style="color:var(--hot);"' : ''}>${tel.error ? '⚠ ' + escHtml(tel.error) : envia}</span></div>`,
+    `<div class="ep-row"><span class="ep-note" id="camtel-llega">Llega: —</span></div>`,
+    `<div class="ep-row"><span class="ep-note">También se cambia desde el teléfono (⚙ en /camara). Con un formato vertical, el AJUSTE de abajo decide si se encaja o llena la salida.</span></div>`,
+  ].join('');
+}
+function camTelSet(idx, campo, valor) {
+  const ses = CAM.sesiones.get(idx); if (!ses) return;
+  const parcial = { [campo]: campo === 'fps' ? +valor : valor };
+  if (ses.tel) ses.tel.config = { ...ses.tel.config, ...parcial };
+  _camLog('cámara '+ses.slot+' (pista '+idx+'): '+campo+' → '+valor);
+  _camEnviar({ type: 'camara-config', slot: ses.slot, config: parcial });
+  const st = document.getElementById('camtel-st');
+  if (st) { st.textContent = '⏳ aplicando en el teléfono…'; st.style.color = ''; }
+  clearTimeout(ses.telEspera);
+  ses.telEspera = setTimeout(() => {
+    const el = document.getElementById('camtel-st');
+    if (el && CAM.sesiones.get(idx) === ses && S.ati === idx) {
+      el.textContent = '⚠ el teléfono no respondió — recargá /camara en el teléfono y reiniciá el relay';
+      el.style.color = 'var(--hot)';
+    }
+  }, 5000);
+}
+/* Lo que llega de verdad (estadísticas del receptor), cada segundo mientras se ve la sección */
+setInterval(async () => {
+  const ses = CAM.sesiones.get(S.ati);
+  const el = document.getElementById('camtel-llega');
+  if (!ses || !ses.pc || !el) return;
+  try {
+    const st = await ses.pc.getStats();
+    st.forEach(r => {
+      if (r.type === 'inbound-rtp' && r.kind === 'video' && r.frameWidth)
+        el.textContent = `Llega: ${r.frameWidth}×${r.frameHeight} @ ${Math.round(r.framesPerSecond || 0)} fps`;
+    });
+  } catch (_) {}
+}, 1000);
+
 /* Único punto de apagado de una sesión CAM: cierra el RTCPeerConnection,
    limpia el estado y, si corresponde, le avisa al teléfono que cuelgue.
    `motivo` queda en la consola y viaja al teléfono para que su propio
@@ -7995,6 +8189,7 @@ function _camCerrar(trackIdx, avisarPhone, motivo) {
     sesion.pc.oniceconnectionstatechange = null;
     sesion.pc.close();
   }
+  clearTimeout(sesion.telEspera);
   CAM.sesiones.delete(trackIdx);
   CAM.porSlot.delete(sesion.slot);
   if (avisarPhone) _camEnviar({ type: 'camara-colgar', slot: sesion.slot, motivo });
