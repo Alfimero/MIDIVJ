@@ -103,6 +103,27 @@ body.limpio #volver-ver{display:block;}
 }
 #toast.vis{opacity:1;}
 
+/* ── ⚙ Configuración de la toma (hoja inferior) ── */
+#ajustes{
+  position:fixed;left:0;right:0;bottom:0;z-index:60;
+  background:rgba(10,12,16,.96);border-top:1px solid var(--border2);
+  padding:12px 14px calc(14px + var(--safe-b));
+  display:none;flex-direction:column;gap:9px;
+}
+#ajustes.vis{display:flex;}
+#ajustes .fila{display:flex;align-items:center;gap:10px;}
+#ajustes .fila label{width:92px;flex-shrink:0;font-family:var(--mono);font-size:11px;color:var(--text2);}
+#ajustes select{
+  flex:1;min-width:0;background:var(--bg3);color:var(--text);border:1px solid var(--border2);
+  border-radius:8px;padding:9px 8px;font-family:var(--mono);font-size:13px;
+}
+#ajustes .cab{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent);}
+#ajustes .cab span{flex:1;}
+#ajustes .nota{font-family:var(--mono);font-size:10px;color:var(--text3);line-height:1.5;}
+#cfg-envia{font-family:var(--mono);font-size:11px;color:var(--text2);}
+#cfg-envia.err{color:var(--danger);}
+#ajustes.vis ~ #toast{bottom:auto;top:calc(52px + var(--safe-t));}   /* con la hoja abierta, el aviso va arriba */
+
 /* ── Pantalla de bloqueo (slot ocupado) ── */
 #bloqueo{
   position:fixed;inset:0;z-index:100;background:var(--bg);display:none;
@@ -124,6 +145,7 @@ body.limpio #volver-ver{display:block;}
   <span id="dot"></span>
   <span id="estado">conectando…</span>
   <span id="slot-lbl"></span>
+  <button class="tbtn" id="btn-cfg" title="Resolución, FPS, formato, calidad y lente de la toma">⚙</button>
   <button class="tbtn" id="btn-ajuste" title="Ver la toma completa (como llega a MIDIVJ) o llenar la pantalla">⤢ LLENAR</button>
   <button class="tbtn" id="btn-fs" title="Pantalla completa">⛶</button>
 </div>
@@ -140,6 +162,17 @@ body.limpio #volver-ver{display:block;}
     <div id="ayuda-toque">toca la imagen para ocultar los controles</div>
   </div>
   <button id="volver-ver">☰</button>
+</div>
+
+<div id="ajustes">
+  <div class="cab"><span>⚙ CONFIGURACIÓN DE LA TOMA</span><button class="tbtn" id="cfg-cerrar">✕</button></div>
+  <div class="fila"><label for="cfg-res">RESOLUCIÓN</label><select id="cfg-res"></select></div>
+  <div class="fila"><label for="cfg-fps">FPS</label><select id="cfg-fps"></select></div>
+  <div class="fila"><label for="cfg-formato">FORMATO</label><select id="cfg-formato"></select></div>
+  <div class="fila"><label for="cfg-calidad">CALIDAD</label><select id="cfg-calidad"></select></div>
+  <div class="fila"><label for="cfg-lente">LENTE</label><select id="cfg-lente"></select></div>
+  <div id="cfg-envia"></div>
+  <div class="nota">También se cambia desde MIDIVJ (CONFIG. DE CÁMARA de la pista). FORMATO recorta el centro de la toma: lo que ves aquí es lo que llega.</div>
 </div>
 
 <div id="toast"></div>
@@ -193,7 +226,11 @@ const C = {
   reintento: 0,
   timerReintento: 0,
   pc: null,
-  stream: null,
+  stream: null,           // lo que se envía: la cámara tal cual o el canvas recortado (FORMATO)
+  raw: null,              // la cámara (hardware) — el mismo objeto que stream con FORMATO original
+  proc: null,             // recorte en canvas (ver crearProcesador)
+  caps: null,             // límites de la cámara: { maxW, maxH, maxFps, frontal }
+  errorCfg: null,         // último cambio de configuración que la cámara no aceptó
   candidatosPendientes: [],
   estado: 'esperando',    // esperando | pidiendo | transmitiendo | error
   abandonado: false,      // llegó camara-colgar mientras getUserMedia seguía pendiente
@@ -209,6 +246,299 @@ function _log(msg, extra) {
   const linea = '[cámara-tel] ' + msg;
   if (extra !== undefined) console.log(linea, extra); else console.log(linea);
 }
+
+/* ── Configuración de la toma ─────────────────────────────
+   RESOLUCIÓN, FPS, FORMATO, CALIDAD y LENTE. Se cambian desde este
+   teléfono (⚙) o desde MIDIVJ (CONFIG. DE CÁMARA de la pista), que manda
+   'camara-config'. El teléfono guarda la configuración, la aplica en
+   caliente sin cortar la conexión (applyConstraints / replaceTrack) y
+   responde 'camara-estado' con lo que de verdad envía, para que las dos
+   pantallas muestren lo mismo. FORMATO 'original' envía la cámara tal cual
+   (sigue la orientación del teléfono); los demás recortan el centro a esa
+   proporción en un canvas, así lo que se ve aquí es lo que llega. */
+const RESOLUCIONES = { '480': 480, '720': 720, '1080': 1080, '2160': 2160 };   // lado corto
+const FPS_OPC = [15, 24, 25, 30, 60];
+const FORMATOS = { original: 0, '16:9': 16 / 9, '9:16': 9 / 16, '4:3': 4 / 3, '3:4': 3 / 4, '1:1': 1 };
+const CALIDADES = ['auto', '2', '4', '8', '15'];   // Mbps máximos del envío
+const LENTES = ['environment', 'user'];
+const CFG_DEF = { res: '720', fps: 30, formato: 'original', calidad: 'auto', lente: 'environment' };
+const ETQ = {
+  res: { '480': '480p', '720': '720p (HD)', '1080': '1080p (Full HD)', '2160': '2160p (4K)' },
+  formato: { original: 'original (como el teléfono)', '16:9': '16:9 horizontal', '9:16': '9:16 vertical', '4:3': '4:3', '3:4': '3:4 vertical', '1:1': '1:1 cuadrado' },
+  calidad: { auto: 'auto', '2': '2 Mbps', '4': '4 Mbps', '8': '8 Mbps', '15': '15 Mbps' },
+  lente: { environment: 'trasera', user: 'frontal (selfie)' }
+};
+const tiene = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+function sanearCfg(c) {
+  const o = { ...CFG_DEF };
+  if (c && typeof c === 'object') {
+    if (tiene(RESOLUCIONES, String(c.res))) o.res = String(c.res);
+    if (FPS_OPC.includes(+c.fps)) o.fps = +c.fps;
+    if (tiene(FORMATOS, String(c.formato))) o.formato = String(c.formato);
+    if (CALIDADES.includes(String(c.calidad))) o.calidad = String(c.calidad);
+    if (LENTES.includes(c.lente)) o.lente = c.lente;
+  }
+  return o;
+}
+let CFG = (() => {
+  try { return sanearCfg(JSON.parse(localStorage.getItem('midivj-camara-cfg') || 'null')); }
+  catch (_) { return { ...CFG_DEF }; }
+})();
+
+/* Lo que se le pide a la cámara. Los formatos 4:3, 3:4 y 1:1 se recortan de
+   una toma 4:3 (el sensor de casi todos los teléfonos), el resto de una
+   16:9. En vertical el navegador ya entrega la toma girada. */
+function restricciones(cfg, conLente = true) {
+  const r = FORMATOS[cfg.formato];
+  const corto = RESOLUCIONES[cfg.res];
+  const largo = Math.round(corto * (r && Math.max(r, 1 / r) < 1.5 ? 4 / 3 : 16 / 9));
+  const v = { width: { ideal: largo }, height: { ideal: corto }, frameRate: { ideal: cfg.fps } };
+  if (conLente) v.facingMode = { ideal: cfg.lente };
+  return v;
+}
+
+/* Tamaño de lo que se envía con un FORMATO recortado: la proporción pedida a
+   la resolución pedida, sin agrandar (si el recorte de la toma es más chico
+   se envía a su tamaño real) y en números pares (los códecs los prefieren). */
+function tamSalida(sw, sh, cfg) {
+  const r = FORMATOS[cfg.formato], corto = RESOLUCIONES[cfg.res];
+  let w = r >= 1 ? corto * r : corto, h = r >= 1 ? corto : corto / r;
+  let cw = sw, ch = sw / r;
+  if (ch > sh) { ch = sh; cw = sh * r; }
+  const k = Math.min(1, cw / w);
+  w = Math.max(2, Math.round(w * k / 2) * 2); h = Math.max(2, Math.round(h * k / 2) * 2);
+  return { w, h, cw, ch, cx: (sw - cw) / 2, cy: (sh - ch) / 2 };
+}
+
+/* Recorte en canvas: dibuja el centro de la cámara al FORMATO elegido, a lo
+   sumo a los FPS elegidos, y lo publica como un MediaStream más. */
+function crearProcesador(raw) {
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.autoplay = true;
+  v.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;';
+  document.body.appendChild(v);
+  v.srcObject = raw;
+  v.play().catch(() => {});
+  const cv = document.createElement('canvas'); cv.width = 2; cv.height = 2;
+  const x = cv.getContext('2d');
+  const out = cv.captureStream();
+  const P ={ v, cv, out, vivo: true, ultimo: 0 };
+  const dibujar = () => {
+    if (!P.vivo) return;
+    requestAnimationFrame(dibujar);
+    const sw = v.videoWidth, sh = v.videoHeight;
+    if (!sw || !sh || v.readyState < 2) return;
+    const ahora = performance.now();
+    if (ahora - P.ultimo < 1000 / CFG.fps - 4) return;
+    P.ultimo = ahora;
+    const g = tamSalida(sw, sh, CFG);
+    if (cv.width !== g.w || cv.height !== g.h) { cv.width = g.w; cv.height = g.h; }
+    x.drawImage(v, g.cx, g.cy, g.cw, g.ch, 0, 0, g.w, g.h);
+  };
+  requestAnimationFrame(dibujar);
+  P.cambiarFuente = nuevo => { v.srcObject = nuevo; v.play().catch(() => {}); };
+  P.detener = () => {
+    P.vivo = false;
+    out.getTracks().forEach(t => t.stop());
+    v.srcObject = null; v.remove();
+  };
+  return P;
+}
+
+async function abrirCamara(cfg) {
+  return navigator.mediaDevices.getUserMedia({ video: restricciones(cfg), audio: false });
+}
+
+/* Límites de la cámara abierta, para no ofrecer lo que no puede dar */
+async function leerCaps(raw) {
+  const mt = raw && raw.getVideoTracks()[0];
+  let caps = {};
+  try { caps = (mt && mt.getCapabilities && mt.getCapabilities()) || {}; } catch (_) {}
+  let frontal = null;
+  try { frontal = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput').length > 1; } catch (_) {}
+  C.caps = {
+    maxW: caps.width && caps.width.max || null,
+    maxH: caps.height && caps.height.max || null,
+    maxFps: caps.frameRate && caps.frameRate.max || null,
+    frontal
+  };
+}
+
+/* El track de hardware: si el sistema corta la cámara (bloqueo de pantalla,
+   otra app la toma), se avisa a MIDIVJ. */
+function vigilarCamara(raw) {
+  const trackLocal = raw.getVideoTracks()[0];
+  _log('cámara local abierta', trackLocal && { label: trackLocal.label, readyState: trackLocal.readyState, ajustes: trackLocal.getSettings && trackLocal.getSettings() });
+  if (!trackLocal) return;
+  trackLocal.onended = () => {
+    if (C.raw !== raw) return;   // es la cámara anterior, soltada a propósito al cambiar de lente
+    _log('⚠ el track LOCAL de la cámara terminó por sí solo (track.onended) — el sistema/navegador cortó la cámara (pantalla bloqueada, otra app la tomó, etc.)');
+    detenerCamara({ avisar: true, motivo: 'la cámara del teléfono se cortó sola (bloqueo de pantalla, otra app, etc.)' });
+  };
+  trackLocal.onmute   = () => _log('cámara local silenciada (sin frames por un instante)');
+  trackLocal.onunmute = () => _log('cámara local activa de nuevo');
+}
+
+/* CALIDAD (Mbps máximos) y FPS del envío. Antes de negociar, getParameters()
+   puede no traer encodings: se reintenta al conectar. */
+async function aplicarEnvio() {
+  const s = C.pc && C.pc.getSenders().find(x => x.track && x.track.kind === 'video');
+  if (!s || !s.getParameters) return;
+  const p = s.getParameters();
+  if (!p.encodings || !p.encodings.length) return;
+  const e = p.encodings[0];
+  if (CFG.calidad === 'auto') delete e.maxBitrate; else e.maxBitrate = +CFG.calidad * 1e6;
+  e.maxFramerate = CFG.fps;
+  try { await s.setParameters(p); }
+  catch (err) { _log('⚠ no se pudo fijar la calidad del envío: ' + err.message); }
+}
+
+/* Sin esto, WebRTC baja la resolución por su cuenta en cuanto le falta
+   ancho de banda o CPU (pedías 480p y llegaba 240p). 'detail' le pide
+   mantener la resolución elegida y, si no da, bajar los FPS. */
+function mantenerResolucion(stream) {
+  const tr = stream && stream.getVideoTracks()[0];
+  if (tr && 'contentHint' in tr && tr.contentHint !== 'detail') tr.contentHint = 'detail';
+}
+
+/* Lo que sale hacia MIDIVJ: la cámara tal cual o su recorte. Si cambió, el
+   sender pasa a usarlo sin renegociar (replaceTrack) y la vista previa
+   también, así lo que se ve aquí es siempre lo que llega allá. */
+async function actualizarSalida() {
+  let nuevo;
+  if (FORMATOS[CFG.formato]) {
+    if (!C.proc) C.proc = crearProcesador(C.raw);
+    nuevo = C.proc.out;
+  } else {
+    if (C.proc) { const p = C.proc; C.proc = null; setTimeout(() => p.detener(), 300); }
+    nuevo = C.raw;
+  }
+  mantenerResolucion(nuevo);
+  if (nuevo === C.stream) return;
+  C.stream = nuevo;
+  $('previa').srcObject = nuevo;
+  const s = C.pc && C.pc.getSenders().find(x => x.track && x.track.kind === 'video');
+  if (s) await s.replaceTrack(nuevo.getVideoTracks()[0]);
+}
+
+/* Aplica en caliente un cambio de configuración a la toma en curso. La
+   lente necesita abrir otra cámara (antes se suelta la actual: muchos
+   teléfonos no abren dos a la vez); resolución y FPS van por
+   applyConstraints y, si la cámara no lo acepta, también se reabre. */
+async function aplicarEnCaliente(antes, ahora) {
+  if (!C.raw || (C.estado !== 'transmitiendo' && C.estado !== 'pidiendo')) return;
+  C.errorCfg = null;
+  const capturaCambia = antes.res !== ahora.res || antes.fps !== ahora.fps ||
+    JSON.stringify(restricciones(antes, false)) !== JSON.stringify(restricciones(ahora, false));
+  let reabrir = antes.lente !== ahora.lente;
+  if (!reabrir && capturaCambia) {
+    try { await C.raw.getVideoTracks()[0].applyConstraints(restricciones(ahora, false)); }
+    catch (e) { _log('applyConstraints no aceptado (' + e.name + ') — se reabre la cámara'); reabrir = true; }
+  }
+  if (reabrir) {
+    const vieja = C.raw;
+    vieja.getTracks().forEach(t => t.stop());
+    let nueva;
+    try { nueva = await abrirCamara(ahora); }
+    catch (e) {
+      /* No pudo: se vuelve a la configuración anterior para no quedar sin video */
+      C.errorCfg = 'la cámara no aceptó el cambio (' + (e.message || e.name) + ')';
+      _log('⚠ ' + C.errorCfg);
+      CFG = antes; guardarCfg(); pintarConfig();
+      try { nueva = await abrirCamara(antes); }
+      catch (e2) { detenerCamara({ avisar: true, motivo: 'no se pudo reabrir la cámara: ' + (e2.message || e2.name) }); return; }
+    }
+    if (C.estado !== 'transmitiendo' && C.estado !== 'pidiendo') { nueva.getTracks().forEach(t => t.stop()); return; }
+    C.raw = nueva;
+    vigilarCamara(nueva);
+    await leerCaps(nueva);
+    if (C.proc) C.proc.cambiarFuente(nueva);
+    if (!FORMATOS[CFG.formato]) {
+      C.stream = nueva;
+      $('previa').srcObject = nueva;
+      const s = C.pc && C.pc.getSenders().find(x => x.track && x.track.kind === 'video');
+      if (s) await s.replaceTrack(nueva.getVideoTracks()[0]);
+    }
+  }
+  await actualizarSalida();
+  await aplicarEnvio();
+}
+
+function guardarCfg() { try { localStorage.setItem('midivj-camara-cfg', JSON.stringify(CFG)); } catch (_) {} }
+
+let colaCfg = Promise.resolve();
+function cambiarConfig(parcial, desde) {
+  const antes = CFG;
+  const ahora = sanearCfg({ ...CFG, ...parcial });
+  if (JSON.stringify(antes) === JSON.stringify(ahora)) { informarEstado(); return; }
+  CFG = ahora;
+  guardarCfg();
+  pintarConfig();
+  _log('configuración (' + desde + '): ' + JSON.stringify(ahora));
+  if (desde === 'midivj') toast('MIDIVJ cambió la toma: ' + resumenCfg(ahora));
+  colaCfg = colaCfg
+    .then(() => aplicarEnCaliente(antes, ahora))
+    .catch(e => { C.errorCfg = e.message || String(e); _log('⚠ error aplicando la configuración: ' + C.errorCfg); })
+    .then(() => { pintarInfoToma(); informarEstado(); });
+}
+function resumenCfg(c) {
+  return ETQ.res[c.res].split(' ')[0] + ' · ' + c.fps + ' fps · ' + (c.formato === 'original' ? 'original' : c.formato);
+}
+
+/* Lo que de verdad se envía (tamaño del cuadro y fps) */
+function medidaReal() {
+  const v = $('previa');
+  let fps = CFG.fps;
+  try {
+    const f = C.raw && C.raw.getVideoTracks()[0].getSettings().frameRate;
+    if (f) fps = Math.min(Math.round(f), CFG.fps);
+  } catch (_) {}
+  return { w: v.videoWidth || 0, h: v.videoHeight || 0, fps };
+}
+let timerEstado = 0;
+function informarEstado() {
+  clearTimeout(timerEstado);
+  if (C.estado !== 'transmitiendo' && C.estado !== 'pidiendo') return;
+  enviar({ type: 'camara-estado', config: CFG, real: medidaReal(), caps: C.caps, error: C.errorCfg });
+}
+/* Al girar el teléfono o tras un cambio, el tamaño real llega un instante después */
+function informarPronto() { clearTimeout(timerEstado); timerEstado = setTimeout(informarEstado, 350); }
+
+/* Opciones de la hoja ⚙: sólo lo que la cámara declara poder dar (sin
+   límites conocidos, se ofrece todo); lo elegido siempre queda en la lista. */
+function opcionesDe(campo) {
+  const k = C.caps || {};
+  if (campo === 'res') {
+    const tope = k.maxW && k.maxH ? Math.min(k.maxW, k.maxH) : Infinity;
+    return Object.keys(RESOLUCIONES).filter(r => RESOLUCIONES[r] <= tope || r === CFG.res);
+  }
+  if (campo === 'fps') return FPS_OPC.filter(f => !k.maxFps || f <= k.maxFps + .5 || f === CFG.fps).map(String);
+  if (campo === 'formato') return Object.keys(FORMATOS);
+  if (campo === 'calidad') return CALIDADES;
+  if (campo === 'lente') return LENTES.filter(l => l === 'environment' || k.frontal !== false || l === CFG.lente);
+  return [];
+}
+function pintarConfig() {
+  ['res', 'fps', 'formato', 'calidad', 'lente'].forEach(campo => {
+    const sel = $('cfg-' + campo);
+    const vals = opcionesDe(campo);
+    const etq = v => campo === 'fps' ? v + ' fps' : ETQ[campo][v];
+    const html = vals.map(v => `<option value="${v}">${etq(v)}</option>`).join('');
+    if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+    sel.value = String(CFG[campo]);
+  });
+  const env = $('cfg-envia');
+  const r = C.stream ? medidaReal() : null;
+  env.className = C.errorCfg ? 'err' : '';
+  env.textContent = C.errorCfg ? '⚠ ' + C.errorCfg
+    : r && r.w ? `Enviando: ${r.w}×${r.h} · ${r.fps} fps${CFG.calidad !== 'auto' ? ' · máx. ' + CFG.calidad + ' Mbps' : ''}`
+    : 'Se aplica al empezar a transmitir.';
+}
+['res', 'fps', 'formato', 'calidad', 'lente'].forEach(campo => {
+  $('cfg-' + campo).addEventListener('change', ev => cambiarConfig({ [campo]: ev.target.value }, 'teléfono'));
+});
+$('btn-cfg').onclick = ev => { ev.stopPropagation(); pintarConfig(); $('ajustes').classList.toggle('vis'); $('btn-cfg').classList.toggle('act', $('ajustes').classList.contains('vis')); };
+$('cfg-cerrar').onclick = () => { $('ajustes').classList.remove('vis'); $('btn-cfg').classList.remove('act'); };
 
 /* ── Conexión ─────────────────────────────────────────── */
 
@@ -293,6 +623,10 @@ function recibir(msg) {
       recibirRespuesta(msg.sdp);
       break;
 
+    case 'camara-config':
+      cambiarConfig(msg.config || {}, 'midivj');
+      break;
+
     case 'rtc-candidato':
       recibirCandidato(msg.candidato);
       break;
@@ -373,12 +707,10 @@ async function iniciarTransmision() {
   pintarEstado();
   _log('MIDIVJ pidió esta cámara — pidiendo permiso de video');
 
-  let stream;
+  let raw;
+  const cfgAlAbrir = CFG;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false
-    });
+    raw = await abrirCamara(cfgAlAbrir);
   } catch (e) {
     C.estado = 'error';
     pintarEstado();
@@ -392,33 +724,27 @@ async function iniciarTransmision() {
     /* MIDIVJ ya se rindió (timeout) mientras esperábamos el permiso: no
        tiene sentido seguir armando la conexión con nadie del otro lado. */
     _log('MIDIVJ ya había cancelado el pedido mientras esperábamos el permiso — se suelta la cámara sin avisar');
-    stream.getTracks().forEach(t => t.stop());
+    raw.getTracks().forEach(t => t.stop());
     C.estado = 'esperando';
     pintarEstado();
     return;
   }
 
-  C.stream = stream;
-  $('previa').srcObject = stream;
-
-  const trackLocal = stream.getVideoTracks()[0];
-  _log('cámara local abierta', trackLocal && { label: trackLocal.label, readyState: trackLocal.readyState });
-  if (trackLocal) {
-    trackLocal.onended = () => {
-      /* El hardware/SO cortó la cámara por su cuenta: pantalla bloqueada,
-         otra app la tomó, batería crítica, etc. — no es un problema de red
-         ni de MIDIVJ. */
-      _log('⚠ el track LOCAL de la cámara terminó por sí solo (track.onended) — el sistema/navegador cortó la cámara (pantalla bloqueada, otra app la tomó, etc.)');
-      detenerCamara({ avisar: true, motivo: 'la cámara del teléfono se cortó sola (bloqueo de pantalla, otra app, etc.)' });
-    };
-    trackLocal.onmute   = () => _log('cámara local silenciada (sin frames por un instante)');
-    trackLocal.onunmute = () => _log('cámara local activa de nuevo');
-  }
+  /* El hardware/SO puede cortar la cámara por su cuenta: pantalla
+     bloqueada, otra app la tomó, batería crítica, etc. — no es un problema
+     de red ni de MIDIVJ (ver vigilarCamara). */
+  C.raw = raw;
+  C.errorCfg = null;
+  vigilarCamara(raw);
+  await leerCaps(raw);
+  await actualizarSalida();   // la cámara tal cual o su recorte al FORMATO elegido
+  if (C.raw !== raw || C.estado !== 'pidiendo') { _log('se colgó mientras se preparaba la cámara'); return; }
+  const stream = C.stream;
 
   const pc = new RTCPeerConnection({ iceServers: [] });
   C.pc = pc;
   C.candidatosPendientes = [];
-  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+  stream.getVideoTracks().forEach(t => pc.addTrack(t, stream));
 
   pc.onicecandidate = ev => {
     if (ev.candidate) enviar({ type: 'rtc-candidato', candidato: ev.candidate });
@@ -433,6 +759,7 @@ async function iniciarTransmision() {
       clearTimeout(timerDesconexion);
       C.estado = 'transmitiendo';
       pintarEstado();
+      aplicarEnvio().then(informarEstado);   // calidad/fps del envío y aviso a MIDIVJ de lo que se envía
     } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       detenerCamara({ avisar: true, motivo: 'RTCPeerConnection en estado "' + pc.connectionState + '"' });
     } else if (pc.connectionState === 'disconnected') {
@@ -451,6 +778,12 @@ async function iniciarTransmision() {
     await pc.setLocalDescription(oferta);
     enviar({ type: 'rtc-oferta', sdp: oferta.sdp });
     _log('oferta enviada, esperando respuesta de MIDIVJ');
+    /* Si la configuración cambió mientras se esperaba el permiso, la cámara
+       abrió con la anterior: se aplica la diferencia ahora */
+    if (JSON.stringify(cfgAlAbrir) !== JSON.stringify(CFG)) {
+      const ahora = CFG;
+      colaCfg = colaCfg.then(() => aplicarEnCaliente(cfgAlAbrir, ahora)).catch(e => _log('⚠ ' + (e.message || e))).then(informarPronto);
+    }
   } catch (e) {
     _log('⚠ error creando la oferta: ' + e.name + ' — ' + e.message);
     toast('Error negociando la conexión: ' + e.message);
@@ -479,6 +812,8 @@ async function recibirCandidato(candidato) {
 function detenerCamara({ avisar, motivo }) {
   _log('apagando cámara — motivo: ' + (motivo || 'sin especificar') + (avisar ? ' — avisando a MIDIVJ' : ' — sin avisar a MIDIVJ'));
   if (C.estado === 'pidiendo' && !C.stream) C.abandonado = true;   // getUserMedia sigue pendiente
+  if (C.proc) { C.proc.detener(); C.proc = null; }
+  if (C.raw) { C.raw.getTracks().forEach(t => t.stop()); C.raw = null; }
   if (C.stream) { C.stream.getTracks().forEach(t => t.stop()); C.stream = null; }
   $('previa').srcObject = null;
   if (C.pc) { C.pc.onconnectionstatechange = null; C.pc.oniceconnectionstatechange = null; C.pc.close(); C.pc = null; }
@@ -533,10 +868,12 @@ $('volver-ver').onclick = () => document.body.classList.remove('limpio');
 function pintarInfoToma() {
   const v = $('previa');
   const w = v.videoWidth, h = v.videoHeight;
-  $('info-toma').textContent = C.stream && w && h ? `${w}×${h} · ${h > w ? 'vertical' : 'horizontal'}` : '';
+  $('info-toma').textContent = C.stream && w && h ? `${w}×${h} · ${h > w ? 'vertical' : 'horizontal'} · ${medidaReal().fps} fps` : '';
+  if ($('ajustes').classList.contains('vis')) pintarConfig();
 }
-$('previa').addEventListener('loadedmetadata', pintarInfoToma);
-$('previa').addEventListener('resize', pintarInfoToma);
+/* Al girar el teléfono o cambiar la toma, MIDIVJ se entera del tamaño nuevo */
+$('previa').addEventListener('loadedmetadata', () => { pintarInfoToma(); informarPronto(); });
+$('previa').addEventListener('resize', () => { pintarInfoToma(); informarPronto(); });
 
 /* ── Utilidades ───────────────────────────────────────── */
 
@@ -583,6 +920,7 @@ document.addEventListener('visibilitychange', () => {
 conectar();
 mantenerPantalla();
 pintarEstado();
+pintarConfig();
 </script>
 </body>
 </html>
