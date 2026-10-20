@@ -879,6 +879,8 @@ const server = http.createServer((req, res) => {
      ambos   → { type:'rtc-candidato', [slot,] candidato }
      ambos   → { type:'camara-colgar', [slot] }
      relay   → { type:'camara-error', slot, motivo }           (destino inexistente)
+     app     → { type:'camara-config', slot, config }          (resolución, fps, formato… de la toma)
+     cámara  → { type:'camara-estado', config, real, caps }    (lo que de verdad envía)
 
    Señalización WebRTC de salida (unicast app↔fuente-de-navegador-de-un-id;
    misma idea que la cámara pero con los papeles invertidos: aquí la app es
@@ -894,7 +896,10 @@ const server = http.createServer((req, res) => {
      relay   → { type:'salida-error', motivo }                 (sala llena, o destino inexistente)
 ═══════════════════════════════════════════════════════ */
 
-const TIPOS_RTC = new Set(['camara-iniciar', 'camara-colgar', 'camara-error', 'rtc-oferta', 'rtc-respuesta', 'rtc-candidato']);
+const TIPOS_RTC = new Set(['camara-iniciar', 'camara-colgar', 'camara-error', 'rtc-oferta', 'rtc-respuesta', 'rtc-candidato', 'camara-config', 'camara-estado']);
+/* Configuración de la toma: van y vienen con la llamada ya armada, no
+   resuelven un pedido de cámara pendiente */
+const TIPOS_CAMARA_CFG = new Set(['camara-config', 'camara-estado']);
 const TIPOS_SALIDA = new Set(['salida-oferta', 'salida-respuesta', 'salida-candidato', 'salida-cerrar', 'salida-error']);
 
 /* El WebSocket de señalización de un teléfono se cae mucho más seguido que
@@ -1331,13 +1336,13 @@ function alConectar(ws) {
              desconecta antes de mandar su oferta, leaveRoom() se salta el
              margen de gracia (no hay ninguna llamada viva que proteger). */
           if (destino) sala.pendientesOferta.add(slot);
-        } else {
+        } else if (!TIPOS_CAMARA_CFG.has(msg.type)) {
           sala.pendientesOferta.delete(slot);
         }
         if (destino) enviar(destino, { ...msg, slot: undefined });
         else if (msg.type === 'camara-iniciar') enviar(ws, { type: 'camara-error', slot, motivo: 'desconectado' });
       } else if (ws._rol === 'camara' && ws._slot) {
-        sala.pendientesOferta.delete(ws._slot);   // cualquier respuesta de la cámara resuelve el pedido pendiente
+        if (!TIPOS_CAMARA_CFG.has(msg.type)) sala.pendientesOferta.delete(ws._slot);   // cualquier respuesta de la cámara resuelve el pedido pendiente
         if (sala.app) enviar(sala.app, { ...msg, slot: ws._slot });
       }
       return;

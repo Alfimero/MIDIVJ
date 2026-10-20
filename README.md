@@ -67,6 +67,13 @@ Fuentes y **⚡ GENERAR CLIPS** (sección 🎞 MEDIOS del panel de pista):
 - **🎬 VIDEO / 🖼 GALERÍA** aceptan varios archivos a la vez: todos entran a la lista de MEDIOS de la pista (videos e imágenes mezclados, en el orden que quieras) y el primero se carga en la pista si estaba vacía. Si la pista ya tiene un archivo, los nuevos sólo se agregan a la lista y aparece **⇄ USAR COMO FUENTE** para reemplazar el video actual (sin diálogos que congelen la salida en pleno show); cada entrada de MEDIOS tiene también su botón **⇄**. El botón **✕** junto al nombre de la fuente la quita de la pista (archivo o en vivo); los clips se conservan. GENERAR CLIPS crea un clip por cada medio, encadenados en orden (🔁 LOOP vuelve al primero al terminar); las imágenes duran lo que diga **SEG/IMG**. Es lo que antes hacía la PLAYLIST, ahora para cualquier formato.
 - **🌐 NAVEGADOR**: pide una URL y la abre en una ventana aparte; después pulsa **📡 CAPTURAR** y elige esa ventana en el selector (el navegador no permite dibujar una página directamente en el canvas, así que se captura como PANTALLA). Son dos pasos porque abrir la ventana consume el gesto que la captura de pantalla exige.
 - Con una fuente en vivo activa (NAVEGADOR, PANTALLA, CAPTURA o CÁMARA), GENERAR CLIPS crea un clip-interruptor (grupo FUENTE, modo toggle): mientras la pista tenga uno, la fuente sólo se ve cuando ese clip está activo, así se puede mostrar/ocultar por MIDI con transiciones de entrada y salida.
+- Una fuente en vivo no tiene duración: en el timeline ocupa **todo el ancho** de su pista (bloque rayado, `● EN VIVO`; `○ OCULTA` mientras su interruptor la tiene apagada). Está en cualquier punto del cursor, encima o debajo de los videos de las otras pistas.
+
+**Las pistas son capas** (T1 al fondo, T8 al frente): una cámara en T2 encima de un video en T1 deja que el video siga reproduciéndose debajo; con la opacidad de la de arriba al 50 % se ven las dos. **EXCL** (encabezado) decide qué apaga un clip al dispararse, y cada pista elige su modo en **🎞 AJUSTE Y TRANSICIÓN → EXCL**:
+
+- **auto** (por defecto): un video reemplaza a otro video y una fuente en vivo a otra fuente en vivo (p. ej. cambiar entre dos cámaras con *disolver*), pero una cámara no detiene al video de fondo ni el video a la cámara.
+- **capa (se superpone)**: la pista nunca apaga a las demás ni la apagan. Para dos videos a la vez, uno encima del otro. En el timeline la pista se marca `T2 ⧉`.
+- **apaga todas las pistas**: como era EXCL antes, corta a cualquier pista.
 
 **🧅 CAPAS por pista** (sección del panel de pista): una pista no se limita a una fuente. Además de su fuente principal (la capa **MEDIA**, con el motor de clips), puede apilar capas estáticas dibujadas de abajo hacia arriba:
 
@@ -78,7 +85,7 @@ Fuentes y **⚡ GENERAR CLIPS** (sección 🎞 MEDIOS del panel de pista):
 Cada pista tiene además, en ese mismo panel:
 
 - **TRANSFORM DE PISTA**: posición, escala X/Y y rotación. El botón 🔗 vincula Escala X e Y para moverlas a la vez (también al arrastrar una esquina en el canvas).
-- **CONFIG. DE CÁMARA** (sólo con fuente CAPTURA): dispositivo, resolución/fps y los controles que exponga el driver de la cámara o capturadora (zoom, foco, exposición, ISO, balance de blancos, brillo, contraste, etc.). Lo que no aparece es porque el dispositivo no lo expone al navegador; la abertura nunca se expone.
+- **CONFIG. DE CÁMARA** (con fuente CAPTURA): dispositivo, resolución/fps, **formato** (original, 16:9, 4:3, 1:1, 9:16 — el navegador recorta el centro) y los controles que exponga el driver de la cámara o capturadora (zoom, foco, exposición, ISO, balance de blancos, brillo, contraste, etc.). Lo que no aparece es porque el dispositivo no lo expone al navegador; la abertura nunca se expone. Con fuente 📱 CÁMARA la sección configura el teléfono (ver "Configurar la toma").
 - **PROCESADOR DE VIDEO**: ganancia, brillo, contraste, gamma, balance de blancos, compensación de contraluz, matiz, saturación y nitidez, aplicados por software a cualquier fuente (archivo, pantalla, capturadora o cámara de teléfono). Se enciende solo al mover un slider; OFF lo deja en bypass.
 - Doble clic sobre cualquier slider de parámetros (transform, efectos, cámara, procesador, opacidad) lo devuelve a su valor por defecto.
 
@@ -215,6 +222,18 @@ Un teléfono también puede ser una fuente de video más para una pista: `VIDEO`
 2. En el teléfono, escanea el QR de una cámara libre. La página se conecta y queda **esperando**, sin encender la cámara todavía — no hay activación automática.
 3. En una pista de MIDIVJ, pulsa **📱 CÁMARA**. Si hay un solo teléfono conectado y libre lo usa directo; si hay varios, pregunta cuál. El teléfono recién ahí pide permiso de cámara y empieza a transmitir.
 4. Para soltarla, pulsa **✕** en la pista (o vuelve a pulsar **📱 CÁMARA**) — el teléfono apaga la cámara y vuelve a quedar disponible. También hay un botón **DETENER** en el propio teléfono.
+
+### Configurar la toma
+
+Desde la computadora (sección **⚙ CONFIG. DE CÁMARA · 📱** de la pista) o desde el propio teléfono (botón **⚙** en `/camara`), y se aplica en caliente sin cortar la transmisión:
+
+- **Resolución**: 480p, 720p, 1080p o 4K (sólo lo que la cámara declara poder dar).
+- **FPS**: 15, 24, 25, 30 o 60.
+- **Formato**: *original* envía la toma tal cual (vertical u horizontal según cómo se sostenga el teléfono); 16:9, 9:16, 4:3, 3:4 y 1:1 recortan el centro **en el teléfono**, así lo que se ve allá es exactamente lo que llega (un teléfono en vertical puede mandar 16:9 y llenar la salida).
+- **Calidad**: tope de Mbps del envío (auto, 2, 4, 8 o 15). Más Mbps = más nitidez, pero pide buena Wi-Fi.
+- **Lente**: trasera o frontal.
+
+El teléfono guarda su configuración y la muestra de los dos lados: la sección de la pista indica lo que el teléfono **envía** y lo que **llega** a MIDIVJ. WebRTC mantiene la resolución elegida y, si falta ancho de banda, baja los FPS. Si la sección se queda "esperando que el teléfono informe su configuración", recarga `/camara` en el teléfono y reinicia el relay (ambos tienen que estar actualizados).
 
 ### Notas
 
