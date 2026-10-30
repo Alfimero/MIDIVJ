@@ -54,8 +54,9 @@ El estado global `S` y la biblioteca `MEDIA` coordinan ocho pistas. `loop()` com
 - `src/midivj-control.html`: página de cabina con los QR de Wi-Fi, de cada mando y de cada cámara, más la URL de salida a OBS.
 - `src/midivj-camara.html`: cámara móvil; enciende `getUserMedia` sólo cuando la app pide ese slot y ofrece por WebRTC (ADR-004).
 - `src/midivj-salida.html`: fuente de navegador para OBS; recibe el lienzo por WebRTC, la app es la offerer (ADR-005).
-- `src/modules/midivj-module.js`: contrato `init/start/stop/dispose/getStatus` y registros `MIDIVJ.targets` / `MIDIVJ.acciones`.
+- `src/modules/midivj-module.js`: contrato `init/start/stop/dispose/getStatus` y registros `MIDIVJ.targets` / `MIDIVJ.acciones` / `MIDIVJ.capturas`.
 - `src/modules/audio/`: motor, `AudioWorkletProcessor` de análisis y panel AUDIO (ADR-006).
+- `src/modules/grabacion/`: grabación de la salida con MediaRecorder y panel GRABACIÓN; el relay escribe en `Grabaciones/` (ADR-008).
 - `data/certs/`: certificado autofirmado de `/camara`; fuera de Git.
 - `src/midivj-qr.js`: generador de QR local, compartido por Node y el navegador.
 - `Sessions/*.vjp`: ejemplos de sesiones operativas.

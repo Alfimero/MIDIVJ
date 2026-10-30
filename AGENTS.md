@@ -41,6 +41,8 @@ node --check .\src\modules\midivj-module.js
 node --check .\src\modules\audio\midivj-audio-engine.js
 node --check .\src\modules\audio\midivj-audio-ui.js
 node --check .\src\modules\audio\midivj-audio-worklet.js
+node --check .\src\modules\grabacion\midivj-grabacion.js
+node --check .\src\modules\grabacion\midivj-grabacion-ui.js
 ```
 
 Los archivos de `src/modules/` se editan a mano (no salen de `graphify-src/`) y deben estar en la lista blanca `MODULOS` de `src/midivj-relay.js` para que el navegador pueda cargarlos.

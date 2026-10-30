@@ -33,7 +33,10 @@ const SESSIONS_DIR = path.join(PROJECT_ROOT, 'Sessions');
 const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 const LAYOUT_FILE = path.join(DATA_DIR, 'mando-layout.json');
 const CERT_DIR = path.join(DATA_DIR, 'certs');
+const RECORDINGS_DIR = path.join(PROJECT_ROOT, 'Grabaciones');
 const MAX_SESSION_BYTES = 5 * 1024 * 1024;
+const MAX_TROZO_BYTES = 64 * 1024 * 1024;    // un trozo es ~1 s de video: sobra aun en 4K a calidad máxima
+const MAX_MANIFIESTO_BYTES = 256 * 1024;
 const MAX_LAYOUT_BYTES = 8 * 1024 * 1024;   // los botones pueden llevar imágenes/GIF
 const MAX_MANDOS = 4;                        // dispositivos de control simultáneos
 const MAX_CAMARAS = 4;                       // teléfonos compartiendo cámara simultáneos
@@ -68,42 +71,52 @@ function sendJson(res, status, body) {
   res.end(data);
 }
 
-function readJson(req, limit = MAX_SESSION_BYTES) {
+function readBody(req, limit) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
     req.on('data', chunk => {
       size += chunk.length;
       if (size > limit) {
-        reject(new Error(`El cuerpo supera el límite de ${Math.round(limit / (1024 * 1024))} MB.`));
+        const tope = limit >= 1024 * 1024 ? `${Math.round(limit / (1024 * 1024))} MB` : `${Math.round(limit / 1024)} KB`;
+        reject(new Error(`El cuerpo supera el límite de ${tope}.`));
         req.destroy();
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      } catch {
-        reject(new Error('El contenido no es JSON válido.'));
-      }
-    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
+}
+
+async function readJson(req, limit = MAX_SESSION_BYTES) {
+  const body = await readBody(req, limit);
+  try {
+    return JSON.parse(body.toString('utf8'));
+  } catch {
+    throw new Error('El contenido no es JSON válido.');
+  }
 }
 
 /* ═══════════════════════════════════════════════════════
    Sesiones .vjp
 ═══════════════════════════════════════════════════════ */
 
+/** Nombre apto para Windows/macOS/Linux: sin separadores ni caracteres
+    prohibidos, sin punto ni espacio final y sin nombres reservados (CON, NUL…). */
+function limpiarNombre(value, max) {
+  const cleaned = String(value || '').trim()
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+    .replace(/[. ]+$/g, '')
+    .slice(0, max);
+  return /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(cleaned) ? `${cleaned}_` : cleaned;
+}
+
 function safeSessionName(value) {
   const raw = typeof value === 'string' ? value.trim() : '';
   const withoutExtension = raw.replace(/\.vjp$/i, '');
-  const cleaned = withoutExtension
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
-    .replace(/[. ]+$/g, '')
-    .slice(0, 120);
-  return `${cleaned || 'untitled'}.vjp`;
+  return `${limpiarNombre(withoutExtension, 120) || 'untitled'}.vjp`;
 }
 
 async function availableSessionPath(filename) {
@@ -197,6 +210,221 @@ async function readSession(req, res, name) {
   } catch {
     sendJson(res, 404, { error: 'No se encontró la sesión.' });
   }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Grabaciones — Grabaciones/<toma>/<archivo>
+
+   La app graba con MediaRecorder y manda un trozo por segundo; el relay
+   sólo los agrega al final del archivo. Así lo grabado ya está en disco
+   aunque la pestaña se cierre a media función, y no depende de la API de
+   archivos del navegador (Brave la trae apagada).
+
+   Cada trozo dice desde qué byte va (`?desde=`). Si el archivo mide eso,
+   se agrega; si ya lo incluye (un reintento tras un corte), se responde
+   bien sin escribir de nuevo; cualquier otra cosa es un 409 con el tamaño
+   real. No hay estado en memoria: un relay reiniciado sigue recibiendo la
+   misma grabación.
+
+   Una toma es una carpeta con uno o más videos y `toma.json`, que la app
+   reescribe con lo que sabe de cada archivo (formato, tamaño, inicio, fin).
+═══════════════════════════════════════════════════════ */
+
+const EXT_GRABACION = new Set(['mp4', 'webm']);
+const MANIFIESTO = 'toma.json';
+const filasEscritura = new Map();   // ruta → última escritura pendiente
+
+/* Las escrituras a un mismo archivo van en fila: un reintento no se mezcla
+   con el trozo que todavía se está escribiendo. */
+function enFila(clave, tarea) {
+  const actual = (filasEscritura.get(clave) || Promise.resolve()).catch(() => undefined).then(tarea);
+  filasEscritura.set(clave, actual);
+  actual.catch(() => undefined).then(() => {
+    if (filasEscritura.get(clave) === actual) filasEscritura.delete(clave);
+  });
+  return actual;
+}
+
+function fechaParaCarpeta(d = new Date()) {
+  const dos = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())} ` +
+         `${dos(d.getHours())}-${dos(d.getMinutes())}-${dos(d.getSeconds())}`;
+}
+
+/** Ruta dentro de Grabaciones/ o null. Los nombres llegan ya limpios: uno
+    que cambia al limpiarlo (.., barras, reservados) se rechaza. */
+function rutaGrabacion(toma, archivo) {
+  if (typeof toma !== 'string' || !toma || limpiarNombre(toma, 120) !== toma) return null;
+  if (archivo !== undefined && (typeof archivo !== 'string' || !archivo || limpiarNombre(archivo, 120) !== archivo)) return null;
+  const base = path.resolve(RECORDINGS_DIR);
+  const destino = archivo === undefined ? path.resolve(base, toma) : path.resolve(base, toma, archivo);
+  return destino.startsWith(`${base}${path.sep}`) ? destino : null;
+}
+
+async function esCarpeta(ruta) {
+  try { return (await fsp.stat(ruta)).isDirectory(); } catch { return false; }
+}
+
+/** Crea `base+ext` o "base (2)+ext", … sin pisar nada; devuelve el nombre usado. */
+async function crearSinPisar(dir, base, ext, crear) {
+  for (let n = 1; n < 1000; n++) {
+    const nombre = n === 1 ? `${base}${ext}` : `${base} (${n})${ext}`;
+    try {
+      await crear(path.join(dir, nombre));
+      return nombre;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+  }
+  throw new Error('No se pudo elegir un nombre libre.');
+}
+
+/** { toma?, titulo?, nombre, ext } → crea la toma (si no viene) y un archivo vacío en ella. */
+async function crearGrabacion(req, res) {
+  const pedido = await readJson(req, MAX_MANIFIESTO_BYTES);
+  const ext = String((pedido && pedido.ext) || '').toLowerCase();
+  if (!EXT_GRABACION.has(ext)) {
+    sendJson(res, 400, { error: 'Formato no admitido (mp4 o webm).' });
+    return;
+  }
+  await fsp.mkdir(RECORDINGS_DIR, { recursive: true });
+  let toma = pedido.toma;
+  if (toma) {
+    const dir = rutaGrabacion(toma);
+    if (!dir || !(await esCarpeta(dir))) {
+      sendJson(res, 404, { error: 'No existe esa toma.' });
+      return;
+    }
+  } else {
+    const titulo = limpiarNombre(pedido.titulo, 60);
+    toma = await crearSinPisar(RECORDINGS_DIR, fechaParaCarpeta() + (titulo ? ` ${titulo}` : ''), '', p => fsp.mkdir(p));
+  }
+  const dir = rutaGrabacion(toma);
+  const archivo = await crearSinPisar(dir, limpiarNombre(pedido.nombre, 60) || 'video', `.${ext}`,
+    p => fsp.writeFile(p, '', { flag: 'wx' }));
+  console.log(`  [grabación] Grabaciones/${toma}/${archivo}`);
+  sendJson(res, 201, { toma, archivo, carpeta: dir });
+}
+
+async function agregarTrozo(req, res, toma, archivo, desdeTexto) {
+  const destino = rutaGrabacion(toma, archivo);
+  if (!destino || !EXT_GRABACION.has(path.extname(archivo).slice(1).toLowerCase())) {
+    sendJson(res, 400, { error: 'Ruta de grabación no válida.' });
+    return;
+  }
+  const desde = Number(desdeTexto);
+  if (desdeTexto === null || !Number.isSafeInteger(desde) || desde < 0) {
+    sendJson(res, 400, { error: 'Falta ?desde= (bytes ya guardados).' });
+    return;
+  }
+  const trozo = await readBody(req, MAX_TROZO_BYTES);
+  const r = await enFila(destino, async () => {
+    let tam;
+    try { tam = (await fsp.stat(destino)).size; }
+    catch { return { status: 404, body: { error: 'No existe ese archivo de grabación.' } }; }
+    if (tam === desde) {
+      await fsp.appendFile(destino, trozo);
+      return { status: 200, body: { tam: tam + trozo.length } };
+    }
+    if (tam === desde + trozo.length) return { status: 200, body: { tam, repetido: true } };
+    return { status: 409, body: { error: `El archivo mide ${tam} bytes y el trozo empieza en ${desde}.`, tam } };
+  });
+  sendJson(res, r.status, r.body);
+}
+
+async function guardarManifiesto(req, res, toma) {
+  const dir = rutaGrabacion(toma);
+  if (!dir || !(await esCarpeta(dir))) {
+    sendJson(res, 404, { error: 'No existe esa toma.' });
+    return;
+  }
+  const datos = await readJson(req, MAX_MANIFIESTO_BYTES);
+  if (!datos || typeof datos !== 'object' || Array.isArray(datos)) {
+    sendJson(res, 400, { error: 'El manifiesto tiene que ser un objeto.' });
+    return;
+  }
+  const destino = path.join(dir, MANIFIESTO);
+  await enFila(destino, async () => {
+    const temporal = `${destino}.tmp-${process.pid}-${Date.now()}`;
+    try {
+      await fsp.writeFile(temporal, `${JSON.stringify(datos, null, 2)}\n`, 'utf8');
+      await fsp.rename(temporal, destino);
+    } catch (error) {
+      await fsp.rm(temporal, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+  sendJson(res, 200, { ok: true });
+}
+
+/** Las últimas tomas (las más nuevas primero) con sus videos y tamaños. */
+async function listarGrabaciones(req, res) {
+  await fsp.mkdir(RECORDINGS_DIR, { recursive: true });
+  const tomas = [];
+  for (const entrada of await fsp.readdir(RECORDINGS_DIR, { withFileTypes: true })) {
+    if (!entrada.isDirectory()) continue;
+    const stat = await fsp.stat(path.join(RECORDINGS_DIR, entrada.name));
+    tomas.push({ toma: entrada.name, modificada: stat.mtimeMs });
+  }
+  tomas.sort((a, b) => b.modificada - a.modificada);
+  const recientes = tomas.slice(0, 12);
+  for (const t of recientes) {
+    const dir = path.join(RECORDINGS_DIR, t.toma);
+    t.archivos = [];
+    for (const f of await fsp.readdir(dir, { withFileTypes: true })) {
+      if (!f.isFile() || !EXT_GRABACION.has(path.extname(f.name).slice(1).toLowerCase())) continue;
+      t.archivos.push({ archivo: f.name, bytes: (await fsp.stat(path.join(dir, f.name))).size });
+    }
+  }
+  sendJson(res, 200, { carpeta: RECORDINGS_DIR, tomas: recientes });
+}
+
+/** Abre Grabaciones/ (o una toma) en el explorador de archivos de este equipo. */
+async function abrirCarpetaGrabaciones(req, res) {
+  const pedido = await readJson(req, MAX_MANIFIESTO_BYTES).catch(() => ({}));
+  await fsp.mkdir(RECORDINGS_DIR, { recursive: true });
+  let dir = RECORDINGS_DIR;
+  const deToma = pedido && pedido.toma ? rutaGrabacion(pedido.toma) : null;
+  if (deToma && await esCarpeta(deToma)) dir = deToma;
+  const listo = () => undefined;   // explorer.exe sale con código 1 aunque abra bien
+  if (process.platform === 'win32') execFile('explorer', [dir], { windowsHide: false }, listo);
+  else if (process.platform === 'darwin') execFile('open', [dir], listo);
+  else execFile('xdg-open', [dir], listo);
+  sendJson(res, 200, { ok: true, carpeta: dir });
+}
+
+async function atenderGrabaciones(req, res, ruta, requestUrl) {
+  if (!isLoopback(req.socket.remoteAddress)) {
+    sendJson(res, 403, { error: 'Grabar sólo está disponible desde este equipo.' });
+    return;
+  }
+  /* Un sitio web abierto en otra pestaña no puede escribir aquí: el
+     navegador manda Origin en todo POST/PUT y tiene que ser el relay. */
+  const origen = req.headers.origin;
+  if (origen) {
+    let host = null;
+    try { host = new URL(origen).host; } catch { /* Origin inválido */ }
+    if (host !== req.headers.host) {
+      sendJson(res, 403, { error: 'Origen no permitido.' });
+      return;
+    }
+  }
+  if (ruta === '/api/grabaciones') {
+    if (req.method === 'GET') { await listarGrabaciones(req, res); return; }
+    if (req.method === 'POST') { await crearGrabacion(req, res); return; }
+  }
+  if (ruta === '/api/grabaciones/abrir' && req.method === 'POST') {
+    await abrirCarpetaGrabaciones(req, res);
+    return;
+  }
+  if (req.method === 'PUT') {
+    let partes;
+    try { partes = ruta.slice('/api/grabaciones/'.length).split('/').map(decodeURIComponent); }
+    catch { partes = []; }
+    if (partes.length === 2 && partes[1] === MANIFIESTO) { await guardarManifiesto(req, res, partes[0]); return; }
+    if (partes.length === 2) { await agregarTrozo(req, res, partes[0], partes[1], requestUrl.searchParams.get('desde')); return; }
+  }
+  sendJson(res, 404, { error: 'Ruta no encontrada.' });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -725,7 +953,9 @@ const MODULOS = new Set([
   '/modules/midivj-module.js',
   '/modules/audio/midivj-audio-engine.js',
   '/modules/audio/midivj-audio-ui.js',
-  '/modules/audio/midivj-audio-worklet.js'
+  '/modules/audio/midivj-audio-worklet.js',
+  '/modules/grabacion/midivj-grabacion.js',
+  '/modules/grabacion/midivj-grabacion-ui.js'
 ]);
 
 async function serveFile(res, filename, contentType) {
@@ -750,6 +980,10 @@ async function handleHttp(req, res) {
       'Access-Control-Max-Age': '600'
     });
     res.end();
+    return;
+  }
+  if (ruta === '/api/grabaciones' || ruta.startsWith('/api/grabaciones/')) {
+    await atenderGrabaciones(req, res, ruta, requestUrl);
     return;
   }
   if (req.method === 'POST' && ruta === '/api/sessions') {
@@ -1425,6 +1659,7 @@ async function printIPs() {
   console.log('  Control remoto (QR): http://localhost:' + PORT + '/control');
   console.log('  Salida para OBS (fuente de navegador): http://localhost:' + PORT + '/salida');
   console.log('  Sesiones: ' + SESSIONS_DIR);
+  console.log('  Grabaciones: ' + RECORDINGS_DIR);
   console.log('  Layout del mando: ' + LAYOUT_FILE);
   if (info.direcciones.length) {
     console.log('  Direcciones para teléfonos y otros equipos:');

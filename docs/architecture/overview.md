@@ -19,7 +19,8 @@ MIDIVJ es una aplicación local de navegador con un servidor HTTP Node mínimo. 
 9. Los `.vjp` de `Sessions/` guardan sesiones en formatos 5 y 6; los videos de `videos/Visuales 2026/` siguen siendo recursos externos elegidos por el operador.
 10. `data/mando-layout.json` guarda el layout del mando; `data/certs/` guarda el certificado autofirmado de `/camara`. Ambos son configuración/estado local: quedan fuera de Git.
 11. IndexedDB `midivj-rev` conserva caché derivada para reversa; no es la fuente de los medios.
-12. `src/modules/` es la forma de agregar subsistemas nuevos sin tocar el monolito: `midivj-module.js` fija el contrato (`init`/`start`/`stop`/`dispose`/`getStatus`) y los dos registros con los que un módulo se comunica con la app — `MIDIVJ.targets` (parámetros continuos) y `MIDIVJ.acciones` (disparos). `src/modules/audio/` es el primero que lo cumple: motor, `AudioWorkletProcessor` de análisis y vista AUDIO. El relay los sirve por lista blanca (`MODULOS`). Ver `docs/audio-module.md` y ADR-006.
+12. `src/modules/` es la forma de agregar subsistemas nuevos sin tocar el monolito: `midivj-module.js` fija el contrato (`init`/`start`/`stop`/`dispose`/`getStatus`) y los registros con los que un módulo se comunica con la app — `MIDIVJ.targets` (parámetros continuos), `MIDIVJ.acciones` (disparos) y `MIDIVJ.capturas` (señales de video que se pueden grabar). `src/modules/audio/` es el primero que lo cumple: motor, `AudioWorkletProcessor` de análisis y vista AUDIO (ADR-006). `src/modules/grabacion/` graba la salida con MediaRecorder (ADR-008). El relay los sirve por lista blanca (`MODULOS`). Ver `docs/audio-module.md`.
+13. `Grabaciones/` guarda las tomas (videos + `toma.json`); el relay las escribe trozo a trozo por `/api/grabaciones`, sólo desde este equipo. Queda fuera de Git.
 
 ## Flujo principal
 
