@@ -7,6 +7,8 @@
  * - Serves the QR / connection page at http://localhost:9191/control
  * - Saves .vjp files exclusively in ../Sessions
  * - Relays MIDI messages over WebSocket rooms
+ * - The main port also answers HTTPS/WSS (same certificate as /camara) for
+ *   browsers that force https:// on the QR links
  *
  * El relay es deliberadamente de red local. No lo expongas a Internet:
  * cualquiera que alcance el puerto puede disparar clips y efectos.
@@ -520,7 +522,8 @@ async function obtenerCertificado() {
   return { cert: pems.cert, key: pems.private };
 }
 
-/** Servidor HTTPS de /camara (null hasta que arranca o si no pudo arrancar). */
+/** Servidor HTTPS de /camara y del TLS del puerto principal (null hasta que
+    tiene certificado o si no se pudo generar). */
 let servidorSeguro = null;
 let renovandoCert = null;
 
@@ -852,6 +855,49 @@ const server = http.createServer((req, res) => {
     else res.end();
   });
 });
+
+/* ═══════════════════════════════════════════════════════
+   Puerto principal: HTTP y HTTPS a la vez
+
+   Algunos navegadores (Brave en iPad/iPhone con "HTTPS por defecto") cambian
+   el http:// del QR por https:// y no vuelven atrás si falla: el mando daba
+   ERR_SSL_PROTOCOL_ERROR. Por eso el puerto principal mira el primer byte de
+   cada conexión: 0x16 abre un saludo TLS y va al servidor HTTPS (mismo
+   certificado que /camara, también para wss://); cualquier otra cosa va al
+   HTTP de siempre. El socket es el mismo, así que las rutas sólo-localhost
+   siguen viendo la dirección real de quien llama.
+═══════════════════════════════════════════════════════ */
+
+const SALUDO_TLS = 0x16;
+/* Quien conecta y no manda nada se cierra, como haría el HTTP (headersTimeout). */
+const ESPERA_PRIMER_BYTE_MS = 60000;
+
+function repartirConexion(socket) {
+  /* Sin manejador, un reset antes del primer byte tumbaría el proceso. Se
+     queda puesto: después también lo atienden los servidores. */
+  socket.on('error', () => {});
+  const expirar = () => socket.destroy();
+  socket.setTimeout(ESPERA_PRIMER_BYTE_MS, expirar);
+  socket.once('data', primero => {
+    socket.setTimeout(0);
+    socket.removeListener('timeout', expirar);
+    /* Lo leído se devuelve y el socket queda en pausa: el servidor que lo
+       recibe lo lee desde el principio. */
+    socket.pause();
+    socket.unshift(primero);
+    if (primero[0] === SALUDO_TLS && servidorSeguro) {
+      servidorSeguro.emit('connection', socket);   // TLS toma lo pendiente solo
+    } else {
+      server.emit('connection', socket);
+      socket.resume();
+    }
+  });
+}
+
+const entrada = net.createServer(repartirConexion);
+/* `server` no escucha por sí mismo: sin su 'listening' Node no arranca la
+   revisión de headersTimeout/requestTimeout de sus conexiones. */
+entrada.on('listening', () => server.emit('listening'));
 
 /* ═══════════════════════════════════════════════════════
    WebSocket — salas, roles y slots
@@ -1510,17 +1556,18 @@ async function iniciarHttps() {
   });
   wssSeguro.on('connection', alConectar);
 
-  try {
-    PORT_HTTPS = await escuchar(seguro, PORT + 1000, PUERTOS_ALTERNOS);
-  } catch (error) {
-    console.error('  [https] no se pudo abrir el puerto:', error.message);
-    return;
-  }
-
+  /* Desde aquí el puerto principal ya atiende TLS (repartirConexion), aunque
+     el puerto propio de /camara no llegue a abrirse. */
   servidorSeguro = seguro;
   /* Revisión barata (sólo lee las interfaces): detecta el cambio de red
      aunque nadie tenga /control abierto. */
   setInterval(() => { renovarCertificadoSiHaceFalta(); }, 10000).unref();
+
+  try {
+    PORT_HTTPS = await escuchar(seguro, PORT + 1000, PUERTOS_ALTERNOS);
+  } catch (error) {
+    console.error('  [https] no se pudo abrir el puerto:', error.message);
+  }
 }
 
 function abrirNavegador(url) {
@@ -1532,10 +1579,10 @@ function abrirNavegador(url) {
 }
 
 cargarLayout()
-  .then(() => escuchar(server, PORT, PUERTOS_ALTERNOS))
+  .then(() => escuchar(entrada, PORT, PUERTOS_ALTERNOS))
   .then(async puerto => {
     PORT = puerto;
-    server.on('error', error => console.error('\n  Error:', error.message, '\n'));
+    entrada.on('error', error => console.error('\n  Error:', error.message, '\n'));
     console.log(`\nMIDIVJ — servidor local y relay en puerto ${PORT}`);
     await iniciarHttps().catch(() => undefined);
     await printIPs().catch(() => undefined);
