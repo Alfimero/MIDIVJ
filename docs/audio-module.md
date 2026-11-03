@@ -52,7 +52,7 @@ sonido ya va por la consola.
 
 | Archivo | Qué es |
 |---|---|
-| `src/modules/midivj-module.js` | Contrato de módulos + registros `targets` / `acciones`. |
+| `src/modules/midivj-module.js` | Contrato de módulos + registros `targets` / `acciones` / `capturas`. |
 | `src/modules/audio/midivj-audio-engine.js` | AudioEngine: fuentes, buses, mapeos, eventos, métricas, persistencia. |
 | `src/modules/audio/midivj-audio-worklet.js` | `AudioWorkletProcessor` de análisis. Corre en el hilo de audio. |
 | `src/modules/audio/midivj-audio-ui.js` | Vista AUDIO (panel, medidores, mapeos). Opcional: el motor funciona sin ella. |

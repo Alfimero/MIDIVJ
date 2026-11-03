@@ -30,6 +30,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--ui);font-size:14px
 .hbtn.danger:hover{border-color:var(--hot);color:var(--hot);}
 .hbtn.out{background:rgba(68,170,255,.1);border-color:var(--blue);color:var(--blue);}
 .hbtn.out:hover{background:rgba(68,170,255,.25);}
+.hbtn.rec{background:#ff3366;border-color:#ff3366;color:#fff;font-variant-numeric:tabular-nums;}
+.hbtn.rec:hover{background:#ff5580;color:#fff;}
 #learn-banner{display:none;align-items:center;gap:6px;background:var(--yellow);color:#000;font-family:var(--mono);font-size:9px;font-weight:700;padding:3px 10px;flex-shrink:0;animation:blk2 .5s infinite;}
 #learn-banner.vis{display:flex;}
 @keyframes blk2{0%,100%{opacity:1}50%{opacity:.35}}
@@ -376,6 +378,7 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <button class="hbtn" id="mapeo-btn" onclick="toggleModoMapeo()" title="Muestra todo lo que se puede mover con un slider, palanca o pad del mando (o una perilla/fader MIDI): clic en un parámetro y mueve el control para mapearlo">🎯 MAPEO</button>
   <button class="hbtn out" onclick="openOutputWindow()">⊡ HDMI</button>
   <button class="hbtn" onclick="window.open(salidaURL(),'_blank','noopener')" title="Abre la página que agregarías en OBS como Fuente de navegador (también en 📡 RELAY → 5)">🎥 OBS</button>
+  <button class="hbtn" id="grab-btn" onclick="abrirPanelGrabacion()" title="Graba la salida en Grabaciones/ del proyecto (sin audio)">⏺ GRABAR</button>
   <button class="hbtn" onclick="abrirPanelRes()" title="Resolución y tamaño del video de salida">⛶ SALIDA</button>
   <button class="hbtn" id="mando-btn" onclick="abrirPanelRelay()" title="Relay, conexión y códigos QR de los mandos">📡 RELAY <span id="mando-count">—</span></button>
   <button class="hbtn" id="audio-btn" onclick="abrirPanelAudio()" title="Entradas de audio, análisis y mapeos audio → visual">🔊 AUDIO</button>
@@ -749,6 +752,8 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 <script src="modules/midivj-module.js"></script>
 <script src="modules/audio/midivj-audio-engine.js"></script>
 <script src="modules/audio/midivj-audio-ui.js"></script>
+<script src="modules/grabacion/midivj-grabacion.js"></script>
+<script src="modules/grabacion/midivj-grabacion-ui.js"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════
@@ -1294,7 +1299,7 @@ function makeTrack(i) {
     t.loaded = true; t.dur = src.duration;
     t.loadedName = t._pendingName || 'video';
     if (i === 0) {
-      if (!S.outRes.locked) { cvs.width = src.videoWidth || 1280; cvs.height = src.videoHeight || 720; }
+      if (!S.outRes.locked && !grabacionActiva()) { cvs.width = src.videoWidth || 1280; cvs.height = src.videoHeight || 720; }
       syncOutCanvasBuffers();
       document.getElementById('load-ov').classList.add('hide');
     }
@@ -1485,7 +1490,9 @@ document.addEventListener('fullscreenchange',()=>{
     try {
       outWin.addEventListener('beforeunload', () => {
         clearOutputTimer();
-        resetOutputStream();
+        /* Los visores de /salida (OBS) envían este mismo stream: detenerlo
+           aquí los dejaba congelados aunque se reabriera la ventana. */
+        if (!SAL.sesiones.size) resetOutputStream();
         outWinCvs = null; outWinCtx = null; outWinVid = null; outMirrorMode = 'none';
       }, { once:true });
       bindOutputSurface();
@@ -1533,7 +1540,10 @@ function applyOutRes(w, h, locked) {
   w = Math.max(64, Math.min(7680, Math.round(w) || S.outRes.w));
   h = Math.max(64, Math.min(4320, Math.round(h) || S.outRes.h));
   S.outRes.w = w; S.outRes.h = h; S.outRes.locked = !!locked;
-  cvs.width = w; cvs.height = h;
+  const redimensionar = () => { cvs.width = w; cvs.height = h; };
+  /* Grabando: el archivo actual se cierra antes del cambio y sigue en otro */
+  if (grabacionActiva() && (cvs.width !== w || cvs.height !== h)) grabador.cortar(redimensionar, 'La salida cambió a ' + w + '×' + h);
+  else redimensionar();
   syncOutCanvasBuffers();
   try { localStorage.setItem('midivj-out-res', JSON.stringify(S.outRes)); } catch(_) {}
   renderPanelRes();
@@ -2319,7 +2329,7 @@ function _applyStream(track, stream, type, label) {
     if (track.i === 0) {
       /* Un teléfono (que puede estar en vertical o girar en pleno show) no
          cambia el tamaño de la salida: su imagen se encaja dentro de ella. */
-      if (!S.outRes.locked && type !== 'phone') { cvs.width = lv.videoWidth || 1280; cvs.height = lv.videoHeight || 720; }
+      if (!S.outRes.locked && type !== 'phone' && !grabacionActiva()) { cvs.width = lv.videoWidth || 1280; cvs.height = lv.videoHeight || 720; }
       syncOutCanvasBuffers();
       document.getElementById('load-ov').classList.add('hide');
     }
@@ -8349,6 +8359,8 @@ function _salCerrar(id, avisar, motivo) {
     sesion.pc.close();
   }
   SAL.sesiones.delete(id);
+  /* El último que usaba la captura del lienzo la suelta (ver beforeunload de la ventana HDMI) */
+  if (!SAL.sesiones.size && !outputWindowOpen()) resetOutputStream();
   if (avisar) _salEnviar({ type: 'salida-cerrar', id, motivo });
 }
 
@@ -8975,6 +8987,66 @@ if (!audioDisponible()) {
   const btn = document.getElementById('audio-btn');
   if (btn) btn.style.display = 'none';
 }
+
+/* ═══════════════════════════════════════════════════════
+   GRABACIÓN — puente con src/modules/grabacion/
+   La app registra la salida en `MIDIVJ.capturas` (cada pedido es un
+   captureStream propio: grabar no toca HDMI ni OBS) y pinta el botón de
+   la cabecera. El módulo graba; el relay escribe en Grabaciones/. Si
+   `modules/…` no cargó, se esconde el botón y todo queda como antes.
+═══════════════════════════════════════════════════════ */
+let grabador = null, grabadorUI = null;
+
+function grabacionDisponible() {
+  return !!(window.MIDIVJ && MIDIVJ.capturas && window.MIDIVJGrabacion && window.MIDIVJGrabacionUI);
+}
+/* Mientras graba, el lienzo no cambia solo de tamaño con la pista 1:
+   cada cambio de resolución abre un archivo nuevo en la toma. */
+function grabacionActiva() {
+  return !!(grabador && grabador.grabando());
+}
+function grabacionInicializar() {
+  if (grabador || !grabacionDisponible()) return grabador;
+  MIDIVJ.capturas.registrar({
+    id: 'salida', nombre: 'Salida',
+    capturar: fps => cvs.captureStream ? cvs.captureStream(fps) : null,
+    tamano: () => ({ ancho: cvs.width, alto: cvs.height }),
+  });
+  grabador = MIDIVJGrabacion.crear({
+    log: msg => appendNetLog('[grabación] ' + msg),
+    onChange: () => { pintarBotonGrabacion(); if (grabadorUI) grabadorUI.refrescar(); },
+  });
+  MIDIVJ.modulos.registrar(grabador);
+  grabadorUI = MIDIVJGrabacionUI.crear(grabador, MIDIVJ.host, { avisar: msg => appendNetLog('[grabación] ' + msg) });
+  return grabador;
+}
+function abrirPanelGrabacion() {
+  if (!grabacionDisponible()) {
+    alert('El módulo de grabación no cargó.\n\nAbre MIDIVJ desde el relay local (src/INICIAR_RELAY.bat → http://localhost:9191), no como archivo suelto.');
+    return;
+  }
+  grabacionInicializar();
+  grabadorUI.abrir();
+}
+function pintarBotonGrabacion() {
+  const btn = document.getElementById('grab-btn');
+  if (!btn || !grabador) return;
+  const st = grabador.getStatus();
+  btn.classList.toggle('rec', st.fase === 'grabando' || st.fase === 'cerrando');
+  btn.textContent = st.fase === 'grabando' ? '⏺ ' + MIDIVJGrabacionUI.reloj(st.transcurridoMs)
+    : st.fase === 'cerrando' ? '⏺ GUARDANDO…' : '⏺ GRABAR';
+}
+
+if (!grabacionDisponible()) {
+  const btn = document.getElementById('grab-btn');
+  if (btn) btn.style.display = 'none';
+}
+/* Recargar o cerrar la pestaña corta la grabación: el navegador pregunta antes. */
+window.addEventListener('beforeunload', e => {
+  if (!grabacionActiva()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 /* ── INIT ── */
 restoreOutResFromStorage();

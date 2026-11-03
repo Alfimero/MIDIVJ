@@ -14,7 +14,7 @@ Reading this as: a live VJ control tool for a technical operator, with a dark ut
   - `src/midivj-mando.html` + `src/midivj-control.html` + `src/midivj-qr.js`: phone remote control (grid of MIDI buttons) and the QR/cabin page (ADR-003).
   - `src/midivj-camara.html`: phone camera as a track source over direct WebRTC; served over a self-signed HTTPS endpoint because `getUserMedia` needs a secure context on LAN (ADR-004).
   - `src/midivj-salida.html`: OBS browser source receiving the output canvas over direct WebRTC, app as offerer (ADR-005).
-  - `src/modules/`: the module contract (`midivj-module.js`, with the `MIDIVJ.targets` / `MIDIVJ.acciones` registries) and the first decoupled subsystem, `audio/` (AudioWorklet analysis -> continuous parameters and discrete triggers; ADR-006).
+  - `src/modules/`: the module contract (`midivj-module.js`, with the `MIDIVJ.targets` / `MIDIVJ.acciones` / `MIDIVJ.capturas` registries) and the decoupled subsystems: `audio/` (AudioWorklet analysis -> continuous parameters and discrete triggers; ADR-006) and `grabacion/` (records the output with MediaRecorder; the relay appends each 1 s chunk to `Grabaciones/`; ADR-008).
   - `src/INICIAR_RELAY.bat` / `src/INICIAR_RELAY.command`: convenience launchers for Windows / macOS.
 - Media library in workspace: `videos/Visuales 2026/` with `.mp4` files used by saved projects; it is excluded from Git.
 - Saved session examples: `Sessions/Bk-Nk!.vjp`, `Sessions/Bk-Nk! con videos.vjp`, `Sessions/Bk-Nk! (2).vjp`.

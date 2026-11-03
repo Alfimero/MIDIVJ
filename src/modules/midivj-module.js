@@ -23,6 +23,7 @@
 
      host.log(msg, extra)          bitácora (nunca desde un callback de audio)
      host.targets                  registro de parámetros controlables
+     host.capturas                 señales de video que se pueden grabar
      host.now()                    reloj monótono en segundos
 
    El registro es deliberadamente tonto: no hay inyección de dependencias,
@@ -90,9 +91,34 @@
     },
   };
 
+  /* Señales de video (la salida hoy; cada cámara después). La app las
+     registra y un módulo las pide sin saber de dónde salen. `capturar()`
+     entrega un MediaStream NUEVO cada vez: quien lo pide es dueño de sus
+     pistas y las detiene al terminar, sin tocar la ventana HDMI ni OBS. */
+  const capturas = {
+    _defs: new Map(),
+
+    /** def = { id, nombre, capturar(fps) → MediaStream|null, tamano() → { ancho, alto } } */
+    registrar(def) {
+      if (!def || !def.id || typeof def.capturar !== 'function') return null;
+      const completo = {
+        id: def.id,
+        nombre: def.nombre || def.id,
+        capturar: def.capturar,
+        tamano: typeof def.tamano === 'function' ? def.tamano : () => null,
+      };
+      this._defs.set(completo.id, completo);
+      return completo;
+    },
+    quitar(id) { this._defs.delete(id); },
+    obtener(id) { return this._defs.get(id) || null; },
+    listar() { return [...this._defs.values()]; },
+  };
+
   const host = {
     targets,
     acciones,
+    capturas,
     now() { return (global.performance ? performance.now() : Date.now()) / 1000; },
     log(msg, extra) {
       if (extra !== undefined) console.log('[MIDIVJ] ' + msg, extra);
@@ -104,6 +130,7 @@
   MIDIVJ.host = host;
   MIDIVJ.targets = targets;
   MIDIVJ.acciones = acciones;
+  MIDIVJ.capturas = capturas;
   MIDIVJ.modulos = {
     registrar(mod) {
       if (!mod || !mod.id) throw new Error('Un módulo necesita id.');
