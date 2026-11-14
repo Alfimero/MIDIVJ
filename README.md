@@ -133,6 +133,8 @@ Con el relay corriendo, hasta **cuatro teléfonos** pueden disparar tus visuales
 2. Pulsa **📡 RELAY** en el encabezado (entre `⊡ HDMI` y `EXCL`). Ese botón abre el panel de relay y mandos, y lleva el contador de teléfonos conectados: se pone verde cuando hay alguno.
 3. En el panel, **📱 ABRIR QR DE MANDOS**. En el teléfono, escanea el QR del **Mando 1** (hay uno por dispositivo). Si la computadora tiene varias direcciones IP, elige arriba cuál usar.
 
+Si el navegador del teléfono cambia el `http://` del QR por `https://` (Brave en iPad o iPhone con **HTTPS por defecto**), el mando abre igual: el relay atiende HTTP y HTTPS en el mismo puerto. La primera vez aparece la advertencia del certificado autofirmado, la misma que con `/camara`: acéptala una vez y listo.
+
 ### El panel de relay
 
 Todo lo del relay se maneja desde ahí, sin buscar en la barra de estado:

@@ -35,6 +35,14 @@ La primera versión dejaba tres puntos donde la cadena se rompía en uso real. S
 
 Además, la detección de red pasó a cubrir el **punto de acceso móvil de Windows 10/11**, que `netsh wlan show hostednetwork` no ve. Se consulta `NetworkOperatorTetheringManager` por WinRT desde PowerShell (`-EncodedCommand`, ~250 ms, con caché de 8 s): devuelve SSID, contraseña y si está encendido, incluso apagado, así que el QR queda listo antes de encender la red. Es una lectura; el relay no modifica configuración de red en ningún caso.
 
+## Complemento del 2026-11-03: HTTP y HTTPS en el mismo puerto
+
+Brave en iPad/iPhone con **HTTPS por defecto** cambia el `http://IP:9191/mando` del QR por `https://` y, cuando falla, no vuelve atrás: el mando daba `ERR_SSL_PROTOCOL_ERROR` porque el puerto sólo hablaba HTTP. La salida que se dio entonces fue apagar esa opción en el iPad.
+
+Ahora el puerto principal mira el primer byte de cada conexión: `0x16` abre un saludo TLS y la conexión va al servidor HTTPS (el mismo certificado autofirmado de `/camara`, también para `wss://`); cualquier otra cosa va al servidor HTTP de siempre. El socket es el mismo, así que las rutas sólo-loopback siguen viendo la dirección real de quien llama. Una conexión que no manda nada en 60 s se cierra, como haría el HTTP. Las páginas ya elegían `wss://` cuando se abren por `https://`, así que no cambiaron. El puerto propio de `/camara` (9191 + 1000) sigue igual.
+
+Alternativas descartadas: redirigir de HTTPS a HTTP (sin TLS en el puerto no hay forma de contestar el saludo), poner el QR del mando en `https://` (obligaría a aceptar el certificado a todos, también a los navegadores que no lo necesitan) y un tercer puerto (más reglas de firewall y otra dirección que explicar).
+
 ## Alternativas descartadas
 
 - **Un hub aparte tipo MechaKatz.** Habría duplicado servidor, puerto y firewall. El relay ya existía y ya hablaba MIDI por salas.
