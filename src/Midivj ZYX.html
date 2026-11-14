@@ -9251,7 +9251,8 @@ function dibujarSenales() {
    viaja por el relay como 'visor-estado' cada vez que cambia.
 
    Un arreglo (escena) es, por pista: encendida o no, opacidad y qué clip
-   suena. ▶ A SALIDA aplica la previa a la salida, con corte o fundido.
+   suena. ▶ A SALIDA aplica la previa a la salida, con corte o con la
+   transición elegida en el visor (ver TRANSICIONES DE ESCENA).
    Las escenas se guardan en la sesión (S.escenas).
 ═══════════════════════════════════════════════════════ */
 const MOSAICO = { cols: 4, cw: 320, ch: 180 };
@@ -9280,14 +9281,15 @@ function previaActual() {
 }
 const mismasPistas = (a, b) => JSON.stringify(a.pistas) === JSON.stringify(b.pistas);
 
-/** Lleva un arreglo a la salida. `seg` > 0 = fundido desde lo que había. */
-function aplicarEscena(esc, seg) {
+/** Lleva un arreglo a la salida. `seg` > 0 = con la transición `tipo`
+    (ver TRANSICIONES DE ESCENA) desde lo que había; 0 = corte. */
+function aplicarEscena(esc, seg, tipo) {
   const W = cvs.width, H = cvs.height;
   if (seg > 0) {
     if (!VIS.tk) { VIS.tk = document.createElement('canvas'); VIS.tkCtx = VIS.tk.getContext('2d', { alpha: false }); }
     if (VIS.tk.width !== W || VIS.tk.height !== H) { VIS.tk.width = W; VIS.tk.height = H; }
     VIS.tkCtx.drawImage(cvs, 0, 0);
-    VIS.fundido = { t0: performance.now(), ms: Math.min(10, seg) * 1000 };
+    VIS.fundido = { t0: performance.now(), ms: Math.min(10, seg) * 1000, tipo: TRANS_ESCENA.resolver(tipo), semilla: Math.random() * 1000 };
   } else VIS.fundido = null;
   /* Los clips del arreglo conviven: EXCL no aplica entre ellos */
   const excl = S.exclMode;
@@ -9309,13 +9311,331 @@ function aplicarEscena(esc, seg) {
   renderTrackInfo();
   S.tracks.forEach((_, i) => { if (typeof refrescarSlidersDePista === 'function') refrescarSlidersDePista(i); });
 }
+/* ── TRANSICIONES DE ESCENA ──
+   Al pasar un arreglo a la salida se guarda una foto de lo que había
+   (`viejo`) y, mientras dura la transición, se dibuja encima de la salida
+   nueva, que sigue viva debajo. Cada transición decide cómo se va lo viejo
+   según `p` (0 → 1, ya suavizado). `x.nuevo()` da una copia del cuadro
+   nuevo para las que lo mueven o lo deforman (deslizar, voltear, pixelar…).
+   `x.r(i)` es un número fijo 0..1 por toma, para los repartos al azar.
+   El visor recibe esta lista (id, nombre, grupo) y arma su selector. */
+const TRANS_ESCENA = (() => {
+  const TAU = Math.PI * 2;
+  const lim = v => Math.max(0, Math.min(1, v));
+  /* lo viejo, sólo dentro de la figura que traza `camino` */
+  const recorte = (c, V, W, H, camino, regla) => {
+    c.save(); c.beginPath(); camino(c); c.clip(regla || 'nonzero'); c.drawImage(V, 0, 0, W, H); c.restore();
+  };
+  /* lo viejo, con la transparencia que pinte `pintar` (bordes suaves) */
+  const mascara = (c, V, W, H, x, pintar) => {
+    const m = x.lienzo('m', W, H, true);
+    m.globalCompositeOperation = 'source-over';
+    m.clearRect(0, 0, W, H);
+    m.drawImage(V, 0, 0, W, H);
+    m.globalCompositeOperation = 'destination-in';
+    pintar(m);
+    m.globalCompositeOperation = 'source-over';
+    c.drawImage(m.canvas, 0, 0);
+  };
+  const negro = (c, W, H, a, color) => { c.globalAlpha = lim(a); c.fillStyle = color || '#000'; c.fillRect(0, 0, W, H); c.globalAlpha = 1; };
+  const estrella = (c, cx, cy, R, giro) => {
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 ? R * 0.45 : R, a = giro + i * TAU / 10 - Math.PI / 2;
+      c[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    c.closePath();
+  };
+  const cortina = (dx, dy) => (c, V, p, W, H) => recorte(c, V, W, H, k =>
+    k.rect(dx > 0 ? p * W : 0, dy > 0 ? p * H : 0, dx ? W * (1 - p) : W, dy ? H * (1 - p) : H));
+  const cortinaSuave = (dx, dy) => (c, V, p, W, H, x) => mascara(c, V, W, H, x, m => {
+    const L = dx ? W : H, s = L * 0.18, e = p * (L + s) - s;   // borde del barrido
+    const a = dx > 0 || dy > 0 ? e : L - e - s, b = a + s;
+    const g = dx ? m.createLinearGradient(a, 0, b, 0) : m.createLinearGradient(0, a, 0, b);
+    const sigue = dx > 0 || dy > 0;                              // lo viejo queda después del borde
+    g.addColorStop(0, sigue ? 'rgba(0,0,0,0)' : '#000');
+    g.addColorStop(1, sigue ? '#000' : 'rgba(0,0,0,0)');
+    m.fillStyle = g; m.fillRect(0, 0, W, H);
+  });
+  const deslizar = (dx, dy) => (c, V, p, W, H, x) => {
+    const N = x.nuevo();
+    c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+    c.drawImage(V, dx * p * W, dy * p * H, W, H);
+    c.drawImage(N, dx * (p - 1) * W, dy * (p - 1) * H, W, H);
+  };
+  const cubrir = (dx, dy) => (c, V, p, W, H, x) => {
+    const N = x.nuevo();
+    c.drawImage(V, 0, 0, W, H);
+    c.drawImage(N, dx * (p - 1) * W, dy * (p - 1) * H, W, H);
+  };
+  const descubrir = (dx, dy) => (c, V, p, W, H) => c.drawImage(V, dx * p * W, dy * p * H, W, H);
+  const dosTiempos = (cerrar, abrir) => (c, V, p, W, H, x) => {
+    if (p < 0.5) { c.drawImage(V, 0, 0, W, H); cerrar(c, p * 2, W, H, x); }
+    else abrir(c, (1 - p) * 2, W, H, x);
+  };
+
+  const T = [
+    /* ── Fundidos ── */
+    ['disolver', 'Disolver', 'Fundidos', (c, V, p, W, H) => { c.globalAlpha = 1 - p; c.drawImage(V, 0, 0, W, H); }],
+    ['negro', 'Por negro', 'Fundidos', dosTiempos((c, q, W, H) => negro(c, W, H, q), (c, q, W, H) => negro(c, W, H, q))],
+    ['blanco', 'Por blanco', 'Fundidos', dosTiempos((c, q, W, H) => negro(c, W, H, q, '#fff'), (c, q, W, H) => negro(c, W, H, q, '#fff'))],
+    ['resplandor', 'Resplandor', 'Fundidos', (c, V, p, W, H) => {
+      c.globalAlpha = 1 - p; c.drawImage(V, 0, 0, W, H);
+      c.globalCompositeOperation = 'lighter'; c.globalAlpha = Math.sin(Math.PI * p) * 0.7; c.drawImage(V, 0, 0, W, H);
+    }],
+    ['desenfoque', 'Desenfoque', 'Fundidos', (c, V, p, W, H, x) => {
+      const B = 28 * W / 1280, N = x.nuevo();
+      c.filter = 'blur(' + ((1 - p) * B).toFixed(1) + 'px)'; c.drawImage(N, 0, 0, W, H);
+      c.filter = 'blur(' + (p * B).toFixed(1) + 'px)'; c.globalAlpha = 1 - p; c.drawImage(V, 0, 0, W, H);
+    }],
+    ['sueno', 'Sueño (zoom + desenfoque)', 'Fundidos', (c, V, p, W, H) => {
+      const k = 1 + p * 0.35;
+      c.filter = 'blur(' + (p * 18 * W / 1280).toFixed(1) + 'px)'; c.globalAlpha = 1 - p;
+      c.drawImage(V, (W - W * k) / 2, (H - H * k) / 2, W * k, H * k);
+    }],
+    ['color', 'Lavado de color', 'Fundidos', (c, V, p, W, H) => {
+      /* lo viejo pierde el color y se aclara mientras se va */
+      c.filter = 'saturate(' + (1 - p).toFixed(2) + ') brightness(' + (1 + p * 0.8).toFixed(2) + ')';
+      c.globalAlpha = 1 - p * p; c.drawImage(V, 0, 0, W, H);
+    }],
+
+    /* ── Cortinas ── */
+    ['cortina-der', 'Cortina →', 'Cortinas', cortina(1, 0)],
+    ['cortina-izq', 'Cortina ←', 'Cortinas', cortina(-1, 0)],
+    ['cortina-abajo', 'Cortina ↓', 'Cortinas', cortina(0, 1)],
+    ['cortina-arriba', 'Cortina ↑', 'Cortinas', cortina(0, -1)],
+    ['suave-der', 'Cortina suave →', 'Cortinas', cortinaSuave(1, 0)],
+    ['suave-izq', 'Cortina suave ←', 'Cortinas', cortinaSuave(-1, 0)],
+    ['suave-abajo', 'Cortina suave ↓', 'Cortinas', cortinaSuave(0, 1)],
+    ['suave-arriba', 'Cortina suave ↑', 'Cortinas', cortinaSuave(0, -1)],
+    ['diagonal', 'Diagonal', 'Cortinas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const d = p * (W + H);   // la línea x + y = d avanza desde la esquina
+      k.moveTo(d, 0); k.lineTo(W + H, 0); k.lineTo(W + H, W + H); k.lineTo(0, W + H); k.lineTo(0, d); k.closePath();
+    })],
+    ['puertas', 'Puertas (abrir)', 'Cortinas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      k.rect(0, 0, W / 2 * (1 - p), H); k.rect(W / 2 * (1 + p), 0, W / 2 * (1 - p), H);
+    })],
+    ['puertas-cerrar', 'Puertas (cerrar)', 'Cortinas', (c, V, p, W, H) => recorte(c, V, W, H, k => k.rect(W / 2 * p, 0, W * (1 - p), H))],
+    ['telon', 'Telón (abrir ↕)', 'Cortinas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      k.rect(0, 0, W, H / 2 * (1 - p)); k.rect(0, H / 2 * (1 + p), W, H / 2 * (1 - p));
+    })],
+    ['destello', 'Barrido con destello', 'Cortinas', (c, V, p, W, H) => {
+      const e = p * W, s = W * 0.08;
+      recorte(c, V, W, H, k => k.rect(e, 0, W - e, H));
+      const g = c.createLinearGradient(e - s, 0, e + s, 0);
+      g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,' + (Math.sin(Math.PI * p) * 0.9).toFixed(2) + ')'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      c.globalCompositeOperation = 'lighter'; c.fillStyle = g; c.fillRect(e - s, 0, s * 2, H);
+    }],
+
+    /* ── Formas ── */
+    ['iris', 'Iris (abrir)', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      k.rect(0, 0, W, H); k.arc(W / 2, H / 2, p * Math.hypot(W, H) / 2, 0, TAU);
+    }, 'evenodd')],
+    ['iris-cerrar', 'Iris (cerrar)', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => k.arc(W / 2, H / 2, (1 - p) * Math.hypot(W, H) / 2, 0, TAU))],
+    ['iris-suave', 'Iris suave', 'Formas', (c, V, p, W, H, x) => mascara(c, V, W, H, x, m => {
+      const R = Math.hypot(W, H) / 2, s = R * 0.25, r = p * (R + s);
+      const g = m.createRadialGradient(W / 2, H / 2, Math.max(0, r - s), W / 2, H / 2, r);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, '#000');
+      m.fillStyle = g; m.fillRect(0, 0, W, H);
+    })],
+    ['rombo', 'Rombo', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const a = p * (W + H) / 2;
+      k.rect(0, 0, W, H); k.moveTo(W / 2, H / 2 - a); k.lineTo(W / 2 + a, H / 2); k.lineTo(W / 2, H / 2 + a); k.lineTo(W / 2 - a, H / 2); k.closePath();
+    }, 'evenodd')],
+    ['estrella', 'Estrella', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      k.rect(0, 0, W, H); estrella(k, W / 2, H / 2, p * Math.hypot(W, H) * 1.25, p * 1.2);
+    }, 'evenodd')],
+    ['reloj', 'Reloj', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const R = Math.hypot(W, H);
+      k.moveTo(W / 2, H / 2); k.arc(W / 2, H / 2, R, -Math.PI / 2 + p * TAU, -Math.PI / 2 + TAU); k.closePath();
+    })],
+    ['abanico', 'Abanico', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const R = Math.hypot(W, H), a = p * Math.PI;   // se abre hacia los dos lados desde arriba
+      k.moveTo(W / 2, H / 2); k.arc(W / 2, H / 2, R, -Math.PI / 2 + a, -Math.PI / 2 + TAU - a); k.closePath();
+    })],
+    ['tunel', 'Túnel (iris por negro)', 'Formas', dosTiempos(
+      (c, q, W, H) => { c.fillStyle = '#000'; c.beginPath(); c.rect(0, 0, W, H); c.arc(W / 2, H / 2, (1 - q) * Math.hypot(W, H) / 2, 0, TAU); c.fill('evenodd'); },
+      (c, q, W, H) => { c.fillStyle = '#000'; c.beginPath(); c.rect(0, 0, W, H); c.arc(W / 2, H / 2, (1 - q) * Math.hypot(W, H) / 2, 0, TAU); c.fill('evenodd'); })],
+
+    /* ── Mosaicos ── */
+    ['persianas', 'Persianas', 'Mosaicos', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const n = 12, h = H / n;
+      for (let i = 0; i < n; i++) k.rect(0, i * h + h * p, W, h * (1 - p) + 0.5);
+    })],
+    ['persianas-v', 'Persianas verticales', 'Mosaicos', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const n = 16, w = W / n;
+      for (let i = 0; i < n; i++) k.rect(i * w + w * p, 0, w * (1 - p) + 0.5, H);
+    })],
+    ['tablero', 'Tablero', 'Mosaicos', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const cols = 8, w = W / cols, filas = Math.max(1, Math.round(H / w)), h = H / filas;
+      for (let j = 0; j < filas; j++) for (let i = 0; i < cols; i++) {
+        const q = lim((i + j) % 2 ? p * 2 - 1 : p * 2);   // primero unas casillas, luego las otras
+        if (q < 1) k.rect(i * w + w * q, j * h, w * (1 - q) + 0.5, h + 0.5);
+      }
+    })],
+    ['mosaico', 'Mosaico al azar', 'Mosaicos', (c, V, p, W, H, x) => recorte(c, V, W, H, k => {
+      const cols = 16, w = W / cols, filas = Math.max(1, Math.round(H / w)), h = H / filas;
+      for (let j = 0; j < filas; j++) for (let i = 0; i < cols; i++) if (x.r(j * cols + i) >= p) k.rect(i * w, j * h, w + 0.5, h + 0.5);
+    })],
+    ['escamas', 'Escamas (ola de cuadros)', 'Mosaicos', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const cols = 16, w = W / cols, filas = Math.max(1, Math.round(H / w)), h = H / filas;
+      for (let j = 0; j < filas; j++) for (let i = 0; i < cols; i++) {
+        const s = 1 - lim(p * 2 - (i + j) / (cols + filas));   // cada cuadro se encoge cuando le llega la ola
+        if (s > 0) k.rect(i * w + w * (1 - s) / 2, j * h + h * (1 - s) / 2, w * s + 0.5, h * s + 0.5);
+      }
+    })],
+    ['puntos', 'Puntos', 'Mosaicos', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      /* trama de círculos que crecen hasta tapar todo */
+      const cols = 14, w = W / cols, filas = Math.ceil(H / w), R = w * 0.75 * p;
+      k.rect(0, 0, W, H);
+      for (let j = 0; j <= filas; j++) for (let i = 0; i <= cols; i++) { k.moveTo(i * w + R, j * w); k.arc(i * w, j * w, R, 0, TAU); }
+    }, 'evenodd')],
+    ['pixelar', 'Pixelar', 'Mosaicos', (c, V, p, W, H, x) => {
+      const src = p < 0.5 ? V : x.nuevo();
+      const paso = 1 + (p < 0.5 ? p : 1 - p) * 2 * 70 * W / 1280;
+      const w = Math.max(2, Math.round(W / paso)), h = Math.max(2, Math.round(H / paso));
+      const t = x.lienzo('p', w, h, false);
+      t.drawImage(src, 0, 0, w, h);
+      c.imageSmoothingEnabled = false; c.drawImage(t.canvas, 0, 0, w, h, 0, 0, W, H); c.imageSmoothingEnabled = true;
+    }],
+
+    /* ── Movimiento ── */
+    ['deslizar-izq', 'Empujar ←', 'Movimiento', deslizar(-1, 0)],
+    ['deslizar-der', 'Empujar →', 'Movimiento', deslizar(1, 0)],
+    ['deslizar-arriba', 'Empujar ↑', 'Movimiento', deslizar(0, -1)],
+    ['deslizar-abajo', 'Empujar ↓', 'Movimiento', deslizar(0, 1)],
+    ['cubrir-izq', 'Cubrir ←', 'Movimiento', cubrir(-1, 0)],
+    ['cubrir-arriba', 'Cubrir ↑', 'Movimiento', cubrir(0, -1)],
+    ['descubrir-izq', 'Descubrir ←', 'Movimiento', descubrir(-1, 0)],
+    ['descubrir-abajo', 'Descubrir ↓', 'Movimiento', descubrir(0, 1)],
+    ['zoom', 'Zoom (acercar)', 'Movimiento', (c, V, p, W, H) => {
+      const k = 1 + p * 0.8; c.globalAlpha = 1 - p; c.drawImage(V, (W - W * k) / 2, (H - H * k) / 2, W * k, H * k);
+    }],
+    ['zoom-salir', 'Zoom (alejar)', 'Movimiento', (c, V, p, W, H) => {
+      const k = 1 - p; c.globalAlpha = 1 - p * p * p; c.drawImage(V, (W - W * k) / 2, (H - H * k) / 2, W * k, H * k);
+    }],
+    ['girar', 'Girar y alejar', 'Movimiento', (c, V, p, W, H) => {
+      c.translate(W / 2, H / 2); c.rotate(p * Math.PI * 0.75); c.scale(1 - p, 1 - p); c.globalAlpha = 1 - p * p;
+      c.drawImage(V, -W / 2, -H / 2, W, H);
+    }],
+    ['remolino', 'Remolino', 'Movimiento', (c, V, p, W, H) => {
+      c.translate(W / 2, H / 2); c.rotate(p * Math.PI); c.scale(1 + p * 1.6, 1 + p * 1.6); c.globalAlpha = 1 - p;
+      c.drawImage(V, -W / 2, -H / 2, W, H);
+    }],
+    ['voltear', 'Voltear', 'Movimiento', (c, V, p, W, H, x) => {
+      /* como una tarjeta que gira: se estrecha lo viejo y se ensancha lo nuevo */
+      const src = p < 0.5 ? V : x.nuevo(), k = Math.max(0.001, Math.abs(Math.cos(p * Math.PI)));
+      c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+      c.drawImage(src, W / 2 * (1 - k), H * 0.06 * (1 - k), W * k, H * (1 - 0.12 * (1 - k)));
+    }],
+    ['cubo', 'Cubo', 'Movimiento', (c, V, p, W, H, x) => {
+      const N = x.nuevo();
+      c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+      c.drawImage(V, 0, 0, W * (1 - p), H);
+      c.drawImage(N, W * (1 - p), 0, W * p, H);
+      /* sombra de cada cara según cuánto se aleja */
+      negro(c, W * (1 - p), H, p * 0.6);
+      c.globalAlpha = (1 - p) * 0.6; c.fillStyle = '#000'; c.fillRect(W * (1 - p), 0, W * p, H);
+    }],
+
+    /* ── Combinadas ── */
+    ['franjas', 'Franjas cruzadas', 'Combinadas', (c, V, p, W, H) => {
+      const n = 10, h = H / n;
+      for (let i = 0; i < n; i++) c.drawImage(V, 0, i * h, W, h, (i % 2 ? 1 : -1) * p * W, i * h, W, h + 0.5);
+    }],
+    ['lluvia', 'Lluvia (columnas que caen)', 'Combinadas', (c, V, p, W, H, x) => {
+      const n = 24, w = W / n;
+      for (let i = 0; i < n; i++) {
+        const q = lim(p * 1.7 - x.r(i) * 0.7);
+        if (q < 1) c.drawImage(V, i * w, 0, w, H, i * w, q * q * H, w + 0.5, H);
+      }
+    }],
+    ['ondas', 'Ondas', 'Combinadas', (c, V, p, W, H) => {
+      const h = Math.max(4, Math.round(H / 90)), amp = p * W * 0.12;
+      c.globalAlpha = 1 - p;
+      for (let y = 0; y < H; y += h) c.drawImage(V, 0, y, W, h, Math.sin(y * 0.035 + p * 12) * amp, y, W, h);
+    }],
+    ['glitch', 'Glitch', 'Combinadas', (c, V, p, W, H, x) => {
+      /* bandas que saltan de lo viejo a lo nuevo, temblando en el medio */
+      const n = 28, h = H / n, amp = Math.sin(Math.PI * p) * W * 0.08;
+      for (let i = 0; i < n; i++) {
+        if (x.r(i) < p) continue;
+        c.drawImage(V, 0, i * h, W, h, (Math.random() - 0.5) * 2 * amp, i * h, W, h + 0.5);
+      }
+      if (amp > 1) { c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.25; c.fillStyle = Math.random() < 0.5 ? '#f05' : '#0cf'; c.fillRect(0, Math.random() * H, W, 2 + Math.random() * 6); }
+    }],
+    ['persianas-zoom', 'Persianas con zoom', 'Combinadas', (c, V, p, W, H) => {
+      const k = 1 + p * 0.25, n = 10, h = H / n;
+      c.beginPath();
+      for (let i = 0; i < n; i++) c.rect(0, i * h + h * p / 2, W, h * (1 - p) + 0.5);
+      c.clip();
+      c.globalAlpha = 1 - p * p; c.drawImage(V, (W - W * k) / 2, (H - H * k) / 2, W * k, H * k);
+    }],
+    ['iris-giro', 'Iris de estrella que gira', 'Combinadas', (c, V, p, W, H) => {
+      /* lo viejo se queda dentro de una estrella que se encoge girando */
+      c.beginPath(); estrella(c, W / 2, H / 2, (1 - p) * Math.hypot(W, H) * 1.25, -p * 2.4); c.clip();
+      c.globalAlpha = 1 - p * p * p; c.drawImage(V, 0, 0, W, H);
+    }],
+    ['flash-zoom', 'Destello con zoom', 'Combinadas', (c, V, p, W, H) => {
+      const k = 1 + p * 0.5;
+      c.globalAlpha = 1 - p; c.drawImage(V, (W - W * k) / 2, (H - H * k) / 2, W * k, H * k);
+      negro(c, W, H, Math.sin(Math.PI * p) * 0.85, '#fff');
+    }],
+    ['cortina-negro', 'Cortinas por negro', 'Combinadas', dosTiempos(
+      (c, q, W, H) => { c.fillStyle = '#000'; c.fillRect(0, 0, W / 2 * q, H); c.fillRect(W - W / 2 * q, 0, W / 2 * q, H); },
+      (c, q, W, H) => { c.fillStyle = '#000'; c.fillRect(0, 0, W, H / 2 * q); c.fillRect(0, H - H / 2 * q, W, H / 2 * q); })],
+    ['pixel-disolver', 'Pixelar y disolver', 'Combinadas', (c, V, p, W, H, x) => {
+      const paso = 1 + p * 90 * W / 1280;
+      const w = Math.max(2, Math.round(W / paso)), h = Math.max(2, Math.round(H / paso));
+      const t = x.lienzo('p', w, h, false);
+      t.drawImage(V, 0, 0, w, h);
+      c.globalAlpha = 1 - p; c.imageSmoothingEnabled = false; c.drawImage(t.canvas, 0, 0, w, h, 0, 0, W, H); c.imageSmoothingEnabled = true;
+    }],
+    ['empujar-desenfoque', 'Empujar con estela', 'Combinadas', (c, V, p, W, H, x) => {
+      const N = x.nuevo(), b = Math.sin(Math.PI * p) * 14 * W / 1280;
+      c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+      c.filter = 'blur(' + b.toFixed(1) + 'px)';
+      c.drawImage(V, -p * W, 0, W, H); c.drawImage(N, (1 - p) * W, 0, W, H);
+    }],
+  ];
+  const mapa = new Map(T.map(([id, nombre, grupo, dib]) => [id, { id, nombre, grupo, dib }]));
+  return {
+    lista: T.map(([id, nombre, grupo]) => ({ id, nombre, grupo })),
+    obtener: id => mapa.get(id) || null,
+    /* 'azar' = una distinta cada vez */
+    resolver(id) {
+      if (id === 'azar') return T[Math.floor(Math.random() * T.length)][0];
+      return mapa.has(id) ? id : 'disolver';
+    },
+  };
+})();
+
 function dibujarFundidoEscena(W, H) {
   const f = VIS.fundido;
-  const p = (performance.now() - f.t0) / f.ms;
-  if (p >= 1 || !VIS.tk) { VIS.fundido = null; return; }
-  ctx.globalAlpha = 1 - p;
-  ctx.drawImage(VIS.tk, 0, 0, W, H);
-  ctx.globalAlpha = 1;
+  const lin = (performance.now() - f.t0) / f.ms;
+  const t = TRANS_ESCENA.obtener(f.tipo);
+  if (lin >= 1 || !VIS.tk || !t) { VIS.fundido = null; return; }
+  /* entra y sale despacio: sin tirones al empezar ni al terminar */
+  const p = lin < 0.5 ? 2 * lin * lin : 1 - Math.pow(-2 * lin + 2, 2) / 2;
+  const x = {
+    lienzo(nombre, w, h, alfa) {
+      const k = '_t' + nombre;
+      if (!VIS[k]) { const c = document.createElement('canvas'); VIS[k] = c.getContext('2d', { alpha: !!alfa }); }
+      const c = VIS[k].canvas;
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      return VIS[k];
+    },
+    nuevo() {
+      const n = this.lienzo('n', W, H, false);
+      n.drawImage(cvs, 0, 0);
+      return n.canvas;
+    },
+    r: i => { const v = Math.sin((i + 1) * 127.1 + f.semilla) * 43758.5453; return v - Math.floor(v); },
+  };
+  ctx.save();
+  try { t.dib(ctx, VIS.tk, p, W, H, x); }
+  catch (e) { VIS.fundido = null; }   // una transición que falla no deja la salida a medias
+  ctx.restore();
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none'; ctx.imageSmoothingEnabled = true;
 }
 
 /* ── Lienzos que sólo existen mientras hay un visor ── */
@@ -9419,6 +9739,7 @@ function estadoVisor() {
       .filter(e => !t.clips.some(c => c.playlistEntryId === e.id))
       .map(e => ({ id: e.id, pista: i, nombre: String(e.name || '').slice(0, 60), dur: e.dur || 0 }))).slice(0, 400),
     escenas: S.escenas.map(e => ({ id: e.id, nombre: e.nombre, pistas: e.pistas })),
+    transiciones: TRANS_ESCENA.lista,
     grabando: grabacionActiva(),
   };
 }
@@ -9439,7 +9760,8 @@ function visorOrden(msg) {
   const previa = previaActual();
   const i = parseInt(msg.pista, 10);
   const enRango = i >= 0 && i < N_TRACKS;
-  const seg = Math.max(0, Math.min(10, +msg.fundido || 0));
+  const seg = msg.trans === 'corte' ? 0 : Math.max(0, Math.min(10, +msg.fundido || 0));
+  const comoEntra = () => (seg ? ' (' + ((TRANS_ESCENA.obtener(VIS.fundido && VIS.fundido.tipo) || {}).nombre || 'transición') + ', ' + seg + ' s)' : '');
   const escena = id => S.escenas.find(e => e.id === id) || null;
   const copia = e => ({ pistas: e.pistas.map(p => ({ ...p })) });
   switch (msg.cmd) {
@@ -9466,8 +9788,8 @@ function visorOrden(msg) {
       VIS.previa = escenaDeSalida();
       break;
     case 'tomar':
-      aplicarEscena(previa, seg);
-      appendNetLog('🎚 visor ' + msg.id + ': la previa pasó a la salida' + (seg ? ' (fundido ' + seg + ' s)' : ''));
+      aplicarEscena(previa, seg, msg.trans);
+      appendNetLog('🎚 visor ' + msg.id + ': la previa pasó a la salida' + comoEntra());
       break;
     /* — directo a la salida — */
     case 'salida-pista': {
@@ -9512,8 +9834,8 @@ function visorOrden(msg) {
       const e = escena(msg.escena);
       if (!e) return;
       VIS.previa = copia(e);
-      aplicarEscena(e, seg);
-      appendNetLog('🎚 visor ' + msg.id + ': escena "' + e.nombre + '" a la salida');
+      aplicarEscena(e, seg, msg.trans);
+      appendNetLog('🎚 visor ' + msg.id + ': escena "' + e.nombre + '" a la salida' + comoEntra());
       break;
     }
     case 'escena-renombrar': {

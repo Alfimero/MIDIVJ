@@ -22,7 +22,9 @@ body{
 button{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--text2);
   background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;cursor:pointer;touch-action:manipulation;}
 button:disabled{opacity:.35;cursor:default;}
-select{font-family:var(--mono);font-size:10px;color:var(--text);background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:7px 6px;}
+select{font-family:var(--mono);font-size:10px;color:var(--text);background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:7px 6px;max-width:100%;}
+#trans{max-width:210px;}
+body[data-trans="corte"] #dur{display:none;}
 
 /* ── Barra superior ── */
 #barra{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);flex:none;min-height:42px;}
@@ -151,13 +153,18 @@ body[data-modo="directo"] #inferior{border-top-color:var(--aire);}
   <span id="aviso-modo">⚠ cada toque cambia la salida</span>
   <span class="sp"></span>
   <button id="copiar" title="Deja la previa igual a lo que está en la salida">↺ IGUALAR A LA SALIDA</button>
-  <select id="fundido" title="Cómo entra el arreglo nuevo">
-    <option value="0">CORTE</option>
-    <option value="0.3">FUNDIDO 0,3 s</option>
-    <option value="0.5" selected>FUNDIDO 0,5 s</option>
-    <option value="1">FUNDIDO 1 s</option>
-    <option value="2">FUNDIDO 2 s</option>
-    <option value="4">FUNDIDO 4 s</option>
+  <select id="trans" title="Transición con la que el arreglo nuevo entra a la salida">
+    <option value="corte">CORTE</option>
+    <option value="disolver" selected>Disolver</option>
+  </select>
+  <select id="dur" title="Duración de la transición">
+    <option value="0.3">0,3 s</option>
+    <option value="0.5">0,5 s</option>
+    <option value="1" selected>1 s</option>
+    <option value="1.5">1,5 s</option>
+    <option value="2">2 s</option>
+    <option value="3">3 s</option>
+    <option value="5">5 s</option>
   </select>
   <button id="tomar" disabled>▶ A SALIDA</button>
 </div>
@@ -207,18 +214,23 @@ const V = {
   arrastrando: false,   // un deslizador en uso: no se repinta la tira debajo del dedo
   firmaTira: '',
   borrar: null,         // escena esperando el segundo toque de ✕
+  trans: 'disolver',    // transición elegida para ▶ A SALIDA ('corte', 'azar' o un id de la app)
+  firmaTrans: '',
 };
 try {
   const g = JSON.parse(localStorage.getItem('midivj-visor') || '{}');
   if (['salida', 'dividida', 'previa'].includes(g.vista)) document.body.dataset.vista = g.vista;
   if (['materiales', 'escenas', 'pistas'].includes(g.tab)) V.tab = g.tab;
-  if (g.fundido !== undefined) $('fundido').value = String(g.fundido);
+  /* la lista completa llega con el estado: hasta entonces se recuerda el id */
+  if (typeof g.trans === 'string') V.trans = g.trans;
+  else if (g.fundido !== undefined) { V.trans = +g.fundido ? 'disolver' : 'corte'; if (+g.fundido) $('dur').value = String(g.fundido); }
+  if (g.dur !== undefined) $('dur').value = String(g.dur);
   V.todas = !!g.todas;
 } catch (_) {}
 function recordar() {
   try {
     localStorage.setItem('midivj-visor', JSON.stringify({
-      vista: document.body.dataset.vista, tab: V.tab, fundido: $('fundido').value, todas: V.todas
+      vista: document.body.dataset.vista, tab: V.tab, trans: V.trans, dur: $('dur').value, todas: V.todas
     }));
   } catch (_) {}
 }
@@ -240,7 +252,26 @@ function enviar(payload) {
   return false;
 }
 const orden = (cmd, datos) => enviar({ type: 'visor-cmd', cmd, ...(datos || {}) });
-const fundido = () => parseFloat($('fundido').value) || 0;
+/* Cómo entra el arreglo nuevo: { trans, fundido (segundos) } */
+const entrada = () => ({ trans: V.trans, fundido: V.trans === 'corte' ? 0 : parseFloat($('dur').value) || 1 });
+
+/* El selector se arma con las transiciones que anuncia MIDIVJ, por grupos */
+function pintarTransiciones(lista) {
+  const firma = JSON.stringify(lista || []);
+  if (firma !== V.firmaTrans) {
+    V.firmaTrans = firma;
+    const grupos = new Map();
+    for (const t of lista || []) { if (!grupos.has(t.grupo)) grupos.set(t.grupo, []); grupos.get(t.grupo).push(t); }
+    let html = '<option value="corte">CORTE (sin transición)</option><option value="azar">🎲 Al azar (una distinta cada vez)</option>';
+    for (const [grupo, ts] of grupos) {
+      html += '<optgroup label="' + esc(grupo) + '">' + ts.map(t => '<option value="' + esc(t.id) + '">' + esc(t.nombre) + '</option>').join('') + '</optgroup>';
+    }
+    $('trans').innerHTML = html;
+  }
+  if (![...$('trans').options].some(o => o.value === V.trans)) V.trans = 'disolver';
+  if ($('trans').value !== V.trans) $('trans').value = V.trans;
+  document.body.dataset.trans = V.trans;
+}
 const tiempo = s => {
   s = Math.round(s || 0);
   return s >= 3600 ? Math.floor(s / 3600) + ':' + String(Math.floor(s / 60) % 60).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0')
@@ -382,6 +413,7 @@ function pintar() {
   const e = V.est;
   if (!e) return;
   $('rec').classList.toggle('on', !!e.grabando);
+  pintarTransiciones(e.transiciones);
   $('sub-salida').textContent = resumen(e.pistas, e) + ' · ' + e.salida.w + '×' + e.salida.h;
   $('sub-previa').textContent = resumen(e.previa, e);
   $('mon-previa').classList.toggle('igual', !!e.igual);
@@ -536,11 +568,11 @@ $('tira').addEventListener('click', ev => {
       orden('salida-medio', { pista: i, medio: id });
       break;
     case 'escena':
-      if (V.modo === 'directo') orden('escena-salida', { escena: id, fundido: fundido() });
+      if (V.modo === 'directo') orden('escena-salida', { escena: id, ...entrada() });
       else orden('escena-previa', { escena: id });
       break;
     case 'escena-aire':
-      orden('escena-salida', { escena: id, fundido: fundido() });
+      orden('escena-salida', { escena: id, ...entrada() });
       break;
     case 'escena-nueva': {
       const nombre = prompt('Nombre de la escena:', 'Escena ' + (e.escenas.length + 1));
@@ -579,9 +611,11 @@ const soltar = () => { if (V.arrastrando) { V.arrastrando = false; pintarTira();
 window.addEventListener('pointerup', soltar);
 window.addEventListener('pointercancel', soltar);
 
-$('tomar').onclick = () => orden('tomar', { fundido: fundido() });
+$('tomar').onclick = () => orden('tomar', entrada());
 $('copiar').onclick = () => orden('previa-copiar');
-$('fundido').onchange = recordar;
+$('trans').onchange = ev => { V.trans = ev.target.value; document.body.dataset.trans = V.trans; recordar(); };
+$('dur').onchange = recordar;
+document.body.dataset.trans = V.trans;
 
 $('seg-vista').addEventListener('click', ev => {
   const b = ev.target.closest('button[data-vista]');
