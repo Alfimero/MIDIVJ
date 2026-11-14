@@ -2,34 +2,39 @@
    MIDIVJ — Grabación
    ══════════════════════════════════════════════════════════════════════
 
-   Graba la salida (lo mismo que ven HDMI y OBS) con MediaRecorder. Sigue el
-   contrato de `src/modules/midivj-module.js`: no conoce `S` ni el lienzo;
-   pide la señal a `host.capturas` ('salida') y recibe un MediaStream propio,
-   que detiene al terminar sin afectar a HDMI ni a OBS.
+   Graba con MediaRecorder la salida (lo mismo que ven HDMI y OBS) y, si se
+   eligen, las pistas por separado (la señal limpia de cada una, para
+   reeditar después). Sigue el contrato de `src/modules/midivj-module.js`:
+   no conoce `S` ni el lienzo; pide cada señal a `host.capturas` ('salida',
+   'pista-1'…) y recibe un MediaStream propio, que detiene al terminar sin
+   afectar a HDMI ni a OBS.
 
-   Camino de los datos:
+   Camino de los datos, por cada fuente elegida:
 
-       capturas.obtener('salida').capturar(fps) ──▶ MediaRecorder (trozo de 1 s)
+       capturas.obtener(id).capturar(fps) ──▶ MediaRecorder (trozo de 1 s)
            ──▶ cola en memoria ──▶ PUT /api/grabaciones/<toma>/<archivo>?desde=N
-           ──▶ el relay lo agrega al final de Grabaciones/<toma>/<archivo>
+           ──▶ el relay lo agrega al final de <carpeta>/<toma>/<archivo>
 
    Lo grabado llega a disco segundo a segundo: si la pestaña se cierra a
    media función se pierde, como mucho, el último segundo. Si el relay no
    responde, los trozos esperan en memoria y se reenvían solos (`?desde=`
    hace que un reintento nunca escriba dos veces lo mismo).
 
-   Una toma es una carpeta. Si la salida cambia de resolución mientras se
-   graba, el video sigue en un archivo nuevo de la misma toma ("salida
-   (2).mp4"): cada archivo queda con un solo tamaño, que es lo que mejor
-   abren los editores. `toma.json` dice qué hay en cada archivo y cuándo
-   empezó, con un mismo reloj para todos (para alinear cámaras después).
+   Una toma es una carpeta con todos sus archivos juntos: `salida.mp4`,
+   `pista-1.mp4`, `pista-3.mp4`… Todas las tomas van a una misma carpeta,
+   que se elige en el panel (por defecto, Grabaciones/ del proyecto). Si una
+   señal cambia de resolución mientras se graba, sigue en un archivo nuevo
+   de la misma toma ("salida (2).mp4"): cada archivo queda con un solo
+   tamaño, que es lo que mejor abren los editores. `toma.json` dice qué hay
+   en cada archivo y cuándo empezó, con un mismo reloj para todos (para
+   alinear las pistas con la salida al editar).
 
    API pública (window.MIDIVJGrabacion):
        crear(opciones) → grabador
    El grabador expone: init, start (graba), stop (detiene y termina de
    guardar), dispose, getStatus, grabando, cortar (archivo nuevo alrededor
-   de un cambio de tamaño), formatos, estimarMbps, listarTomas,
-   abrirCarpeta, config.
+   de un cambio de tamaño), formatos, estimarMbps, fuentes, listarTomas,
+   abrirCarpeta, carpeta, fijarCarpeta, elegirCarpeta, config.
    ────────────────────────────────────────────────────────────────────── */
 (function (global) {
   'use strict';
@@ -91,22 +96,24 @@
 
       /* ── estado propio ── */
       host: null,
-      config: { formato: 'auto', calidad: 'alta', fps: 30, titulo: '' },
+      /* fuentes: ids de `host.capturas` que entran en la toma */
+      config: { formato: 'auto', calidad: 'alta', fps: 30, titulo: '', fuentes: ['salida'] },
       fase: 'lista',        // 'lista' | 'abriendo' | 'grabando' | 'cerrando'
       toma: null,           // { nombre, carpeta, inicio: Date, t0: ms, fin: Date|null }
+      canales: [],          // una fuente que se está grabando: { cap, actual }
       segmentos: [],        // cada archivo de la toma, en orden
-      actual: null,         // el segmento que está recibiendo video
       avisos: [],
       ultimoError: '',
     };
 
-    let cap = null, formato = null, tick = 0;
+    let formato = null, tick = 0;
     let sinRelayDesde = 0, ocultaDesde = 0, avisoCola = false;
     let manifiestoEnCurso = Promise.resolve();
 
     const ahoraMs = () => (g.host && g.host.now ? g.host.now() : performance.now() / 1000) * 1000;
     const msDeToma = () => Math.round(ahoraMs() - g.toma.t0);
     const urlArchivo = (toma, archivo) => API + '/' + encodeURIComponent(toma) + '/' + encodeURIComponent(archivo);
+    const capturas = () => (g.host && g.host.capturas) || null;
 
     function aviso(texto) {
       const hora = new Date().toLocaleTimeString();
@@ -129,7 +136,7 @@
       }
       const datos = await r.json().catch(() => ({}));
       if (r.status === 404 && datos.error === 'Ruta no encontrada.') {
-        throw new Error('El relay abierto es de una versión anterior: ciérralo y vuelve a abrirlo (INICIAR_RELAY) para poder grabar.');
+        throw new Error('El relay abierto es de una versión anterior: ciérralo y vuelve a abrirlo (INICIAR_RELAY).');
       }
       if (!r.ok) throw new Error(datos.error || ('El relay respondió ' + r.status));
       return datos;
@@ -170,7 +177,7 @@
           seg.colaBytes = 0;
           seg.cola.length = 0;
           aviso(seg.archivo + ' quedó incompleto: ' + (datos.error || ('el relay respondió ' + r.status)));
-          if (seg === g.actual) g.cortar(null, 'Se perdió ' + seg.archivo);
+          if (seg === seg.canal.actual) cortarCanal(seg.canal, null, 'Se perdió ' + seg.archivo);
           break;
         }
         if (!sinRelayDesde) {
@@ -197,11 +204,13 @@
        un cuadro del tamaño anterior y el MP4 quedaba con el tamaño
        equivocado. `archivo` puede llegar después (null): los trozos esperan
        en la cola. */
-    function abrirSegmento(archivo) {
+    function abrirSegmento(canal, archivo) {
+      const cap = canal.cap;
+      /* Primero el stream: una pista fija su tamaño al empezar a capturarse */
+      const flujo = cap.capturar(g.config.fps);
+      if (!flujo || !flujo.getVideoTracks().length) throw new Error('El navegador no pudo capturar ' + cap.nombre + '.');
       const tam = cap.tamano() || {};
       const bps = bitsPorSegundo(tam.ancho, tam.alto, g.config.fps, g.config.calidad);
-      const flujo = cap.capturar(g.config.fps);
-      if (!flujo || !flujo.getVideoTracks().length) throw new Error('El navegador no pudo capturar la salida.');
       let rec;
       try {
         /* Un cuadro clave por segundo: el MP4 se escribe por fragmentos que
@@ -213,7 +222,7 @@
         throw e;
       }
       const seg = {
-        archivo, fuente: cap.id, nombre: cap.nombre, mime: formato.mime,
+        canal, archivo, fuente: cap.id, nombre: cap.nombre, detalle: cap.detalle ? cap.detalle() : '', mime: formato.mime,
         ancho: tam.ancho || 0, alto: tam.alto || 0, fps: g.config.fps, kbps: Math.round(bps / 1000),
         desdeMs: msDeToma(), hastaMs: null,
         flujo, rec, enviados: 0, cola: [], colaBytes: 0, bombeando: false, roto: false, esperando: [],
@@ -228,11 +237,11 @@
       rec.onerror = e => {
         const motivo = (e && e.error && e.error.message) || 'error del codificador';
         aviso('MediaRecorder se detuvo en ' + (seg.archivo || 'el archivo nuevo') + ': ' + motivo);
-        if (seg === g.actual) g.cortar(null, 'El codificador falló');
+        if (seg === canal.actual) cortarCanal(canal, null, 'El codificador falló');
       };
       rec.start(TROZO_MS);
       g.segmentos.push(seg);
-      g.actual = seg;
+      canal.actual = seg;
       return seg;
     }
 
@@ -244,26 +253,36 @@
       await esperarVaciado(seg);
     }
 
-    /** Cierra el archivo actual, aplica `cambiar()` (p. ej. el tamaño nuevo
-        del lienzo) y sigue en un archivo nuevo de la misma toma. El grabador
-        viejo se detiene ANTES del cambio y el nuevo arranca justo después:
-        ningún archivo recibe cuadros de dos tamaños (el H.264 quedaba
-        dañado) y no se pierde ningún cuadro. El archivo se crea mientras
-        tanto; lo grabado espera en la cola. */
-    g.cortar = function (cambiar, motivo) {
+    /* Una fuente deja de grabarse (falló); las demás siguen. Sin ninguna, se
+       detiene la toma. */
+    function soltarCanal(canal) {
+      const seg = canal.actual;
+      canal.actual = null;
+      g.canales = g.canales.filter(c => c !== canal);
+      if (seg) cerrarSegmento(seg).then(escribirManifiesto);
+      if (!g.canales.length) g.stop();
+    }
+
+    /** Cierra el archivo actual de una fuente, aplica `cambiar()` (p. ej. el
+        tamaño nuevo del lienzo) y sigue en un archivo nuevo de la misma toma.
+        El grabador viejo se detiene ANTES del cambio y el nuevo arranca justo
+        después: ningún archivo recibe cuadros de dos tamaños (el H.264
+        quedaba dañado) y no se pierde ningún cuadro. El archivo se crea
+        mientras tanto; lo grabado espera en la cola. */
+    function cortarCanal(canal, cambiar, motivo) {
       if (g.fase !== 'grabando') { if (cambiar) cambiar(); return; }
-      const viejo = g.actual;
+      const viejo = canal.actual;
       if (viejo && viejo.rec.state !== 'inactive') { try { viejo.rec.stop(); } catch (e) {} }
       if (cambiar) cambiar();
       let nuevo;
-      try { nuevo = abrirSegmento(null); }
+      try { nuevo = abrirSegmento(canal, null); }
       catch (e) {
-        aviso('No se pudo seguir grabando (' + mensajeDe(e) + ').');
-        g.stop();   // g.actual sigue siendo el viejo: stop() lo termina de guardar
+        aviso('No se pudo seguir grabando ' + canal.cap.nombre + ' (' + mensajeDe(e) + ').');
+        soltarCanal(canal);   // canal.actual sigue siendo el viejo: se termina de guardar
         return;
       }
       if (viejo) cerrarSegmento(viejo).then(escribirManifiesto);
-      pedir('POST', API, { toma: g.toma.nombre, nombre: cap.id, ext: formato.ext })
+      pedir('POST', API, { toma: g.toma.nombre, nombre: canal.cap.id, ext: formato.ext })
         .then(datos => {
           nuevo.archivo = datos.archivo;
           aviso((motivo || 'Archivo nuevo') + ' → sigue en ' + datos.archivo);
@@ -275,18 +294,31 @@
           nuevo.cola.length = 0;
           nuevo.colaBytes = 0;
           nuevo.esperando.splice(0).forEach(listo => listo());
-          aviso('No se pudo abrir otro archivo (' + mensajeDe(e) + '): se detiene la grabación.');
-          g.stop();
+          aviso('No se pudo abrir otro archivo para ' + canal.cap.nombre + ' (' + mensajeDe(e) + ').');
+          soltarCanal(canal);
         });
+    }
+
+    /** Corte pedido por la app alrededor de un cambio de tamaño de `id`
+        (por defecto la salida). Si esa señal no se está grabando, sólo
+        aplica el cambio. */
+    g.cortar = function (cambiar, motivo, id) {
+      const canal = g.fase === 'grabando' ? g.canales.find(c => c.cap.id === (id || 'salida')) : null;
+      if (!canal) { if (cambiar) cambiar(); return; }
+      cortarCanal(canal, cambiar, motivo);
     };
 
     /* Respaldo: un cambio de tamaño que no pasó por cortar() se nota aquí,
        ya con algún cuadro del tamaño nuevo en el archivo anterior. */
     function revisar() {
       if (g.fase !== 'grabando') return;
-      const tam = cap.tamano() || {};
-      const a = g.actual;
-      if (a && (tam.ancho !== a.ancho || tam.alto !== a.alto)) g.cortar(null, 'La salida cambió a ' + tam.ancho + '×' + tam.alto);
+      for (const canal of g.canales.slice()) {
+        const tam = canal.cap.tamano() || {};
+        const a = canal.actual;
+        if (a && tam.ancho && tam.alto && (tam.ancho !== a.ancho || tam.alto !== a.alto)) {
+          cortarCanal(canal, null, canal.cap.nombre + ' cambió a ' + tam.ancho + '×' + tam.alto);
+        }
+      }
       if (global.document && document.visibilityState === 'hidden') {
         if (!ocultaDesde) {
           ocultaDesde = Date.now();
@@ -310,9 +342,9 @@
         toma: g.toma.nombre,
         inicio: g.toma.inicio.toISOString(),
         fin: g.toma.fin ? g.toma.fin.toISOString() : null,
-        nota: 'desdeMs/hastaMs: milisegundos desde el inicio de la toma, con el mismo reloj para todos los archivos.',
+        nota: 'desdeMs/hastaMs: milisegundos desde el inicio de la toma, con el mismo reloj para todos los archivos (salida y pistas).',
         archivos: g.segmentos.filter(s => s.archivo).map(s => ({
-          archivo: s.archivo, fuente: s.fuente, nombre: s.nombre, formato: s.mime,
+          archivo: s.archivo, fuente: s.fuente, nombre: s.nombre, contenido: s.detalle || undefined, formato: s.mime,
           ancho: s.ancho, alto: s.alto, fps: s.fps, kbps: s.kbps,
           desdeMs: s.desdeMs, hastaMs: s.hastaMs, bytes: s.enviados, completo: !s.roto,
         })),
@@ -321,13 +353,37 @@
 
     /* En fila: el relay recibe las versiones en el orden en que se armaron. */
     function escribirManifiesto() {
-      if (!g.toma) return manifiestoEnCurso;
+      if (!g.toma || !g.toma.nombre) return manifiestoEnCurso;
       const datos = manifiesto();
       const url = urlArchivo(g.toma.nombre, 'toma.json');
       manifiestoEnCurso = manifiestoEnCurso
         .then(() => pedir('PUT', url, datos))
         .catch(e => log('no se pudo guardar toma.json: ' + mensajeDe(e)));
       return manifiestoEnCurso;
+    }
+
+    /* ══ Fuentes ════════════════════════════════════════════════════ */
+
+    /** Todo lo que se puede grabar ahora, con lo que está elegido. */
+    g.fuentes = function () {
+      const c = capturas();
+      if (!c) return [];
+      return c.listar().map(cap => {
+        const tam = cap.tamano() || {};
+        return {
+          id: cap.id, nombre: cap.nombre, detalle: cap.detalle ? cap.detalle() : '',
+          disponible: cap.disponible ? !!cap.disponible() : true,
+          ancho: tam.ancho || 0, alto: tam.alto || 0,
+          elegida: g.config.fuentes.includes(cap.id),
+        };
+      });
+    };
+
+    /* Las elegidas que de verdad tienen señal */
+    function fuentesAGrabar() {
+      const c = capturas();
+      if (!c) return [];
+      return g.config.fuentes.map(id => c.obtener(id)).filter(cap => cap && (!cap.disponible || cap.disponible()));
     }
 
     /* ══ Ciclo de vida ══════════════════════════════════════════════ */
@@ -337,42 +393,57 @@
       return g;
     };
 
-    /** Empieza a grabar la salida en una toma nueva. */
+    /** Empieza a grabar las fuentes elegidas en una toma nueva. */
     g.start = async function () {
       if (g.fase !== 'lista') return g;
       const disponibles = formatos();
       formato = disponibles.find(f => f.id === g.config.formato) || disponibles[0] || null;
-      cap = g.host && g.host.capturas ? g.host.capturas.obtener('salida') : null;
+      const caps = fuentesAGrabar();
       g.fase = 'abriendo';
       g.estado = 'iniciando';
       g.ultimoError = '';
       g.avisos = [];
       cambio();
-      let seg = null;
       try {
         if (!formato) throw new Error('Este navegador no puede grabar video (MediaRecorder sin MP4 ni WebM).');
-        if (!cap) throw new Error('No hay salida registrada para grabar.');
+        if (!caps.length) {
+          throw new Error(g.config.fuentes.length
+            ? 'Ninguna de las fuentes elegidas tiene señal ahora.'
+            : 'Elige al menos una fuente para grabar (la salida o una pista).');
+        }
         g.toma = { nombre: null, carpeta: null, inicio: new Date(), t0: ahoraMs(), fin: null };
         g.segmentos = [];
+        g.canales = caps.map(cap => ({ cap, actual: null }));
         sinRelayDesde = 0; ocultaDesde = 0; avisoCola = false;
-        seg = abrirSegmento(null);   // graba desde ya; el relay crea la carpeta y el archivo mientras tanto
-        const nuevo = await pedir('POST', API, { titulo: g.config.titulo, nombre: cap.id, ext: formato.ext });
-        g.toma.nombre = nuevo.toma;
-        g.toma.carpeta = nuevo.carpeta;
-        seg.archivo = nuevo.archivo;
-        bombear(seg);
+        /* Todas graban desde ya, con el mismo reloj; el relay crea la carpeta
+           y los archivos mientras tanto */
+        for (const canal of g.canales) abrirSegmento(canal, null);
+        let toma = null;
+        for (const canal of g.canales) {
+          const nuevo = await pedir('POST', API, toma
+            ? { toma, nombre: canal.cap.id, ext: formato.ext }
+            : { titulo: g.config.titulo, nombre: canal.cap.id, ext: formato.ext });
+          if (!toma) {
+            toma = nuevo.toma;
+            g.toma.nombre = nuevo.toma;
+            g.toma.carpeta = nuevo.carpeta;
+          }
+          canal.actual.archivo = nuevo.archivo;
+          bombear(canal.actual);
+        }
         g.fase = 'grabando';
         g.estado = 'activo';
         tick = setInterval(revisar, 1000);
         escribirManifiesto();
-        log('grabando la salida en Grabaciones/' + nuevo.toma + '/' + nuevo.archivo +
-            ' (' + seg.ancho + '×' + seg.alto + ' · ' + formato.mime + ' · ' + (seg.kbps / 1000).toFixed(1) + ' Mbps)');
+        log('grabando en ' + g.toma.carpeta + ': ' + g.canales.map(c =>
+          c.actual.archivo + ' (' + c.actual.ancho + '×' + c.actual.alto + ' · ' + (c.actual.kbps / 1000).toFixed(1) + ' Mbps)').join(', ') +
+          ' · ' + formato.mime);
       } catch (e) {
-        if (seg) {
+        for (const seg of g.segmentos) {
           try { seg.rec.stop(); } catch (_) {}
           seg.flujo.getTracks().forEach(t => t.stop());
         }
-        g.actual = null;
+        g.canales = [];
         g.segmentos = [];
         g.toma = null;
         g.fase = 'lista';
@@ -392,15 +463,18 @@
       g.fase = 'cerrando';
       clearInterval(tick);
       cambio();
-      const seg = g.actual;
-      if (seg) await cerrarSegmento(seg);
-      g.actual = null;
+      /* Todos los grabadores paran en el mismo instante */
+      const abiertos = g.canales.map(c => c.actual).filter(Boolean);
+      abiertos.forEach(seg => { if (seg.rec.state !== 'inactive') { try { seg.rec.stop(); } catch (e) {} } });
+      await Promise.all(abiertos.map(cerrarSegmento));
+      g.canales.forEach(c => { c.actual = null; });
       await Promise.all(g.segmentos.map(esperarVaciado));
       g.toma.fin = new Date();
       await escribirManifiesto();
       const bytes = g.segmentos.reduce((n, s) => n + s.enviados, 0);
-      log('grabación guardada: Grabaciones/' + g.toma.nombre + ' (' + g.segmentos.length + ' archivo(s), ' +
+      log('grabación guardada: ' + (g.toma.carpeta || g.toma.nombre) + ' (' + g.segmentos.length + ' archivo(s), ' +
           (bytes / 1048576).toFixed(1) + ' MB)');
+      g.canales = [];
       g.fase = 'lista';
       g.estado = 'inactivo';
       cambio();
@@ -416,9 +490,22 @@
     };
 
     g.grabando = () => g.fase === 'grabando' || g.fase === 'cerrando';
+    /** ¿Se está grabando esta señal? (la app congela su tamaño mientras tanto) */
+    g.grabandoFuente = id => g.grabando() && g.canales.some(c => c.cap.id === id);
 
     g.getStatus = function () {
-      const a = g.actual;
+      const actuales = g.canales.map(c => c.actual).filter(Boolean);
+      const a = actuales[0] || null;
+      const porFuente = new Map();
+      for (const s of g.segmentos) {
+        const f = porFuente.get(s.fuente) || { id: s.fuente, nombre: s.nombre, archivo: null, archivos: 0, bytes: 0, ancho: 0, alto: 0, kbps: 0, activa: false };
+        f.archivo = s.archivo || '…';
+        f.archivos += 1;
+        f.bytes += s.enviados;
+        f.ancho = s.ancho; f.alto = s.alto; f.kbps = s.kbps;
+        f.activa = actuales.includes(s) || (f.activa && !s.archivo);
+        porFuente.set(s.fuente, f);
+      }
       return {
         estado: g.estado,
         fase: g.fase,
@@ -429,10 +516,11 @@
         pendientes: pendientes(),
         archivo: a ? (a.archivo || '…') : (g.segmentos.length ? g.segmentos[g.segmentos.length - 1].archivo : null),
         archivos: g.segmentos.filter(s => s.archivo).length,
+        fuentes: [...porFuente.values()],
         ancho: a ? a.ancho : 0,
         alto: a ? a.alto : 0,
         formato: formato ? formato.etiqueta : null,
-        kbps: a ? a.kbps : 0,
+        kbps: actuales.reduce((n, s) => n + s.kbps, 0),
         sinRelay: !!sinRelayDesde,
         avisos: g.avisos.slice(),
         ultimoError: g.ultimoError,
@@ -441,13 +529,19 @@
 
     g.formatos = formatos;
     g.calidades = () => Object.keys(CALIDADES).map(id => ({ id, etiqueta: CALIDADES[id].etiqueta }));
+    /** Suma de lo que ocuparían las fuentes elegidas que tienen señal */
     g.estimarMbps = function () {
-      const salida = g.host && g.host.capturas ? g.host.capturas.obtener('salida') : null;
-      const t = salida ? salida.tamano() || {} : {};
-      return bitsPorSegundo(t.ancho, t.alto, g.config.fps, g.config.calidad) / 1e6;
+      return fuentesAGrabar().reduce((n, cap) => {
+        const t = cap.tamano() || {};
+        return n + bitsPorSegundo(t.ancho, t.alto, g.config.fps, g.config.calidad) / 1e6;
+      }, 0);
     };
     g.listarTomas = () => pedir('GET', API);
     g.abrirCarpeta = toma => pedir('POST', API + '/abrir', toma ? { toma } : {});
+    /* Carpeta donde van todas las tomas (la guarda el relay) */
+    g.carpeta = () => pedir('GET', API + '/carpeta');
+    g.fijarCarpeta = ruta => pedir('POST', API + '/carpeta', { carpeta: ruta || '' });
+    g.elegirCarpeta = () => pedir('POST', API + '/elegir', {});
 
     return g;
   }

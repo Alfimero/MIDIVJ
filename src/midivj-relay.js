@@ -5,6 +5,7 @@
  * - Serves the MIDI sender at http://localhost:9191/sender
  * - Serves the mobile controller at http://localhost:9191/mando
  * - Serves the QR / connection page at http://localhost:9191/control
+ * - Serves the control viewer (switcher) at http://localhost:9191/visor
  * - Saves .vjp files exclusively in ../Sessions
  * - Relays MIDI messages over WebSocket rooms
  * - The main port also answers HTTPS/WSS (same certificate as /camara) for
@@ -35,13 +36,29 @@ const SESSIONS_DIR = path.join(PROJECT_ROOT, 'Sessions');
 const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 const LAYOUT_FILE = path.join(DATA_DIR, 'mando-layout.json');
 const CERT_DIR = path.join(DATA_DIR, 'certs');
-const RECORDINGS_DIR = path.join(PROJECT_ROOT, 'Grabaciones');
+const RECORDINGS_DEFAULT = path.join(PROJECT_ROOT, 'Grabaciones');
+const RECORDINGS_CONFIG = path.join(DATA_DIR, 'grabacion.json');
+/* Carpeta donde se guardan todas las tomas. Se puede cambiar desde el panel
+   GRABACIÓN (otro disco, una carpeta del show…); queda en data/grabacion.json. */
+let RECORDINGS_DIR = RECORDINGS_DEFAULT;
 const MAX_SESSION_BYTES = 5 * 1024 * 1024;
 const MAX_TROZO_BYTES = 64 * 1024 * 1024;    // un trozo es ~1 s de video: sobra aun en 4K a calidad máxima
 const MAX_MANIFIESTO_BYTES = 256 * 1024;
 const MAX_LAYOUT_BYTES = 8 * 1024 * 1024;   // los botones pueden llevar imágenes/GIF
-const MAX_MANDOS = 4;                        // dispositivos de control simultáneos
-const MAX_CAMARAS = 4;                       // teléfonos compartiendo cámara simultáneos
+/* Mandos: no hay un número fijo de lugares, se van sumando según hagan falta.
+   El tope es lo que cabe en una red doméstica (un /24 da 254 direcciones;
+   quitando el router y esta PC quedan ~250). Cada mando es un WebSocket que
+   sólo manda MIDI: no pesa. Se puede cambiar con MIDIVJ_MAX_MANDOS. */
+const topeEnv = (nombre, def, max) => {
+  const n = parseInt(process.env[nombre], 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(max, n) : def;
+};
+const MAX_MANDOS = topeEnv('MIDIVJ_MAX_MANDOS', 250, 1000);
+/* Cámaras: cada una es un video WebRTC que la app decodifica y va a una
+   pista, así que el tope es el número de pistas (MIDIVJ_MAX_CAMARAS). */
+const MAX_CAMARAS = topeEnv('MIDIVJ_MAX_CAMARAS', 8, 32);
+/* Visores de control (/visor): cada uno recibe tres videos de la app. */
+const MAX_VISORES = topeEnv('MIDIVJ_MAX_VISORES', 4, 16);
 const MAX_SALIDAS = 4;                       // fuentes de navegador (OBS, etc.) simultáneas viendo la salida
 const SLOT_DENY_DELAY_MS = 150;
 
@@ -304,7 +321,7 @@ async function crearGrabacion(req, res) {
   const dir = rutaGrabacion(toma);
   const archivo = await crearSinPisar(dir, limpiarNombre(pedido.nombre, 60) || 'video', `.${ext}`,
     p => fsp.writeFile(p, '', { flag: 'wx' }));
-  console.log(`  [grabación] Grabaciones/${toma}/${archivo}`);
+  console.log(`  [grabación] ${path.join(dir, archivo)}`);
   sendJson(res, 201, { toma, archivo, carpeta: dir });
 }
 
@@ -378,7 +395,78 @@ async function listarGrabaciones(req, res) {
       t.archivos.push({ archivo: f.name, bytes: (await fsp.stat(path.join(dir, f.name))).size });
     }
   }
-  sendJson(res, 200, { carpeta: RECORDINGS_DIR, tomas: recientes });
+  sendJson(res, 200, { ...infoCarpeta(), tomas: recientes });
+}
+
+/* ── Carpeta de grabaciones elegible ── */
+
+async function cargarCarpetaGrabaciones() {
+  try {
+    const cfg = JSON.parse(await fsp.readFile(RECORDINGS_CONFIG, 'utf8'));
+    if (cfg && typeof cfg.carpeta === 'string' && path.isAbsolute(cfg.carpeta)) RECORDINGS_DIR = path.resolve(cfg.carpeta);
+  } catch { /* sin archivo: la carpeta del proyecto */ }
+}
+
+/** Deja `carpeta` como destino de las tomas ('' = la del proyecto). Antes
+    de aceptarla comprueba que existe (o se puede crear) y que se puede
+    escribir en ella: un disco desconectado se nota aquí y no a media toma. */
+async function fijarCarpetaGrabaciones(carpeta) {
+  const texto = String(carpeta || '').trim().replace(/^"(.*)"$/, '$1');
+  if (texto && !path.isAbsolute(texto)) throw new Error('Escribe la ruta completa de la carpeta (por ejemplo D:\\Shows\\Grabaciones).');
+  const destino = texto ? path.resolve(texto) : RECORDINGS_DEFAULT;
+  const prueba = path.join(destino, `.midivj-prueba-${process.pid}-${Date.now()}`);
+  try {
+    await fsp.mkdir(destino, { recursive: true });
+    await fsp.writeFile(prueba, '');
+  } catch (error) {
+    throw new Error(`No se puede escribir en esa carpeta (${error.code || error.message}).`);
+  } finally {
+    await fsp.rm(prueba, { force: true }).catch(() => undefined);
+  }
+  RECORDINGS_DIR = destino;
+  await fsp.mkdir(DATA_DIR, { recursive: true });
+  if (destino === RECORDINGS_DEFAULT) await fsp.rm(RECORDINGS_CONFIG, { force: true });
+  else await fsp.writeFile(RECORDINGS_CONFIG, `${JSON.stringify({ carpeta: destino }, null, 2)}\n`, 'utf8');
+  console.log(`  [grabación] carpeta de tomas: ${destino}`);
+  return destino;
+}
+
+const infoCarpeta = () => ({ carpeta: RECORDINGS_DIR, porDefecto: RECORDINGS_DIR === RECORDINGS_DEFAULT, carpetaPorDefecto: RECORDINGS_DEFAULT });
+
+/** Abre el diálogo "elegir carpeta" del sistema en este equipo y devuelve
+    la ruta elegida ('' si se canceló). */
+function dialogoCarpeta(inicial) {
+  return new Promise((resolve, reject) => {
+    const listo = (error, stdout) => {
+      if (error && error.killed) { reject(new Error('El diálogo se cerró por tiempo.')); return; }
+      resolve(String(stdout || '').trim());
+    };
+    const op = { timeout: 10 * 60 * 1000, encoding: 'utf8', windowsHide: true };
+    if (process.platform === 'win32') {
+      /* La ruta inicial viaja por variable de entorno: nada que escapar. */
+      const ps = [
+        'Add-Type -AssemblyName System.Windows.Forms;',
+        '[Console]::OutputEncoding = [Text.Encoding]::UTF8;',
+        '$d = New-Object System.Windows.Forms.FolderBrowserDialog;',
+        "$d.Description = 'MIDIVJ: carpeta donde se guardan las grabaciones';",
+        '$d.ShowNewFolderButton = $true;',
+        'if ($env:MIDIVJ_DIR_INICIAL -and (Test-Path -LiteralPath $env:MIDIVJ_DIR_INICIAL)) { $d.SelectedPath = $env:MIDIVJ_DIR_INICIAL }',
+        '$f = New-Object System.Windows.Forms.Form; $f.TopMost = $true; $f.ShowInTaskbar = $false; $f.Opacity = 0; $f.Show(); $f.Activate();',
+        "if ($d.ShowDialog($f) -eq 'OK') { Write-Output $d.SelectedPath }",
+        '$f.Close()'
+      ].join(' ');
+      execFile('powershell', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', ps],
+        { ...op, env: { ...process.env, MIDIVJ_DIR_INICIAL: inicial } }, listo);
+    } else if (process.platform === 'darwin') {
+      execFile('osascript', ['-e', 'POSIX path of (choose folder with prompt "MIDIVJ: carpeta donde se guardan las grabaciones")'], op, listo);
+    } else {
+      execFile('zenity', ['--file-selection', '--directory', '--title=MIDIVJ: carpeta de grabaciones', `--filename=${inicial}${path.sep}`], op,
+        (error, stdout) => {
+          if (error && error.code === 'ENOENT') { reject(new Error('No hay diálogo de carpetas en este sistema: escribe la ruta a mano.')); return; }
+          listo(error, stdout);
+        });
+    }
+  });
 }
 
 /** Abre Grabaciones/ (o una toma) en el explorador de archivos de este equipo. */
@@ -414,6 +502,24 @@ async function atenderGrabaciones(req, res, ruta, requestUrl) {
   if (ruta === '/api/grabaciones') {
     if (req.method === 'GET') { await listarGrabaciones(req, res); return; }
     if (req.method === 'POST') { await crearGrabacion(req, res); return; }
+  }
+  if (ruta === '/api/grabaciones/carpeta' && req.method === 'GET') { sendJson(res, 200, infoCarpeta()); return; }
+  if (ruta === '/api/grabaciones/carpeta' && req.method === 'POST') {
+    const pedido = await readJson(req, MAX_MANIFIESTO_BYTES);
+    try { await fijarCarpetaGrabaciones(pedido && pedido.carpeta); }
+    catch (error) { sendJson(res, 400, { error: error.message, ...infoCarpeta() }); return; }
+    sendJson(res, 200, infoCarpeta());
+    return;
+  }
+  if (ruta === '/api/grabaciones/elegir' && req.method === 'POST') {
+    let elegida;
+    try { elegida = await dialogoCarpeta(RECORDINGS_DIR); }
+    catch (error) { sendJson(res, 500, { error: error.message, ...infoCarpeta() }); return; }
+    if (!elegida) { sendJson(res, 200, { ...infoCarpeta(), cancelado: true }); return; }
+    try { await fijarCarpetaGrabaciones(elegida); }
+    catch (error) { sendJson(res, 400, { error: error.message, ...infoCarpeta() }); return; }
+    sendJson(res, 200, infoCarpeta());
+    return;
   }
   if (ruta === '/api/grabaciones/abrir' && req.method === 'POST') {
     await abrirCarpetaGrabaciones(req, res);
@@ -925,6 +1031,7 @@ async function infoRed(sala) {
     maxMandos: MAX_MANDOS,
     maxCamaras: MAX_CAMARAS,
     maxSalidas: MAX_SALIDAS,
+    maxVisores: MAX_VISORES,
     direcciones: lista,
     wifi: {
       ssid: efectiva.ssid || '',
@@ -1013,6 +1120,10 @@ async function handleHttp(req, res) {
     await serveFile(res, 'midivj-mando.html');
     return;
   }
+  if (req.method === 'GET' && (ruta === '/visor' || ruta === '/visor.html')) {
+    await serveFile(res, 'midivj-visor.html');
+    return;
+  }
   if (req.method === 'GET' && (ruta === '/camara' || ruta === '/camara.html')) {
     await serveFile(res, 'midivj-camara.html');
     return;
@@ -1077,7 +1188,7 @@ async function handleHttp(req, res) {
     return;
   }
   if (req.method === 'GET' && ruta === '/health') {
-    sendJson(res, 200, { ok: true, sessionsDirectory: 'Sessions', mandos: MAX_MANDOS, camaras: MAX_CAMARAS, salidas: MAX_SALIDAS });
+    sendJson(res, 200, { ok: true, sessionsDirectory: 'Sessions', mandos: MAX_MANDOS, camaras: MAX_CAMARAS, salidas: MAX_SALIDAS, visores: MAX_VISORES });
     return;
   }
   sendJson(res, 404, { error: 'Ruta no encontrada.' });
@@ -1174,6 +1285,17 @@ entrada.on('listening', () => server.emit('listening'));
      ambos   → { type:'salida-candidato', [id,] candidato }
      ambos   → { type:'salida-cerrar', [id,] motivo }
      relay   → { type:'salida-error', motivo }                 (sala llena, o destino inexistente)
+
+   Visor de control (/visor): una mesa de video en otro dispositivo. Mismo
+   esquema que la salida (la app ofrece, id efímero por conexión), pero con
+   tres videos (salida, previa y mosaico de pistas) y mensajes de control:
+     relay   → { type:'visor-hola', id }                       (a la app)
+     app     → { type:'visor-oferta', id, sdp, videos }
+     visor   → { type:'visor-respuesta', sdp }
+     ambos   → { type:'visor-candidato', [id,] candidato }
+     ambos   → { type:'visor-cerrar', [id,] motivo }
+     app     → { type:'visor-estado', [id,] ... }              (sin id: a todos los visores)
+     visor   → { type:'visor-cmd', cmd, ... }                  (sólo a la app, con el id del visor)
 ═══════════════════════════════════════════════════════ */
 
 const TIPOS_RTC = new Set(['camara-iniciar', 'camara-colgar', 'camara-error', 'rtc-oferta', 'rtc-respuesta', 'rtc-candidato', 'camara-config', 'camara-estado']);
@@ -1181,6 +1303,9 @@ const TIPOS_RTC = new Set(['camara-iniciar', 'camara-colgar', 'camara-error', 'r
    resuelven un pedido de cámara pendiente */
 const TIPOS_CAMARA_CFG = new Set(['camara-config', 'camara-estado']);
 const TIPOS_SALIDA = new Set(['salida-oferta', 'salida-respuesta', 'salida-candidato', 'salida-cerrar', 'salida-error']);
+const TIPOS_VISOR = new Set(['visor-oferta', 'visor-respuesta', 'visor-candidato', 'visor-cerrar', 'visor-error', 'visor-estado', 'visor-cmd']);
+/* El estado lleva la lista de clips, medios y escenas: puede ser grande. */
+const MAX_VISOR_MSG = 512 * 1024;
 
 /* El WebSocket de señalización de un teléfono se cae mucho más seguido que
    la propia llamada WebRTC (ahorro de batería, roaming entre puntos de
@@ -1196,7 +1321,8 @@ function getOrCreate(room) {
     rooms.set(room, {
       clientes: new Set(), app: null, mandos: new Map(), camaras: new Map(),
       camarasGracia: new Map(), appGracia: null, pendientesOferta: new Set(), inventario: null,
-      salidas: new Map(), salidaSeq: 0
+      salidas: new Map(), salidaSeq: 0,
+      visores: new Map(), visorSeq: 0
     });
   }
   return rooms.get(room);
@@ -1218,6 +1344,7 @@ function colgarTodasLasCamaras(sala) {
     reemplazó otra pestaña. */
 function colgarTodasLasSalidas(sala) {
   for (const ws of sala.salidas.values()) enviar(ws, { type: 'salida-cerrar', motivo: 'la app se fue o fue reemplazada por otra pestaña' });
+  for (const ws of sala.visores.values()) enviar(ws, { type: 'visor-cerrar', motivo: 'la app se fue o fue reemplazada por otra pestaña' });
 }
 
 /** Log de diagnóstico de cámara/app, con hora exacta — pensado para quedar
@@ -1297,6 +1424,12 @@ function leaveRoom(ws, room) {
       if (sala.app) enviar(sala.app, { type: 'salida-cerrar', id, motivo: 'la fuente de salida se desconectó' });
     }
   }
+  for (const [id, cliente] of sala.visores) {
+    if (cliente === ws) {
+      sala.visores.delete(id);
+      if (sala.app) enviar(sala.app, { type: 'visor-cerrar', id, motivo: 'el visor se desconectó' });
+    }
+  }
   if (!sala.clientes.size) {
     for (const { timer } of sala.camarasGracia.values()) clearTimeout(timer);
     if (sala.appGracia) clearTimeout(sala.appGracia.timer);
@@ -1355,9 +1488,11 @@ function presencia(room) {
     maxMandos: MAX_MANDOS,
     maxCamaras: MAX_CAMARAS,
     maxSalidas: MAX_SALIDAS,
+    maxVisores: MAX_VISORES,
     mandos: listarSlots(sala.mandos, 'Mando'),
     camaras: listarSlots(sala.camaras, 'Cámara'),
-    salidas: sala.salidas.size
+    salidas: sala.salidas.size,
+    visores: sala.visores.size
   };
 }
 
@@ -1403,7 +1538,7 @@ function alConectar(ws) {
       leaveRoom(ws, myRoom);
       myRoom = typeof msg.room === 'string' && msg.room.trim() ? msg.room.trim().slice(0, 40) : 'midivj';
       const sala = getOrCreate(myRoom);
-      ws._rol = ['app', 'mando', 'emisor', 'camara', 'salida'].includes(msg.rol) ? msg.rol : 'emisor';
+      ws._rol = ['app', 'mando', 'emisor', 'camara', 'salida', 'visor'].includes(msg.rol) ? msg.rol : 'emisor';
       ws._disp = typeof msg.disp === 'string' ? msg.disp.slice(0, 40) : '';
       ws._nombre = typeof msg.nombre === 'string' ? msg.nombre.slice(0, 30) : '';
 
@@ -1422,6 +1557,17 @@ function alConectar(ws) {
         sala.salidaSeq += 1;
         ws._salidaId = sala.salidaSeq;
         sala.salidas.set(ws._salidaId, ws);
+      }
+
+      if (ws._rol === 'visor') {
+        if (sala.visores.size >= MAX_VISORES) {
+          enviar(ws, { type: 'visor-error', motivo: `ya hay ${MAX_VISORES} visores de control conectados (el máximo)` });
+          setTimeout(() => ws.close(), SLOT_DENY_DELAY_MS);
+          return;
+        }
+        sala.visorSeq += 1;
+        ws._visorId = sala.visorSeq;
+        sala.visores.set(ws._visorId, ws);
       }
 
       if (ws._rol === 'mando' || ws._rol === 'camara') {
@@ -1490,8 +1636,8 @@ function alConectar(ws) {
       console.log(`  [+] sala "${myRoom}" — ${ws._rol}${ws._slot ? ' ' + ws._slot : ''} — ${count} cliente${count > 1 ? 's' : ''}`);
 
       enviar(ws, {
-        type: 'joined', room: myRoom, clients: count, rol: ws._rol, slot: ws._slot, id: ws._salidaId || null,
-        maxMandos: MAX_MANDOS, maxCamaras: MAX_CAMARAS, maxSalidas: MAX_SALIDAS
+        type: 'joined', room: myRoom, clients: count, rol: ws._rol, slot: ws._slot, id: ws._salidaId || ws._visorId || null,
+        maxMandos: MAX_MANDOS, maxCamaras: MAX_CAMARAS, maxSalidas: MAX_SALIDAS, maxVisores: MAX_VISORES
       });
       enviar(ws, { type: 'layout', layout: layout || layoutPorDefecto() });
       if (sala.inventario) enviar(ws, sala.inventario);
@@ -1503,6 +1649,9 @@ function alConectar(ws) {
          una sesión viva para ese `id`, ignora el aviso repetido. */
       if (ws._rol === 'app') {
         for (const id of sala.salidas.keys()) enviar(ws, { type: 'salida-hola', id });
+        for (const id of sala.visores.keys()) enviar(ws, { type: 'visor-hola', id });
+      } else if (ws._rol === 'visor' && sala.app) {
+        enviar(sala.app, { type: 'visor-hola', id: ws._visorId });
       } else if (ws._rol === 'salida' && sala.app) {
         enviar(sala.app, { type: 'salida-hola', id: ws._salidaId });
       }
@@ -1643,6 +1792,26 @@ function alConectar(ws) {
       }
       return;
     }
+
+    /* ── Visor de control: señalización (como la salida) + estado y órdenes.
+       El relay no interpreta nada: sólo comprueba quién habla y a quién va. */
+    if (TIPOS_VISOR.has(msg.type)) {
+      const sala = rooms.get(myRoom);
+      if (!sala || raw.length > MAX_VISOR_MSG) return;
+      if (ws._rol === 'app' && msg.type !== 'visor-cmd') {
+        const id = parseInt(msg.id, 10);
+        if (Number.isFinite(id)) {
+          const destino = sala.visores.get(id);
+          if (destino) enviar(destino, { ...msg, id: undefined });
+        } else if (msg.type === 'visor-estado') {
+          const texto = JSON.stringify(msg);
+          for (const visor of sala.visores.values()) if (visor.readyState === 1) visor.send(texto);
+        }
+      } else if (ws._rol === 'visor' && ws._visorId && sala.app && msg.type !== 'visor-estado' && msg.type !== 'visor-oferta') {
+        enviar(sala.app, { ...msg, id: ws._visorId });
+      }
+      return;
+    }
   });
 
   ws.on('close', (code, reason) => {
@@ -1704,6 +1873,7 @@ async function printIPs() {
   console.log('  Emisor MIDI: http://localhost:' + PORT + '/sender');
   console.log('  Control remoto (QR): http://localhost:' + PORT + '/control');
   console.log('  Salida para OBS (fuente de navegador): http://localhost:' + PORT + '/salida');
+  console.log('  Visor de control (mesa de video): http://localhost:' + PORT + '/visor');
   console.log('  Sesiones: ' + SESSIONS_DIR);
   console.log('  Grabaciones: ' + RECORDINGS_DIR);
   console.log('  Layout del mando: ' + LAYOUT_FILE);
@@ -1814,6 +1984,7 @@ function abrirNavegador(url) {
 }
 
 cargarLayout()
+  .then(() => cargarCarpetaGrabaciones())
   .then(() => escuchar(entrada, PORT, PUERTOS_ALTERNOS))
   .then(async puerto => {
     PORT = puerto;

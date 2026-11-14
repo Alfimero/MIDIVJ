@@ -125,7 +125,7 @@ Son una lista variada de efectos de video de bajo consumo para modificar el resu
 
 ## Control remoto: el celular como mando
 
-Con el relay corriendo, hasta **cuatro teléfonos** pueden disparar tus visuales desde la misma red. El mando envía mensajes MIDI normales, así que **todo lo que puedas mapear con MIDI en MIDIVJ se puede poner en un botón del teléfono**, y el `MAP` de la aplicación aprende tocando un botón del celular igual que con un controlador físico.
+Con el relay corriendo, **los teléfonos que hagan falta** pueden disparar tus visuales desde la misma red: en `/control` hay una tarjeta con QR por mando y **➕ AGREGAR MANDO** suma otra (el tope, 250, es lo que cabe en una red Wi-Fi doméstica; muchos routers admiten menos equipos a la vez). El mando envía mensajes MIDI normales, así que **todo lo que puedas mapear con MIDI en MIDIVJ se puede poner en un botón del teléfono**, y el `MAP` de la aplicación aprende tocando un botón del celular igual que con un controlador físico.
 
 ### Conectar
 
@@ -220,7 +220,7 @@ Un teléfono también puede ser una fuente de video más para una pista: `VIDEO`
 
 ### Conectar
 
-1. Con el relay corriendo, pulsa **📡 RELAY** en el encabezado y luego **📱 ABRIR QR DE CÁMARAS** (paso 4 del panel). Se abre la misma página `/control` que ya usa el mando, con una tarjeta y un QR por cada número de cámara (hasta 4).
+1. Con el relay corriendo, pulsa **📡 RELAY** en el encabezado y luego **📱 ABRIR QR DE CÁMARAS** (paso 4 del panel). Se abre la misma página `/control` que ya usa el mando, con una tarjeta y un QR por cada número de cámara; **➕** agrega más (hasta 8, una por pista).
 2. En el teléfono, escanea el QR de una cámara libre. La página se conecta y queda **esperando**, sin encender la cámara todavía — no hay activación automática.
 3. En una pista de MIDIVJ, pulsa **📱 CÁMARA**. Si hay un solo teléfono conectado y libre lo usa directo; si hay varios, pregunta cuál. El teléfono recién ahí pide permiso de cámara y empieza a transmitir.
 4. Para soltarla, pulsa **✕** en la pista (o vuelve a pulsar **📱 CÁMARA**) — el teléfono apaga la cámara y vuelve a quedar disponible. También hay un botón **DETENER** en el propio teléfono.
@@ -256,18 +256,33 @@ Además de la ventana HDMI, el lienzo de salida se puede entregar a OBS (en esta
 
 Notas: sólo video, sin audio (igual que HDMI/PANTALLA/CAPTURA/cámara). `/salida` va por HTTP normal — no necesita el certificado de `/camara` porque no pide permisos. Si recargas la fuente en OBS, se reconecta sola. Detalles en `docs/decisions/ADR-005-salida-a-obs-por-webrtc.md`.
 
-## Grabar la salida
+## Visor de control: una mesa de video en otra pantalla
 
-**⏺ GRABAR** (en el encabezado) abre el panel GRABACIÓN. Graba la salida tal como se ve en HDMI y OBS, en la carpeta `Grabaciones/` del proyecto (fuera de Git):
+**🎚 VISOR** (en el encabezado) abre `http://<ip>:9191/visor`; el QR para una tableta o un teléfono está en `/control` (paso 4) y en **📡 RELAY → 6**. Hasta 4 visores a la vez.
+
+- **Ventana principal**: `SALIDA` (lo que está al aire: HDMI, OBS, stream), `NUEVA` (la salida nueva o previa) o `DIVIDIDA` (las dos).
+- **Salida nueva (previa)**: un arreglo de pistas (cuáles están encendidas, con qué opacidad y con qué clip) que se arma en el visor **sin tocar la salida**. **▶ A SALIDA** lo manda al aire con corte o fundido; **↺ IGUALAR A LA SALIDA** descarta los cambios.
+- **Barra inferior**:
+  - **PISTAS**: cada fuente en vivo, se vea o no en la salida. Tocar una la enciende o apaga; `SOLO` deja sólo esa; el deslizador es su opacidad. Borde rojo = al aire, verde = en la previa.
+  - **MATERIALES**: los clips (y los medios sin clip) de las pistas del arreglo. Tocar un clip lo deja listo en la previa.
+  - **ESCENAS**: arreglos guardados (van en la sesión `.vjp`). Tocar una la carga en la previa; **▶** la manda directo a la salida; 💾 la sobrescribe, ✎ la renombra, ✕ la borra.
+- **DIRECTO A SALIDA**: cada toque de la barra actúa al aire, sin pasar por la previa.
+
+En MIDIVJ, una pista apagada desde el visor se marca tachada en su pestaña con **⦸** (clic para volver a mostrarla). La previa usa las mismas fuentes que la salida: muestra el arreglo (posición, recorte, color, capas), no los efectos globales, y una pista de video enseña el cuadro que tiene en ese momento.
+
+## Grabar la salida y las pistas
+
+**⏺ GRABAR** (en el encabezado) abre el panel GRABACIÓN. Marca qué grabar: la **salida** (tal como se ve en HDMI y OBS) y, si quieres, **cada pista por separado** (su señal limpia: el video o la cámara con su corrección de color, sin mezcla ni efectos, se vea o no en la salida). Todas las tomas van a una misma carpeta, que eliges en **CARPETA DE LAS GRABACIONES** (📁 ELEGIR… o escribiendo la ruta; por defecto `Grabaciones/` del proyecto, fuera de Git):
 
 1. Elige **formato** (MP4 · H.264, recomendado: lo abre cualquier editor), **calidad** (Normal / Alta / Máxima ≈ 5 / 9 / 19 Mbps a 1080p30) y **FPS**. El nombre de la toma es opcional y se agrega a la fecha.
 2. **⏺ GRABAR** empieza; el botón del encabezado se pone rojo con el tiempo. **⏹ DETENER** termina de guardar.
 3. **📂 ABRIR CARPETA** abre `Grabaciones/` (o una toma) en el explorador.
 
-Cada toma es una carpeta (`Grabaciones/2026-10-30 21-15-03 nombre/`) con `salida.mp4` y `toma.json`, que dice el formato, el tamaño y cuándo empezó y terminó cada archivo.
+Cada toma es una carpeta (`2026-10-30 21-15-03 nombre/`) con todos sus archivos juntos (`salida.mp4`, `pista-1.mp4`, `pista-3.mp4`…) y `toma.json`, que dice el formato, el tamaño y cuándo empezó y terminó cada archivo, con un mismo reloj para alinearlos al editar.
 
 - Cada segundo grabado va directo a disco a través del relay: si la pestaña se cierra o algo se cae a media función, lo grabado hasta ese segundo ya está guardado. Si el relay se reinicia, la grabación sigue en el mismo archivo.
 - Mientras grabas, la salida no cambia sola de tamaño con el video de la pista 1. Si cambias la resolución tú (⛶ SALIDA), la grabación sigue en `salida (2).mp4` de la misma toma.
+- Cada pista conserva el tamaño con el que empezó la toma; si cambia de fuente, la nueva entra encajada. Cada archivo es un codificador más: en equipos modestos graba sólo las pistas que necesites.
 - **Sin audio**: graba el sonido aparte (OBS o la mezcladora) y júntalos al editar.
 - Deja la ventana de MIDIVJ a la vista: minimizada, el navegador frena el dibujo (igual que para HDMI y OBS).
 - Sólo se graba desde la PC donde corre el relay, como el guardado de sesiones. Después de actualizar, cierra y vuelve a abrir `INICIAR_RELAY` para que el relay conozca la grabación.

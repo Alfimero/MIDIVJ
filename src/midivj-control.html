@@ -46,6 +46,11 @@ h1{font-family:var(--mono);font-size:17px;letter-spacing:.14em;margin:0;color:va
   padding:3px 7px;border-radius:999px;border:1px solid var(--border2);color:var(--text3);
 }
 .badge.on{color:#000;background:var(--accent);border-color:var(--accent);}
+.card.mas{border-style:dashed;justify-content:center;min-height:180px;gap:14px;}
+.card.mas button.sumar{font-size:13px;padding:14px 18px;border-color:var(--accent2);color:var(--accent2);background:transparent;}
+.card.mas button.sumar:hover{background:var(--accent2);color:#000;}
+.card.mas button.quitar{font-size:9px;color:var(--text3);border-color:var(--border);background:transparent;font-weight:400;}
+.card.mas span{font-family:var(--mono);font-size:9.5px;color:var(--text3);text-align:center;}
 
 section{margin:26px 0 0;}
 section > h3{
@@ -113,6 +118,7 @@ code.inline{background:var(--bg3);border-radius:4px;padding:1px 5px;color:var(--
 <section>
   <h3>PASO 2 · ABRIR EL MANDO EN CADA TELÉFONO</h3>
   <div class="grid" id="tarjetas"></div>
+  <p class="nota" id="nota-mandos"></p>
 </section>
 
 <section>
@@ -121,7 +127,25 @@ code.inline{background:var(--bg3);border-radius:4px;padding:1px 5px;color:var(--
 </section>
 
 <section>
-  <h3>PASO 4 · SALIDA A OBS (CÁMARA VIRTUAL)</h3>
+  <h3>PASO 4 · VISOR DE CONTROL (MESA DE VIDEO)</h3>
+  <div class="wifi">
+    <div class="qr" id="visor-qr"></div>
+    <div>
+      <p class="nota" style="margin-top:0">
+        Ábrelo en una tableta, un teléfono u otra computadora de la misma red: muestra la <b>salida</b>,
+        una <b>salida nueva</b> (previa) para armar el siguiente arreglo de pistas sin tocar lo que se ve,
+        y una barra con los <b>materiales</b>, las <b>escenas</b> y las <b>pistas</b>.
+      </p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <code class="inline" id="cod-visor" style="padding:5px 8px;">…</code>
+        <span id="txt-visores" style="font-family:var(--mono);font-size:11px;color:var(--text2);">—</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h3>PASO 5 · SALIDA A OBS (CÁMARA VIRTUAL)</h3>
   <div class="wifi">
     <div>
       <p class="nota" style="margin-top:0">
@@ -185,7 +209,61 @@ $('sub-sala').textContent = 'sala "' + SALA + '"';
 
 let red = null;
 let dirElegida = null;
-let presencia = { app: false, mandos: [], maxMandos: 4, camaras: [], maxCamaras: 4, salidas: 0, maxSalidas: 4 };
+let presencia = { app: false, mandos: [], camaras: [], salidas: 0, visores: 0 };
+
+/* Cuántas tarjetas (QR con número fijo) se muestran de cada tipo: se van
+   sumando con ➕ según hagan falta; el navegador recuerda cuántas había. */
+const VISIBLES = { mando: 4, camara: 4 };
+for (const tipo of Object.keys(VISIBLES)) {
+  try { VISIBLES[tipo] = Math.max(1, parseInt(localStorage.getItem('midivj-control-n-' + tipo), 10) || VISIBLES[tipo]); } catch (_) {}
+}
+function fijarVisibles(tipo, n) {
+  VISIBLES[tipo] = Math.max(1, n);
+  try { localStorage.setItem('midivj-control-n-' + tipo, String(VISIBLES[tipo])); } catch (_) {}
+  pintarTarjetas(); pintarTarjetasCamara();
+}
+
+/** Tarjetas 1..n de un tipo + la tarjeta "➕ agregar". `conectados` es la
+    lista de presencia ({slot}); nunca se esconde una tarjeta ocupada. */
+function pintarGrupo(cont, tipo, nombre, femenino, urlDe, conectados, max) {
+  cont.innerHTML = '';
+  const mayor = conectados.reduce((m, x) => Math.max(m, x.slot), 0);
+  const n = Math.min(max, Math.max(VISIBLES[tipo], mayor));
+  for (let s = 1; s <= n; s++) {
+    const url = urlDe(s);
+    const ocupado = conectados.some(x => x.slot === s);
+    const card = document.createElement('div');
+    card.className = 'card' + (ocupado ? ' ocupado' : '');
+    card.innerHTML = `
+      <span class="badge${ocupado ? ' on' : ''}">${ocupado ? (femenino ? 'CONECTADA' : 'CONECTADO') : 'LIBRE'}</span>
+      <h2>${nombre} ${s}</h2>
+      <div class="qr"></div>
+      <code>${escapar(url)}</code>`;
+    qrEn(card.querySelector('.qr'), url, 4);
+    cont.appendChild(card);
+  }
+  const mas = document.createElement('div');
+  mas.className = 'card mas';
+  mas.dataset.tipo = tipo;
+  if (n < max) {
+    const b = document.createElement('button');
+    b.className = 'sumar';
+    b.textContent = '➕ AGREGAR ' + nombre + ' ' + (n + 1);
+    b.onclick = () => fijarVisibles(tipo, n + 1);
+    mas.appendChild(b);
+  }
+  const txt = document.createElement('span');
+  txt.textContent = conectados.length + (femenino ? ' conectadas' : ' conectados') + ' · máximo ' + max;
+  mas.appendChild(txt);
+  if (n > Math.max(1, mayor)) {
+    const q = document.createElement('button');
+    q.className = 'quitar';
+    q.textContent = '➖ quitar ' + nombre.toLowerCase() + ' ' + n;
+    q.onclick = () => fijarVisibles(tipo, n - 1);
+    mas.appendChild(q);
+  }
+  cont.appendChild(mas);
+}
 
 function qrEn(contenedor, texto, escala) {
   contenedor.innerHTML = texto ? QRLite.svg(texto, { escala: escala || 4, margen: 2, ecl: 'M' }) : '';
@@ -222,10 +300,11 @@ async function cargarRed() {
   pintarWifi();
   pintarTarjetas();
   pintarTarjetasCamara();
+  pintarVisor();
   pintarSalida();
 }
 
-$('sel-dir').addEventListener('change', ev => { dirElegida = ev.target.value; pintarTarjetas(); pintarTarjetasCamara(); pintarSalida(); });
+$('sel-dir').addEventListener('change', ev => { dirElegida = ev.target.value; pintarTarjetas(); pintarTarjetasCamara(); pintarVisor(); pintarSalida(); });
 
 const ORIGEN_WIFI = {
   hotspot: 'punto de acceso de esta PC (encendido)',
@@ -268,22 +347,12 @@ function baseURLCamara() {
 }
 
 function pintarTarjetas() {
-  const cont = $('tarjetas');
-  cont.innerHTML = '';
-  const total = red.maxMandos || 4;
-  for (let s = 1; s <= total; s++) {
-    const url = baseURL() + '/mando?sala=' + encodeURIComponent(SALA) + '&slot=' + s;
-    const ocupado = presencia.mandos.some(m => m.slot === s);
-    const card = document.createElement('div');
-    card.className = 'card' + (ocupado ? ' ocupado' : '');
-    card.innerHTML = `
-      <span class="badge${ocupado ? ' on' : ''}">${ocupado ? 'CONECTADO' : 'LIBRE'}</span>
-      <h2>MANDO ${s}</h2>
-      <div class="qr"></div>
-      <code>${escapar(url)}</code>`;
-    qrEn(card.querySelector('.qr'), url, 4);
-    cont.appendChild(card);
-  }
+  const max = red.maxMandos || 4;
+  pintarGrupo($('tarjetas'), 'mando', 'MANDO', false,
+    s => baseURL() + '/mando?sala=' + encodeURIComponent(SALA) + '&slot=' + s, presencia.mandos, max);
+  $('nota-mandos').innerHTML = 'Agrega los mandos que vayas necesitando con <b>➕</b>: cada uno tiene su número y su QR. ' +
+    'El tope (' + max + ') es lo que admite una red Wi-Fi doméstica; muchos routers aceptan menos equipos a la vez (suele ser 30–60). ' +
+    'Sin número, <code class="inline">' + escapar(baseURL() + '/mando?sala=' + encodeURIComponent(SALA)) + '</code> toma el siguiente libre.';
   $('txt-dir').textContent = baseURL();
   $('cod-ws').textContent = 'ws://' + (dirElegida || location.hostname) + ':' + red.puerto;
   /* Incluye el puerto HTTPS de /camara: sin él, la cámara del teléfono da
@@ -305,20 +374,18 @@ function pintarTarjetasCamara() {
       + 'pantalla, capturadora y el mando — funciona igual.</p>';
     return;
   }
-  const total = red.maxCamaras || 4;
-  for (let s = 1; s <= total; s++) {
-    const url = base + '/camara?sala=' + encodeURIComponent(SALA) + '&slot=' + s;
-    const ocupado = presencia.camaras.some(c => c.slot === s);
-    const card = document.createElement('div');
-    card.className = 'card' + (ocupado ? ' ocupado' : '');
-    card.innerHTML = `
-      <span class="badge${ocupado ? ' on' : ''}">${ocupado ? 'CONECTADA' : 'LIBRE'}</span>
-      <h2>CÁMARA ${s}</h2>
-      <div class="qr"></div>
-      <code>${escapar(url)}</code>`;
-    qrEn(card.querySelector('.qr'), url, 4);
-    cont.appendChild(card);
-  }
+  pintarGrupo(cont, 'camara', 'CÁMARA', true,
+    s => base + '/camara?sala=' + encodeURIComponent(SALA) + '&slot=' + s, presencia.camaras, red.maxCamaras || 4);
+}
+
+function pintarVisor() {
+  const url = baseURL() + '/visor?sala=' + encodeURIComponent(SALA);
+  $('cod-visor').textContent = url;
+  qrEn($('visor-qr'), url, 4);
+  const max = red.maxVisores || 4;
+  $('txt-visores').textContent = presencia.visores
+    ? presencia.visores + '/' + max + ' visores conectados'
+    : 'ningún visor conectado todavía (máximo ' + max + ')';
 }
 
 function pintarSalida() {
@@ -328,7 +395,7 @@ function pintarSalida() {
   const url = baseURL() + '/salida?sala=' + encodeURIComponent(SALA);
   $('cod-salida').textContent = url;
   $('txt-salidas').textContent = presencia.salidas
-    ? presencia.salidas + '/' + (presencia.maxSalidas || 4) + ' fuentes conectadas'
+    ? presencia.salidas + '/' + (red.maxSalidas || 4) + ' fuentes conectadas'
     : 'ninguna fuente conectada todavía';
 }
 
@@ -369,14 +436,13 @@ function conectarWS() {
     try { msg = JSON.parse(ev.data); } catch (_) { return; }
     if (msg.type !== 'presencia') return;
     presencia = {
-      app: msg.app, mandos: msg.mandos || [], maxMandos: msg.maxMandos || 4,
-      camaras: msg.camaras || [], maxCamaras: msg.maxCamaras || 4,
-      salidas: msg.salidas || 0, maxSalidas: msg.maxSalidas || 4
+      app: msg.app, mandos: msg.mandos || [], camaras: msg.camaras || [],
+      salidas: msg.salidas || 0, visores: msg.visores || 0
     };
     $('dot-app').className = 'dot' + (msg.app ? ' on' : '');
-    $('txt-mandos').textContent = presencia.mandos.length + '/' + presencia.maxMandos + ' mandos';
-    $('txt-camaras').textContent = presencia.camaras.length + '/' + presencia.maxCamaras + ' cámaras';
-    if (red) { pintarTarjetas(); pintarTarjetasCamara(); pintarSalida(); }
+    $('txt-mandos').textContent = presencia.mandos.length + ' mando' + (presencia.mandos.length === 1 ? '' : 's');
+    $('txt-camaras').textContent = presencia.camaras.length + ' cámara' + (presencia.camaras.length === 1 ? '' : 's');
+    if (red) { pintarTarjetas(); pintarTarjetasCamara(); pintarVisor(); pintarSalida(); }
   };
   ws.onclose = () => setTimeout(conectarWS, 1500);
 }

@@ -46,6 +46,15 @@
   .gr-toma{display:flex;align-items:center;gap:8px;font-family:var(--mono,monospace);font-size:9px;color:var(--text2,#9a9ac0);}
   .gr-toma .gr-nom{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text,#e6e6ff);}
   .gr-vacio{font-family:var(--mono,monospace);font-size:9px;color:var(--text3,#5a5a7a);text-align:center;padding:4px 0;}
+  .gr-fuentes{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;}
+  .gr-fuente{display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border:1px solid var(--border2,#2a2a4a);border-radius:4px;font-family:var(--mono,monospace);font-size:9px;color:var(--text2,#9a9ac0);cursor:pointer;min-width:0;}
+  .gr-fuente.on{border-color:#ff3366;background:rgba(255,51,102,.07);color:var(--text,#e6e6ff);}
+  .gr-fuente.sin{opacity:.45;}
+  .gr-fuente input{margin:1px 0 0;accent-color:#ff3366;}
+  .gr-fuente span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;}
+  .gr-fuente small{display:block;font-size:8px;color:var(--text3,#5a5a7a);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .gr-fuente.grabando small{color:#ff3366;}
+  .gr-fila input.gr-ruta{flex:1;min-width:200px;width:auto;}
   `;
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -76,10 +85,13 @@
           '<button class="gr-btn" id="gr-cerrar">✕ CERRAR</button>' +
         '</header>' +
         '<div class="gr-cuerpo">' +
-          '<div class="gr-sec"><h3>SALIDA</h3>' +
+          '<div class="gr-sec"><h3>GRABAR<span class="gr-sp"></span>' +
+              '<button class="gr-btn" id="gr-todas" title="Marca la salida y todas las pistas con señal">TODAS</button>' +
+              '<button class="gr-btn" id="gr-solo-salida" title="Sólo la salida">SÓLO SALIDA</button></h3>' +
             '<div class="gr-lista">' +
               '<div class="gr-fila"><button class="gr-btn" id="gr-rec">⏺ GRABAR</button>' +
                 '<span class="gr-reloj" id="gr-reloj">00:00:00</span></div>' +
+              '<div class="gr-fuentes" id="gr-fuentes"></div>' +
               '<div class="gr-dato" id="gr-dato"></div>' +
               '<div class="gr-error" id="gr-error"></div>' +
               '<div class="gr-fila">' +
@@ -89,10 +101,25 @@
               '</div>' +
               '<div class="gr-fila"><label>NOMBRE DE LA TOMA <input type="text" id="gr-titulo" maxlength="60" placeholder="opcional — se agrega a la fecha" spellcheck="false"></label></div>' +
             '</div>' +
-            '<p class="gr-ayuda">Graba la salida tal como se ve en HDMI y OBS, <b>sin audio</b>: graba el sonido aparte (OBS o la mezcladora) y júntalos al editar.<br>' +
-              'Cada segundo grabado va directo a <b>Grabaciones/</b> del proyecto: si algo se cierra a media función, lo grabado ya está en disco.<br>' +
-              'Mientras grabas, la salida no cambia sola de tamaño con el video de la pista 1. Si la cambias tú (⛶ SALIDA), sigue en un archivo nuevo de la misma toma.<br>' +
+            '<p class="gr-ayuda"><b>Salida</b>: lo que se ve en HDMI y OBS. <b>Pistas</b>: la señal limpia de cada una (su video o su cámara, con su corrección de color), ' +
+              'sin mezcla, sin posición ni efectos, se vea o no en la salida: sirve para reeditar después. Todo va <b>sin audio</b>: graba el sonido aparte y júntalos al editar.<br>' +
+              'Cada toma es una carpeta con todos sus archivos (<b>salida.mp4</b>, <b>pista-1.mp4</b>…) y un <b>toma.json</b> con los tiempos para alinearlos.<br>' +
+              'Cada segundo grabado va directo a disco: si algo se cierra a media función, lo grabado ya está guardado.<br>' +
+              'Mientras grabas, la salida no cambia sola de tamaño con el video de la pista 1, y cada pista conserva el tamaño con el que empezó (otra fuente entra encajada). ' +
+              'Cada archivo es un codificador más: en equipos modestos, graba sólo las pistas que necesites.<br>' +
               'Deja la ventana de MIDIVJ a la vista: minimizada, el navegador frena el dibujo.</p>' +
+          '</div>' +
+          '<div class="gr-sec"><h3>CARPETA DE LAS GRABACIONES</h3>' +
+            '<div class="gr-lista">' +
+              '<div class="gr-fila">' +
+                '<input type="text" class="gr-ruta" id="gr-ruta" spellcheck="false" placeholder="ruta completa de la carpeta">' +
+                '<button class="gr-btn" id="gr-ruta-ok" title="Usar la ruta escrita">USAR</button>' +
+                '<button class="gr-btn" id="gr-elegir" title="Abre el selector de carpetas de este equipo">📁 ELEGIR…</button>' +
+                '<button class="gr-btn" id="gr-ruta-def" title="Volver a Grabaciones/ dentro del proyecto">↺ LA DEL PROYECTO</button>' +
+              '</div>' +
+              '<div class="gr-dato" id="gr-ruta-dato"></div>' +
+            '</div>' +
+            '<p class="gr-ayuda">Todas las tomas (salida y pistas) se guardan aquí. Puede ser otro disco o una carpeta del show; el relay la recuerda.</p>' +
           '</div>' +
           '<div class="gr-sec" id="gr-sec-avisos" hidden><h3>AVISOS</h3><div class="gr-lista" id="gr-avisos"></div></div>' +
           '<div class="gr-sec"><h3>ÚLTIMAS TOMAS<span class="gr-sp"></span>' +
@@ -135,13 +162,79 @@
     $('gr-abrir').onclick = () => abrir(null);
     $('gr-refrescar').onclick = () => cargarTomas();
 
+    /* ── Qué se graba ── */
+    function elegir(ids) {
+      cfg.fuentes = ids;
+      if (op.alCambiarConfig) op.alCambiarConfig();
+      ui.refrescar();
+    }
+    $('gr-todas').onclick = () => elegir(grabador.fuentes().filter(f => f.disponible).map(f => f.id));
+    $('gr-solo-salida').onclick = () => elegir(['salida']);
+    $('gr-fuentes').addEventListener('change', e => {
+      const id = e.target && e.target.dataset ? e.target.dataset.fuente : null;
+      if (!id) return;
+      const set = new Set(cfg.fuentes);
+      if (e.target.checked) set.add(id); else set.delete(id);
+      /* en el orden del registro: la salida primero, luego las pistas */
+      elegir(grabador.fuentes().map(f => f.id).filter(x => set.has(x)));
+    });
+    let firmaFuentes = '';
+    function pintarFuentes(st, bloqueado) {
+      const lista = grabador.fuentes();
+      const enToma = new Map((st.fuentes || []).map(f => [f.id, f]));
+      const firma = JSON.stringify([lista, bloqueado, st.fase, [...enToma.values()].map(f => [f.id, f.archivo, f.activa])]);
+      if (firma === firmaFuentes) return;
+      firmaFuentes = firma;
+      $('gr-fuentes').innerHTML = lista.map(f => {
+        const t = enToma.get(f.id);
+        const grabando = !!(t && t.activa);
+        const sub = grabando ? '● ' + t.archivo + ' · ' + t.ancho + '×' + t.alto
+          : !f.disponible ? 'sin señal'
+          : (f.detalle ? f.detalle + ' · ' : '') + (f.ancho ? f.ancho + '×' + f.alto : '');
+        return '<label class="gr-fuente' + (f.elegida ? ' on' : '') + (f.disponible ? '' : ' sin') + (grabando ? ' grabando' : '') + '">' +
+          '<input type="checkbox" data-fuente="' + esc(f.id) + '"' + (f.elegida ? ' checked' : '') + (bloqueado ? ' disabled' : '') + '>' +
+          '<div style="min-width:0"><span>' + esc(f.nombre) + '</span><small title="' + esc(sub) + '">' + esc(sub) + '</small></div></label>';
+      }).join('');
+    }
+
+    /* ── Carpeta ── */
+    let carpeta = null;
+    function pintarCarpeta(error) {
+      const dato = $('gr-ruta-dato');
+      if (error) { dato.innerHTML = '<span class="gr-error">⚠ ' + esc(error) + '</span>'; return; }
+      if (!carpeta) { dato.textContent = ''; return; }
+      if (document.activeElement !== $('gr-ruta')) $('gr-ruta').value = carpeta.carpeta;
+      dato.innerHTML = 'Las tomas se guardan en <b>' + esc(carpeta.carpeta) + '</b>' + (carpeta.porDefecto ? ' (la del proyecto)' : '');
+      $('gr-ruta-def').disabled = !!carpeta.porDefecto || grabador.grabando();
+    }
+    async function conCarpeta(pedido) {
+      try {
+        const r = await pedido();
+        carpeta = r;
+        pintarCarpeta(r.cancelado ? null : '');
+        if (!r.cancelado) cargarTomas();
+      } catch (e) { pintarCarpeta(e.message); }
+    }
+    $('gr-ruta-ok').onclick = () => conCarpeta(() => grabador.fijarCarpeta($('gr-ruta').value.trim()));
+    $('gr-ruta').addEventListener('keydown', e => { if (e.key === 'Enter') $('gr-ruta-ok').click(); });
+    $('gr-ruta-def').onclick = () => conCarpeta(() => grabador.fijarCarpeta(''));
+    $('gr-elegir').onclick = async () => {
+      $('gr-ruta-dato').textContent = 'Elige la carpeta en la ventana que se abrió en este equipo (puede quedar detrás del navegador)…';
+      $('gr-elegir').disabled = true;
+      await conCarpeta(() => grabador.elegirCarpeta());
+      $('gr-elegir').disabled = grabador.grabando();
+      if (carpeta) pintarCarpeta('');
+    };
+
     function abrir(toma) {
       grabador.abrirCarpeta(toma).catch(e => { if (op.avisar) op.avisar('no se pudo abrir la carpeta: ' + e.message); });
     }
 
     async function cargarTomas() {
-      try { ui._tomas = await grabador.listarTomas(); }
-      catch (e) { ui._tomas = { error: e.message }; }
+      try {
+        ui._tomas = await grabador.listarTomas();
+        if (ui._tomas.carpeta) { carpeta = { carpeta: ui._tomas.carpeta, porDefecto: ui._tomas.porDefecto }; pintarCarpeta(''); }
+      } catch (e) { ui._tomas = { error: e.message }; }
       pintarTomas();
     }
 
@@ -170,23 +263,29 @@
       const btn = $('gr-rec');
       btn.textContent = grabando ? '⏹ DETENER' : st.fase === 'abriendo' ? '… ABRIENDO' : st.fase === 'cerrando' ? '… GUARDANDO' : '⏺ GRABAR';
       btn.classList.toggle('on', grabando);
-      btn.disabled = ocupado || !fmts.length;
+      btn.disabled = ocupado || !fmts.length || (!grabando && !grabador.fuentes().some(f => f.elegida && f.disponible));
       const rel = $('gr-reloj');
       rel.textContent = reloj(st.transcurridoMs);
       rel.classList.toggle('on', grabando);
-      ['gr-formato', 'gr-calidad', 'gr-fps', 'gr-titulo'].forEach(id => { $(id).disabled = grabando || ocupado; });
+      const bloqueado = grabando || ocupado;
+      ['gr-formato', 'gr-calidad', 'gr-fps', 'gr-titulo', 'gr-todas', 'gr-solo-salida', 'gr-ruta', 'gr-ruta-ok', 'gr-elegir'].forEach(id => { $(id).disabled = bloqueado; });
+      $('gr-ruta-def').disabled = bloqueado || !carpeta || !!carpeta.porDefecto;
+      pintarFuentes(st, bloqueado);
 
-      const salida = host && host.capturas ? host.capturas.obtener('salida') : null;
-      const tam = salida ? salida.tamano() || {} : {};
+      const elegidas = grabador.fuentes().filter(f => f.elegida);
+      const conSenal = elegidas.filter(f => f.disponible);
       let dato;
       if (grabando || st.fase === 'cerrando') {
-        dato = '<b>' + esc(st.toma) + '</b> / <b>' + esc(st.archivo) + '</b>' + (st.archivos > 1 ? ' (' + st.archivos + ' archivos)' : '') +
-          '<br>' + st.ancho + '×' + st.alto + ' · ' + esc(st.formato) + ' · ' + (st.kbps / 1000).toFixed(1) + ' Mbps · <b>' + tamano(st.bytes) + '</b> en disco' +
+        dato = '<b>' + esc(st.toma) + '</b> · ' + st.archivos + (st.archivos === 1 ? ' archivo' : ' archivos') +
+          '<br>' + esc(st.formato) + ' · ' + (st.kbps / 1000).toFixed(1) + ' Mbps · <b>' + tamano(st.bytes) + '</b> en disco' +
           (st.pendientes > 0 ? ' · ' + tamano(st.pendientes) + ' por guardar' : '');
         if (st.fase === 'cerrando') dato += '<br>Terminando de guardar…' + (st.sinRelay ? ' esperando al relay (si cierras la pestaña ahora, se pierde lo pendiente).' : '');
       } else {
-        dato = 'Salida actual: <b>' + (tam.ancho || '?') + '×' + (tam.alto || '?') + '</b> · ~' + grabador.estimarMbps().toFixed(1) + ' Mbps' +
-          ' (~' + Math.round(grabador.estimarMbps() * 450 / 1024 * 10) / 10 + ' GB por hora)';
+        const mbps = grabador.estimarMbps();
+        dato = !elegidas.length ? 'Marca qué quieres grabar.'
+          : '<b>' + conSenal.length + '</b> ' + (conSenal.length === 1 ? 'archivo' : 'archivos') + ' por toma · ~' + mbps.toFixed(1) + ' Mbps' +
+            ' (~' + Math.round(mbps * 450 / 1024 * 10) / 10 + ' GB por hora)' +
+            (conSenal.length < elegidas.length ? ' · ' + (elegidas.length - conSenal.length) + ' sin señal ahora (no se graban)' : '');
         if (st.toma && st.bytes) dato += '<br>Última toma: <b>' + esc(st.toma) + '</b> · ' + tamano(st.bytes) + ' · ' + reloj(st.transcurridoMs);
       }
       $('gr-dato').innerHTML = dato;

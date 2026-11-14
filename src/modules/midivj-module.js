@@ -91,14 +91,15 @@
     },
   };
 
-  /* Señales de video (la salida hoy; cada cámara después). La app las
+  /* Señales de video (la salida y cada pista). La app las
      registra y un módulo las pide sin saber de dónde salen. `capturar()`
      entrega un MediaStream NUEVO cada vez: quien lo pide es dueño de sus
      pistas y las detiene al terminar, sin tocar la ventana HDMI ni OBS. */
   const capturas = {
     _defs: new Map(),
 
-    /** def = { id, nombre, capturar(fps) → MediaStream|null, tamano() → { ancho, alto } } */
+    /** def = { id, nombre, capturar(fps) → MediaStream|null, tamano() → { ancho, alto },
+                 detalle() → texto de qué lleva ahora (opcional), disponible() → ¿tiene señal? (opcional) } */
     registrar(def) {
       if (!def || !def.id || typeof def.capturar !== 'function') return null;
       const completo = {
@@ -106,6 +107,8 @@
         nombre: def.nombre || def.id,
         capturar: def.capturar,
         tamano: typeof def.tamano === 'function' ? def.tamano : () => null,
+        detalle: typeof def.detalle === 'function' ? def.detalle : () => '',
+        disponible: typeof def.disponible === 'function' ? def.disponible : () => true,
       };
       this._defs.set(completo.id, completo);
       return completo;

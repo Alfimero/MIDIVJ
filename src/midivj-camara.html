@@ -214,7 +214,7 @@ const DISP = (() => {
 })();
 
 let slotPedido = parseInt(PARAMS.get('slot'), 10);
-if (!(slotPedido >= 1 && slotPedido <= 4)) {
+if (!(slotPedido >= 1 && slotPedido <= 9999)) {
   try { slotPedido = parseInt(localStorage.getItem('midivj-camara-slot'), 10) || 0; } catch (_) { slotPedido = 0; }
 }
 
