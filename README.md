@@ -254,6 +254,24 @@ Además de la ventana HDMI, el lienzo de salida se puede entregar a OBS (en esta
 
 Notas: sólo video, sin audio (igual que HDMI/PANTALLA/CAPTURA/cámara). `/salida` va por HTTP normal — no necesita el certificado de `/camara` porque no pide permisos. Si recargas la fuente en OBS, se reconecta sola. Detalles en `docs/decisions/ADR-005-salida-a-obs-por-webrtc.md`.
 
+## Grabar la salida
+
+**⏺ GRABAR** (en el encabezado) abre el panel GRABACIÓN. Graba la salida tal como se ve en HDMI y OBS, en la carpeta `Grabaciones/` del proyecto (fuera de Git):
+
+1. Elige **formato** (MP4 · H.264, recomendado: lo abre cualquier editor), **calidad** (Normal / Alta / Máxima ≈ 5 / 9 / 19 Mbps a 1080p30) y **FPS**. El nombre de la toma es opcional y se agrega a la fecha.
+2. **⏺ GRABAR** empieza; el botón del encabezado se pone rojo con el tiempo. **⏹ DETENER** termina de guardar.
+3. **📂 ABRIR CARPETA** abre `Grabaciones/` (o una toma) en el explorador.
+
+Cada toma es una carpeta (`Grabaciones/2026-10-30 21-15-03 nombre/`) con `salida.mp4` y `toma.json`, que dice el formato, el tamaño y cuándo empezó y terminó cada archivo.
+
+- Cada segundo grabado va directo a disco a través del relay: si la pestaña se cierra o algo se cae a media función, lo grabado hasta ese segundo ya está guardado. Si el relay se reinicia, la grabación sigue en el mismo archivo.
+- Mientras grabas, la salida no cambia sola de tamaño con el video de la pista 1. Si cambias la resolución tú (⛶ SALIDA), la grabación sigue en `salida (2).mp4` de la misma toma.
+- **Sin audio**: graba el sonido aparte (OBS o la mezcladora) y júntalos al editar.
+- Deja la ventana de MIDIVJ a la vista: minimizada, el navegador frena el dibujo (igual que para HDMI y OBS).
+- Sólo se graba desde la PC donde corre el relay, como el guardado de sesiones. Después de actualizar, cierra y vuelve a abrir `INICIAR_RELAY` para que el relay conozca la grabación.
+
+Detalles en `docs/decisions/ADR-008-grabacion-de-la-salida.md`.
+
 ## Audio: mover visuales con sonido
 
 El botón **🔊 AUDIO** abre el primer módulo desacoplado de MIDIVJ (`src/modules/audio/`). Analiza una entrada de audio (interfaz, micrófono, loopback) dentro de un `AudioWorklet` y convierte lo que oye en dos cosas:

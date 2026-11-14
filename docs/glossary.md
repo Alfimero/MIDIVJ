@@ -12,6 +12,8 @@
 - **Módulo**: subsistema en `src/modules/` que cumple el contrato de `midivj-module.js` (`init/start/stop/dispose/getStatus`).
 - **Target**: parámetro continuo registrado en `MIDIVJ.targets` que un módulo puede mover (opacidad, parámetro de efecto).
 - **Acción**: disparo discreto registrado en `MIDIVJ.acciones` (clip, banco, efecto).
+- **Captura**: señal de video registrada en `MIDIVJ.capturas` (la salida hoy) que un módulo pide como `MediaStream` propio.
+- **Toma**: carpeta de `Grabaciones/` con los videos de una grabación y su `toma.json` (formato, tamaño, inicio y fin de cada archivo).
 - **Bus (audio)**: cadena `fuente → ganancia → análisis + monitor`; analizar no implica escuchar.
 - **Puerto de plataforma**: interfaz que aísla una API no portable (MIDI, media, salida, almacenamiento); ver ADR-007.
 - **Perfil (FULL/LITE)**: lista de módulos que carga una variante de la aplicación; ver ADR-007.
