@@ -382,6 +382,7 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <button class="hbtn" id="grab-btn" onclick="abrirPanelGrabacion()" title="Graba la salida y, si quieres, cada pista por separado, con su audio y con la entrada de audio que elijas">⏺ GRABAR</button>
   <button class="hbtn" id="mezcla-btn" onclick="abrirPanelMezcla()" title="Mezcla de audio: volumen, silencio y REC del sonido de cada pista (videos y cámaras) y de la entrada de audio">🎚 MEZCLA</button>
   <button class="hbtn" onclick="abrirPanelRes()" title="Resolución y tamaño del video de salida">⛶ SALIDA</button>
+  <button class="hbtn" id="camhub-btn" onclick="abrirHubCamaras()" title="Hub de cámaras: el formato (resolución, FPS, proporción, calidad, audio) de todos los teléfonos en una tabla, y un cambio para todas a la vez">📷 CÁMARAS</button>
   <button class="hbtn" id="mando-btn" onclick="abrirPanelRelay()" title="Relay, conexión y códigos QR de los mandos">📡 RELAY <span id="mando-count">—</span></button>
   <button class="hbtn" id="audio-btn" onclick="abrirPanelAudio()" title="Entradas de audio, análisis y mapeos audio → visual">🔊 AUDIO</button>
   <button id="excl-btn" class="hbtn" onclick="toggleExcl()" title="Exclusivo: disparar un clip detiene los de las otras pistas de su tipo (un video a otro video, una fuente en vivo a otra). Una cámara encima de un video no lo detiene. Por pista: 🎞 AJUSTE Y TRANSICIÓN → EXCL (capa = se superpone siempre)" style="border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.08);">EXCL ●</button>
@@ -8351,7 +8352,7 @@ const TEL_OPC = {
   formato: [['original','original (como el teléfono)'], ['16:9','16:9 horizontal'], ['9:16','9:16 vertical'], ['4:3','4:3'], ['3:4','3:4 vertical'], ['1:1','1:1 cuadrado']],
   calidad: [['auto','auto'], ['2','2 Mbps'], ['4','4 Mbps'], ['8','8 Mbps'], ['15','15 Mbps']],
   lente:   [['environment','trasera'], ['user','frontal (selfie)']],
-  audio:   [['si','micrófono del teléfono'], ['no','sin audio']],
+  audio:   [['si','micrófono'], ['no','sin audio']],
 };
 const TEL_RES_PX = { '480':480, '720':720, '1080':1080, '2160':2160 };
 
@@ -8369,6 +8370,7 @@ function _camEstadoRecibido(slot, msg) {
     error: msg.error ? String(msg.error).slice(0, 200) : null,
   };
   if (ses.tel.error) _camLog('⚠ cámara '+slot+' (pista '+idx+'): '+ses.tel.error);
+  hubCamRefrescar();
   if (S.ati !== idx) return;
   const box = document.getElementById('camtel');
   if (box) box.innerHTML = camTelCuerpoHTML(idx, ses);
@@ -8465,7 +8467,156 @@ function _camCerrar(trackIdx, avisarPhone, motivo) {
   CAM.porSlot.delete(sesion.slot);
   if (avisarPhone) _camEnviar({ type: 'camara-colgar', slot: sesion.slot, motivo });
   if (S.ati === trackIdx) renderTrackInfo();
+  HUBCAM.llega.delete(trackIdx);
+  hubCamRefrescar();
 }
+
+/* ═══════════════════════════════════════════════════════
+   HUB DE CÁMARAS — el formato de todos los teléfonos en un lugar
+   Una fila por cámara conectada a una pista: lo que envía, lo que llega y
+   sus ajustes (resolución, FPS, formato, calidad, lente, audio). La fila de
+   arriba cambia un ajuste en TODAS a la vez, para dejarlas en el mismo
+   formato sin ir teléfono por teléfono. Usa los mismos mensajes que
+   CONFIG. DE CÁMARA de la pista ('camara-config' / 'camara-estado'); los
+   teléfonos conectados que todavía no están en una pista también reciben
+   el cambio y lo aplican al empezar a transmitir.
+═══════════════════════════════════════════════════════ */
+const HUB_CAMPOS = [['res', 'RESOLUCIÓN'], ['fps', 'FPS'], ['formato', 'FORMATO'], ['calidad', 'CALIDAD'], ['lente', 'LENTE'], ['audio', 'AUDIO']];
+const HUBCAM = { el: null, firma: '', llega: new Map() };
+function hubCamCrear() {
+  if (HUBCAM.el) return;
+  const st = document.createElement('style');
+  st.textContent = `
+  #hubcam-ovl{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;z-index:60;}
+  #hubcam-ovl.vis{display:flex;}
+  #hubcam{background:var(--panel);border:1px solid var(--border2);border-radius:6px;width:min(1120px,97vw);max-height:92vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.6);font-family:var(--mono);font-size:9px;color:var(--text2);}
+  #hubcam header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);}
+  #hubcam h2{margin:0;font-size:12px;letter-spacing:2px;color:var(--accent);flex:1;}
+  #hubcam table{border-collapse:collapse;width:100%;}
+  #hubcam th,#hubcam td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+  #hubcam th{font-weight:400;letter-spacing:1px;color:var(--text3);}
+  #hubcam tr.todas td{background:rgba(0,255,136,.05);border-bottom:1px solid var(--accent);}
+  #hubcam select{background:var(--panel2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:9px;padding:3px 4px;outline:none;max-width:150px;}
+  #hubcam td b{color:var(--text);font-weight:400;}
+  #hubcam .mal{color:var(--hot);}
+  #hubcam .dif{color:#ffcc00;}
+  #hubcam p{margin:0;padding:10px 16px 14px;font-size:8px;line-height:1.8;color:var(--text3);}
+  #hubcam .vacio{padding:22px 16px;text-align:center;color:var(--text3);}`;
+  document.head.appendChild(st);
+  const o = document.createElement('div');
+  o.id = 'hubcam-ovl';
+  o.innerHTML = '<div id="hubcam"><header><h2>CÁMARAS · FORMATO DE TODAS</h2><button class="hbtn" onclick="cerrarHubCamaras()">✕ CERRAR</button></header><div id="hubcam-cuerpo"></div>' +
+    '<p>La fila <b>TODAS</b> cambia ese ajuste en todas las cámaras a la vez (también en los teléfonos conectados que aún no están en una pista). ' +
+    '«Envía» es lo que el teléfono dice que manda y «Llega» lo que mide MIDIVJ: si no coinciden con lo pedido, la cámara o la Wi-Fi no dan para más. ' +
+    'En amarillo, lo que es distinto entre cámaras. El teléfono recuerda su configuración.</p></div>';
+  o.addEventListener('click', e => { if (e.target === o) cerrarHubCamaras(); });
+  o.addEventListener('change', e => {
+    const s = e.target.closest('select[data-campo]');
+    if (!s || !s.value) return;
+    if (s.dataset.idx === 'todas') hubCamAplicarTodas(s.dataset.campo, s.value);
+    else camTelSet(+s.dataset.idx, s.dataset.campo, s.value);
+    HUBCAM.firma = '';
+    setTimeout(hubCamRefrescar, 50);
+  });
+  document.body.appendChild(o);
+  HUBCAM.el = o;
+  setInterval(hubCamMedir, 1000);
+}
+function abrirHubCamaras() {
+  hubCamCrear();
+  HUBCAM.el.classList.add('vis');
+  HUBCAM.firma = '';
+  hubCamRefrescar();
+}
+function cerrarHubCamaras() { if (HUBCAM.el) HUBCAM.el.classList.remove('vis'); }
+function hubCamAbierto() { return !!(HUBCAM.el && HUBCAM.el.classList.contains('vis')); }
+/* Las sesiones de cámara, en orden de pista */
+function hubCamFilas() {
+  return [...CAM.sesiones.entries()].sort((a, b) => a[0] - b[0]).map(([idx, ses]) => ({ idx, ses }));
+}
+/* Las opciones de un campo que esa cámara declara poder dar (lo elegido siempre queda) */
+function hubCamOpciones(ses, campo) {
+  const cfg = (ses.tel && ses.tel.config) || {}, k = (ses.tel && ses.tel.caps) || {};
+  const tope = k.maxW && k.maxH ? Math.min(k.maxW, k.maxH) : Infinity;
+  return TEL_OPC[campo].filter(([v]) =>
+    campo === 'res' ? (TEL_RES_PX[v] <= tope || v === String(cfg.res))
+    : campo === 'fps' ? (!k.maxFps || +v <= k.maxFps + .5 || +v === +cfg.fps)
+    : campo === 'lente' ? (v === 'environment' || k.frontal !== false || v === cfg.lente)
+    : true);
+}
+function hubCamAplicarTodas(campo, valor) {
+  const parcial = { [campo]: campo === 'fps' ? +valor : valor };
+  const enUso = new Set();
+  hubCamFilas().forEach(({ idx, ses }) => { enUso.add(ses.slot); camTelSet(idx, campo, valor); });
+  /* Teléfonos conectados sin pista: guardan el ajuste y lo usan al transmitir */
+  (CAM.disponibles || []).forEach(c => { if (!enUso.has(c.slot)) _camEnviar({ type: 'camara-config', slot: c.slot, config: parcial }); });
+  _camLog('hub de cámaras: ' + campo + ' → ' + valor + ' en todas (' + enUso.size + ' en pista, ' + Math.max(0, (CAM.disponibles || []).length - enUso.size) + ' en espera)');
+}
+function hubCamRefrescar() {
+  if (!hubCamAbierto()) return;
+  const cuerpo = document.getElementById('hubcam-cuerpo');
+  if (cuerpo.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;   // no cerrar un selector abierto
+  const filas = hubCamFilas();
+  const libres = (CAM.disponibles || []).filter(c => CAM.porSlot.get(c.slot) === undefined);
+  const firma = JSON.stringify([filas.map(f => [f.idx, f.ses.slot, f.ses.estado, f.ses.tel]), libres.map(c => c.slot), [...CAM.volver.keys()]]);
+  if (firma === HUBCAM.firma) return;
+  HUBCAM.firma = firma;
+  if (!filas.length && !libres.length) {
+    cuerpo.innerHTML = '<div class="vacio">No hay teléfonos conectados en /camara.<br>Abre 📡 RELAY → 4 · CÁMARA DE TELÉFONO para ver el QR.</div>';
+    return;
+  }
+  const comun = campo => {
+    const vs = new Set(filas.filter(f => f.ses.tel).map(f => String(f.ses.tel.config[campo])));
+    return vs.size === 1 ? [...vs][0] : null;
+  };
+  const selTodas = campo => {
+    const c = comun(campo);
+    return '<select data-idx="todas" data-campo="' + campo + '" title="Cambia ' + campo + ' en todas las cámaras">' +
+      '<option value=""' + (c === null ? ' selected' : '') + '>' + (filas.length > 1 && c === null ? '— distintos —' : '— elegir —') + '</option>' +
+      TEL_OPC[campo].map(([v, l]) => '<option value="' + v + '"' + (c === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
+  };
+  let h = '<table><tr><th>PISTA</th><th>📱</th><th>ENVÍA</th><th>LLEGA</th>' + HUB_CAMPOS.map(([, l]) => '<th>' + l + '</th>').join('') + '</tr>';
+  h += '<tr class="todas"><td colspan="4"><b>TODAS</b> · ' + filas.length + ' en pista' + (libres.length ? ' · ' + libres.length + ' en espera' : '') + '</td>' +
+    HUB_CAMPOS.map(([c]) => '<td>' + (c === 'lente' ? '' : selTodas(c)) + '</td>').join('') + '</tr>';
+  for (const { idx, ses } of filas) {
+    const tel = ses.tel;
+    const r = tel ? tel.real : null;
+    const envia = !tel ? '⏳ esperando al teléfono…'
+      : tel.error ? '<span class="mal">⚠ ' + escHtml(tel.error) + '</span>'
+      : r.w ? '<b>' + r.w + '×' + r.h + '</b> · ' + r.fps + ' fps · ' + (r.h > r.w ? 'vertical' : r.h === r.w ? 'cuadrada' : 'horizontal') + (r.audio ? ' · 🎤' : '') : '—';
+    h += '<tr><td><b>T' + (idx + 1) + '</b></td><td>' + ses.slot + '</td><td>' + envia + '</td><td id="hubcam-llega-' + idx + '">' + (HUBCAM.llega.get(idx) || '—') + '</td>' +
+      HUB_CAMPOS.map(([c]) => {
+        if (!tel) return '<td>—</td>';
+        const distinto = comun(c) === null && filas.length > 1 && c !== 'lente';
+        return '<td><select data-idx="' + idx + '" data-campo="' + c + '"' + (distinto ? ' class="dif"' : '') + '>' +
+          hubCamOpciones(ses, c).map(([v, l]) => '<option value="' + v + '"' + (String(tel.config[c]) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></td>';
+      }).join('') + '</tr>';
+  }
+  for (const c of libres) {
+    h += '<tr><td>—</td><td>' + c.slot + '</td><td colspan="' + (2 + HUB_CAMPOS.length) + '">conectado, sin pista' + (c.nombre ? ' · ' + escHtml(c.nombre) : '') +
+      ' — recibe lo que cambies en TODAS y lo usa al empezar a transmitir</td></tr>';
+  }
+  cuerpo.innerHTML = h + '</table>';
+}
+/* Lo que llega de verdad de cada cámara (estadísticas del receptor) */
+async function hubCamMedir() {
+  if (!hubCamAbierto()) return;
+  for (const { idx, ses } of hubCamFilas()) {
+    if (!ses.pc) continue;
+    try {
+      (await ses.pc.getStats()).forEach(r => {
+        if (r.type === 'inbound-rtp' && r.kind === 'video' && r.frameWidth) {
+          const txt = r.frameWidth + '×' + r.frameHeight + ' @ ' + Math.round(r.framesPerSecond || 0) + ' fps';
+          HUBCAM.llega.set(idx, txt);
+          const el = document.getElementById('hubcam-llega-' + idx);
+          if (el) el.textContent = txt;
+        }
+      });
+    } catch (_) {}
+  }
+  hubCamRefrescar();
+}
+
 
 /* ── LA CÁMARA VUELVE SOLA ──
    Si la cámara de un teléfono se corta sin que nadie la quite (el teléfono
@@ -8855,6 +9006,7 @@ function pintarPresenciaMandos(msg) {
   }
 
   CAM.disponibles = msg.camaras || [];
+  hubCamRefrescar();
   if (CAM.volver.size) _camReintentar();
   const nCam = CAM.disponibles.length;
   const maxCam = msg.maxCamaras || 4;
