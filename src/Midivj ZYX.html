@@ -9451,8 +9451,26 @@ function dibujarSenales() {
     dibujarSenal(i);
   }
   if (VIS.sesiones.size) {
-    dibujarPrevia();
-    if (S.frame % 2 === 0) dibujarMosaico();
+    if (visNecesita('previa')) dibujarPrevia();
+    if (S.frame % 2 === 0 && visNecesita('pistas')) dibujarMosaico();
+  }
+}
+/* Cada visor avisa qué videos tiene a la vista (orden 'ver'): lo que nadie
+   mira no se dibuja ni se codifica. Sin aviso, se manda todo. */
+function visNecesita(nombre) {
+  for (const s of VIS.sesiones.values()) if (!s.ver || s.ver[nombre] !== false) return true;
+  return false;
+}
+async function _visAplicarVer(sesion) {
+  for (const [nombre, sender] of Object.entries(sesion.senders || {})) {
+    try {
+      const p = sender.getParameters();
+      if (!p.encodings || !p.encodings.length) continue;
+      const activo = !sesion.ver || sesion.ver[nombre] !== false;
+      if (p.encodings[0].active === activo) continue;
+      p.encodings[0].active = activo;
+      await sender.setParameters(p);
+    } catch (e) { /* el navegador decide */ }
   }
 }
 
@@ -10102,6 +10120,13 @@ function visorOrden(msg) {
     case 'estado':
       publicarEstadoVisor(true);
       return;
+    case 'ver': {
+      const sesion = VIS.sesiones.get(msg.id);
+      if (!sesion) return;
+      sesion.ver = { salida: msg.salida !== false, previa: msg.previa !== false, pistas: msg.pistas !== false };
+      _visAplicarVer(sesion);
+      return;
+    }
     default:
       return;
   }
@@ -10116,15 +10141,30 @@ function _visLog(msg) {
   console.log('[visor] ' + msg);
   appendNetLog('🎚 ' + msg);
 }
-async function _visFijarCalidad(sender, bps, reducir) {
+/* El visor es un monitor: importa más que vaya al día y fluido que nítido.
+   Si la red o el equipo no dan, baja la resolución en vez de acumular
+   cuadros atrasados (antes: 'maintain-resolution'). */
+async function _visFijarCalidad(sender, bps, reducir, fps) {
   try {
     const params = sender.getParameters();
     if (!params.encodings || !params.encodings.length) params.encodings = [{}];
     params.encodings[0].maxBitrate = bps;
     params.encodings[0].scaleResolutionDownBy = reducir || 1;
-    params.degradationPreference = 'maintain-resolution';
+    if (fps) params.encodings[0].maxFramerate = fps;
+    params.degradationPreference = 'maintain-framerate';
     await sender.setParameters(params);
   } catch (e) { /* el navegador elige */ }
+}
+/* H.264 primero: lo codifica y decodifica el hardware en casi todos los
+   equipos (en iPad/iPhone es el único con decodificador por hardware), así
+   el visor no se atrasa decodificando. Los demás códecs quedan de respaldo. */
+function _visPreferirH264(pc) {
+  try {
+    const cap = RTCRtpSender.getCapabilities && RTCRtpSender.getCapabilities('video');
+    if (!cap || !cap.codecs || !cap.codecs.some(c => /h264/i.test(c.mimeType))) return;
+    const orden = [...cap.codecs.filter(c => /h264/i.test(c.mimeType)), ...cap.codecs.filter(c => !/h264/i.test(c.mimeType))];
+    pc.getTransceivers().forEach(tr => { if (tr.setCodecPreferences) tr.setCodecPreferences(orden); });
+  } catch (e) { /* queda el códec que elija el navegador */ }
 }
 async function _visIniciar(id) {
   if (id === undefined || id === null || VIS.sesiones.has(id)) return;
@@ -10143,22 +10183,28 @@ async function _visIniciar(id) {
   /* La salida ya va a tamaño completo a HDMI/OBS: al visor le basta menos */
   const k = Math.max(1, Math.max(cvs.width, cvs.height) / 1280);
   const videos = [
-    ['salida', salida, 4_000_000, k],
-    ['previa', VIS.pv.flujo, 3_000_000, k],
-    ['pistas', VIS.mv.flujo, 2_500_000, 1],
+    ['salida', salida, 4_000_000, k, 30],
+    ['previa', VIS.pv.flujo, 3_000_000, k, 30],
+    ['pistas', VIS.mv.flujo, 2_500_000, 1, 15],
   ];
   const porPista = new Map();
   const ajustes = [];
-  for (const [nombre, flujo, bps, reducir] of videos) {
+  sesion.senders = {};
+  for (const [nombre, flujo, bps, reducir, fps] of videos) {
     const pista = flujo.getVideoTracks()[0];
     if (!pista) continue;
-    ajustes.push([pc.addTrack(pista, flujo), bps, reducir]);
+    try { pista.contentHint = 'motion'; } catch (e) {}
+    const sender = pc.addTrack(pista, flujo);
+    sesion.senders[nombre] = sender;
+    ajustes.push([sender, bps, reducir, fps]);
     porPista.set(pista.id, nombre);
   }
+  _visPreferirH264(pc);
   /* El visor puede irse mientras esto espera: la sesión ya no es ésta */
   const sigue = () => VIS.sesiones.get(id) === sesion;
-  for (const [sender, bps, reducir] of ajustes) await _visFijarCalidad(sender, bps, reducir);
+  for (const [sender, bps, reducir, fps] of ajustes) await _visFijarCalidad(sender, bps, reducir, fps);
   if (!sigue()) return;
+  if (sesion.ver) await _visAplicarVer(sesion);   // el visor pudo avisar antes de terminar de armar la conexión
 
   pc.onicecandidate = ev => { if (ev.candidate) _visEnviar({ type: 'visor-candidato', id, candidato: ev.candidate }); };
   let timerDesconexion = 0;

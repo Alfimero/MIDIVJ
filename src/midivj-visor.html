@@ -24,6 +24,10 @@ button{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06
 button:disabled{opacity:.35;cursor:default;}
 select{font-family:var(--mono);font-size:10px;color:var(--text);background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:7px 6px;max-width:100%;}
 #trans{max-width:210px;}
+#lat{font-size:10px;color:var(--text3);white-space:nowrap;}
+#lat.bien{color:var(--previa);}
+#lat.medio{color:#ffb020;}
+#lat.mal{color:var(--aire);}
 body[data-trans="corte"] #dur{display:none;}
 
 /* ── Barra superior ── */
@@ -129,6 +133,7 @@ body[data-modo="directo"] #inferior{border-top-color:var(--aire);}
   <h1>MIDIVJ · VISOR</h1>
   <span id="estado">conectando…</span>
   <span id="rec">● GRABANDO</span>
+  <span id="lat" title="Retardo estimado del video en este visor: cola de recepción + red + decodificación. No incluye la captura ni la codificación en la PC de MIDIVJ."></span>
   <div class="seg" id="seg-vista" title="Qué se ve en la ventana principal">
     <button data-vista="salida">SALIDA</button>
     <button data-vista="dividida" class="on">DIVIDIDA</button>
@@ -364,6 +369,9 @@ async function recibirOferta(sdp) {
     const nombre = V.videos[ev.transceiver.mid];
     const el = { salida: $('v-salida'), previa: $('v-previa'), pistas: $('v-pistas') }[nombre];
     if (!el) return;
+    /* Sin colchón: el navegador muestra cada cuadro en cuanto llega */
+    try { ev.receiver.jitterBufferTarget = 0; } catch (e) {}
+    try { ev.receiver.playoutDelayHint = 0; } catch (e) {}
     el.srcObject = new MediaStream([ev.track]);
     el.play().catch(() => {});
     if (nombre !== 'pistas') el.parentElement.classList.add('con');
@@ -372,7 +380,7 @@ async function recibirOferta(sdp) {
   let timerDesconexion = 0;
   pc.onconnectionstatechange = () => {
     if (pc !== V.pc) return;
-    if (pc.connectionState === 'connected') { clearTimeout(timerDesconexion); estado('sala ' + SALA + ' · en vivo', 'on'); return; }
+    if (pc.connectionState === 'connected') { clearTimeout(timerDesconexion); estado('sala ' + SALA + ' · en vivo', 'on'); V.verFirma = ''; avisarVer(); return; }
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       cerrarVideo();
       estado('se cortó el video — reconectando', 'wait');
@@ -401,7 +409,61 @@ async function recibirCandidato(candidato) {
   if (V.pc && V.pc.remoteDescription) await V.pc.addIceCandidate(candidato).catch(() => {});
   else V.candidatosPendientes.push(candidato);
 }
+/* ── Sólo se pide lo que está a la vista ──
+   MIDIVJ deja de dibujar y de codificar los videos que este visor no
+   muestra (el monitor oculto por la vista, las miniaturas fuera de la
+   pestaña PISTAS, todo si la página está en segundo plano). */
+function avisarVer() {
+  if (!V.pc || V.pc.connectionState !== 'connected' || !V.ws || V.ws.readyState !== 1) return;
+  const vista = document.body.dataset.vista, oculto = document.hidden;
+  const ver = { salida: !oculto && vista !== 'previa', previa: !oculto && vista !== 'salida', pistas: !oculto && V.tab === 'pistas' };
+  const firma = JSON.stringify(ver);
+  if (firma === V.verFirma) return;
+  V.verFirma = firma;
+  orden('ver', ver);
+}
+
+/* ── Medidor de retardo y vigilante ──
+   Cada 2 s: cola de recepción (jitter buffer) + decodificación + mitad del
+   ida y vuelta de la red, del video más atrasado. Si el retardo pasa de
+   1 s durante 6 s seguidos, se reconecta para empezar al día. */
+const LAT = { prev: new Map(), malas: 0, ultimaReconexion: 0 };
+async function medirRetardo() {
+  const el = $('lat');
+  const pc = V.pc;
+  if (!pc || pc.connectionState !== 'connected') { el.textContent = ''; el.className = ''; LAT.prev.clear(); LAT.malas = 0; return; }
+  let peor = null, rtt = 0;
+  try {
+    (await pc.getStats()).forEach(r => {
+      if (r.type === 'candidate-pair' && r.nominated && r.currentRoundTripTime) rtt = r.currentRoundTripTime * 1000;
+      if (r.type !== 'inbound-rtp' || r.kind !== 'video') return;
+      const a = LAT.prev.get(r.id);
+      LAT.prev.set(r.id, { jb: r.jitterBufferDelay || 0, n: r.jitterBufferEmittedCount || 0, dec: r.totalDecodeTime || 0, fd: r.framesDecoded || 0 });
+      if (!a) return;
+      const dn = (r.jitterBufferEmittedCount || 0) - a.n, df = (r.framesDecoded || 0) - a.fd;
+      if (dn <= 0) return;   // ese video no está llegando (no está a la vista)
+      const ms = 1000 * ((r.jitterBufferDelay || 0) - a.jb) / dn + (df > 0 ? 1000 * ((r.totalDecodeTime || 0) - a.dec) / df : 0);
+      if (peor === null || ms > peor) peor = ms;
+    });
+  } catch (e) { return; }
+  if (pc !== V.pc) return;
+  if (peor === null) { el.textContent = ''; el.className = ''; LAT.malas = 0; return; }
+  const total = Math.round(peor + rtt / 2);
+  V.retardo = total;
+  el.textContent = '≈ ' + (total >= 1000 ? (total / 1000).toFixed(1) + ' s' : total + ' ms');
+  el.className = total < 150 ? 'bien' : total < 400 ? 'medio' : 'mal';
+  LAT.malas = total > 1000 ? LAT.malas + 1 : 0;
+  if (LAT.malas >= 3 && Date.now() - LAT.ultimaReconexion > 30000 && V.ws && V.ws.readyState === 1) {
+    LAT.ultimaReconexion = Date.now(); LAT.malas = 0;
+    toast('El video venía atrasado ' + (total / 1000).toFixed(1) + ' s: reconectando para ponerlo al día');
+    cerrarVideo();
+    V.ws.close();   // al volver a entrar, MIDIVJ ofrece de nuevo
+  }
+}
+setInterval(medirRetardo, 2000);
+
 function cerrarVideo() {
+  LAT.prev.clear();
   if (V.pc) { V.pc.onconnectionstatechange = null; V.pc.close(); V.pc = null; }
   ['v-salida', 'v-previa', 'v-pistas'].forEach(id => { $(id).srcObject = null; });
   $('mon-salida').classList.remove('con');
@@ -689,6 +751,7 @@ $('seg-vista').addEventListener('click', ev => {
   document.body.dataset.vista = b.dataset.vista;
   pintarControles();
   recordar();
+  avisarVer();
 });
 $('seg-modo').addEventListener('click', ev => {
   const b = ev.target.closest('button[data-modo]');
@@ -706,6 +769,7 @@ $('pestanas').addEventListener('click', ev => {
   pintarControles();
   pintarTira();
   recordar();
+  avisarVer();
 });
 $('todas').onchange = ev => { V.todas = ev.target.checked; pintarTira(); recordar(); };
 $('pantalla').onclick = () => {
@@ -723,6 +787,7 @@ function pintarControles() {
 
 /* El navegador puede pausar los videos al volver de segundo plano */
 document.addEventListener('visibilitychange', () => {
+  avisarVer();
   if (document.visibilityState !== 'visible') return;
   ['v-salida', 'v-previa', 'v-pistas'].forEach(id => { const v = $(id); if (v.srcObject) v.play().catch(() => {}); });
   if (V.ws && V.ws.readyState === 1) orden('estado');
