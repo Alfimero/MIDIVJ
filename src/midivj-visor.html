@@ -93,6 +93,9 @@ body[data-modo="directo"] #inferior{border-top-color:var(--aire);}
 .tarj .pie input[type=range]{flex:1;min-width:0;accent-color:var(--accent2);height:22px;}
 .tarj .pie button{padding:5px 7px;font-size:9px;}
 .tarj .pie button.peligro{border-color:var(--aire);color:var(--aire);}
+.tarj .pie button.seguro{padding:4px 6px;font-size:12px;}
+.tarj .pie button.seguro.on{border-color:var(--previa);background:rgba(0,220,130,.14);}
+.tarj .aviso{flex:none;padding:0 7px 3px;font-size:8px;color:#ffb020;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .tarj .franja{height:4px;flex:none;}
 .tarj.clip{width:150px;justify-content:flex-start;}
 .tarj.clip .nom{white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;line-height:1.35;padding-top:8px;}
@@ -426,7 +429,7 @@ function pintar() {
 /* El arreglo sobre el que actúa la barra: la previa o la salida */
 function arreglo() {
   const e = V.est;
-  return V.modo === 'directo' ? e.pistas.map(p => ({ on: p.on, opacidad: p.opacidad, clip: p.clip })) : e.previa;
+  return V.modo === 'directo' ? e.pistas.map(p => ({ on: p.on, opacidad: p.opacidad, clip: p.clip, fijo: !!p.fijo })) : e.previa;
 }
 
 function pintarTira() {
@@ -452,12 +455,18 @@ function tiraPistas(e) {
   return e.pistas.map((p, i) => {
     const aire = p.on && p.cargada, previa = e.previa[i].on && p.cargada && !e.igual;
     const a = arr[i];
+    /* Fuente en vivo con clip-interruptor: encendida pero con el clip apagado no se ve, salvo con el seguro */
+    const clipVivo = !!a.clip && e.clips.some(c => c.id === a.clip && c.vivo);
+    const tapada = p.interruptor && a.on && !a.fijo && !clipVivo;
+    const seguro = p.vivo ? '<button data-acc="fijo" data-i="' + i + '" class="seguro' + (a.fijo ? ' on' : '') + '" title="Seguro: 🔒 la fuente se ve siempre que la pista esté encendida, aunque su clip esté apagado. 🔓 el clip decide si se ve.">' + (a.fijo ? '🔒' : '🔓') + '</button>' : '';
     return '<div class="tarj pista' + (aire ? ' aire' : '') + (previa ? ' previa' : '') + (p.cargada ? '' : ' sin') + '" data-acc="pista" data-i="' + i + '">' +
       '<div class="franja" style="background:' + esc(p.color) + '"></div>' +
       '<canvas data-i="' + i + '" width="320" height="180"></canvas>' + marcas(aire, previa) +
       '<div class="nom">' + nPista(i) + ' · ' + (p.cargada ? (ICONO[p.tipo] || '') + ' ' + esc(p.fuente) : 'sin fuente') + '</div>' +
+      (tapada ? '<div class="aviso">clip apagado · 🔓 para verla</div>' : '') +
       '<div class="pie">' +
         '<input type="range" min="0" max="100" value="' + Math.round(a.opacidad * 100) + '" data-acc="opacidad" data-i="' + i + '" title="Opacidad"' + (p.cargada ? '' : ' disabled') + '>' +
+        seguro +
         '<button data-acc="solo" data-i="' + i + '" title="Deja sólo esta pista encendida"' + (p.cargada ? '' : ' disabled') + '>SOLO</button>' +
       '</div></div>';
   }).join('');
@@ -499,7 +508,7 @@ function tiraMateriales(e) {
 
 function tiraEscenas(e) {
   const igualA = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  const salida = e.pistas.map(p => ({ on: p.on, opacidad: p.opacidad, clip: p.clip }));
+  const salida = e.pistas.map(p => ({ on: p.on, opacidad: p.opacidad, clip: p.clip, fijo: !!p.fijo }));
   let html = '<div class="tarj nueva" data-acc="escena-nueva">＋ GUARDAR<br>' + (V.modo === 'directo' ? 'LA SALIDA' : 'LA PREVIA') + '<br>COMO ESCENA</div>';
   if (!e.escenas.length) html += '<div class="hueco">Todavía no hay escenas.<br>Arma un arreglo de pistas y guárdalo: queda en la sesión de MIDIVJ.</div>';
   for (const s of e.escenas) {
@@ -556,6 +565,9 @@ $('tira').addEventListener('click', ev => {
       break;
     case 'solo':
       orden(P() + '-solo', { pista: i });
+      break;
+    case 'fijo':
+      orden(P() + '-pista', { pista: i, fijo: !arr[i].fijo });
       break;
     case 'clip': {
       const puesto = arr[i].clip === id && arr[i].on;

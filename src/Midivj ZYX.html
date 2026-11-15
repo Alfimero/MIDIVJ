@@ -1174,6 +1174,9 @@ function makeTrack(i) {
        vivo entre sí), 'capa' (se superpone: ni apaga ni la apagan) o 'todas'
        (corta a cualquier pista). Ver grupoExcl(). */
     excl:'auto',
+    /* Seguro de la fuente en vivo: true = se ve siempre que la pista esté
+       encendida, aunque su clip-interruptor esté apagado. Ver vivoVisible(). */
+    fijo:false,
     _fade:null, _fadeSeq:0, _fadeTimer:0,   // fundido de opacidad en curso ('disolver')
     selLayerId:'media',    // capa que editan TRANSFORM DE PISTA y la caja interactiva (sólo si layersLinked=false)
     layersLinked:true,     // true = todas las capas comparten t.xform (el color marca dónde va todo); false = transform por capa
@@ -1827,6 +1830,7 @@ async function applyProjectData(d) {
       S.tracks[i].transOut = td.transOut || 'none';
       S.tracks[i].transDur = td.transDur !== undefined ? td.transDur : 0.5;
       S.tracks[i].excl = EXCL_MODOS.includes(td.excl) ? td.excl : 'auto';
+      S.tracks[i].fijo = td.fijo === true;
       if(td.videoOffset!==undefined) S.tracks[i].videoOffset=clampOffset(td.videoOffset);
       if(td.xform) S.tracks[i].xform=xformDefault(td.xform);
       /* Capas: se desechan las actuales (streams, URLs) y se reconstruyen */
@@ -2379,7 +2383,9 @@ function _applyStream(track, stream, type, label) {
        de que lo haga _camRecibirOferta()'s pc.onconnectionstatechange. */
     console.log('[fuente] pista '+track.i+' ('+type+' — "'+label+'"): el track de video terminó por sí solo (onended) — se corta la pista');
     appendNetLog('⚠ pista '+track.i+' ('+type+'): el video terminó por sí solo');
+    const ses = type === 'phone' ? CAM.sesiones.get(track.i) : null;
     stopTrackSource(track.i);
+    if (ses) _camQuiereVolver(track.i, ses.slot, 'el video terminó por sí solo');
   };
   renderAll();
 }
@@ -2420,6 +2426,7 @@ function releaseFileMedia(track) {
 
 function stopTrackSource(trackIdx) {
   const t = S.tracks[trackIdx];
+  _camOlvidar(trackIdx);   // quitar la fuente a mano cancela la espera de la cámara
   if (t.sourceType === 'browser') closeBrowserWindow(trackIdx, true);
   stopTrackStream(t);
   releaseFileMedia(t);
@@ -2445,10 +2452,14 @@ function toggleCapture(trackIdx) {
    MASTER CLOCK — single cursor controls all tracks
 ═══════════════════════════════════════════════════════ */
 function masterTick(now) {
+  if (masterPaso(now)) requestAnimationFrame(masterTick);
+}
+/* Un paso del reloj; true = sigue corriendo */
+function masterPaso(now) {
   if (!S.masterPlaying) {
     /* Still update masterTime from active clips so cursor follows them */
     _syncMasterFromClips();
-    return;
+    return false;
   }
   if (S.masterLastT !== null) {
     const elapsed = (now - S.masterLastT) / 1000;
@@ -2458,7 +2469,7 @@ function masterTick(now) {
   S.masterLastT = now;
   syncTracksToMaster();
   _syncMasterFromClips();
-  requestAnimationFrame(masterTick);
+  return true;
 }
 
 /* When clips are playing, update masterTime to match the first active clip */
@@ -2558,7 +2569,7 @@ function resetAll() {
     stopTrackStream(t);
     t.mediaRef = null;
     t.vid.pause(); t.vid.src=''; t.loaded=false; t.dur=0; t.loadedName='—'; t.activeClip=null; t.clips=[];
-    t.visible = true;
+    t.visible = true; t.fijo = false;
   });
   S.escenas = []; VIS.previa = null;
   S.selClipId=null; clipSeq=1;
@@ -3147,12 +3158,12 @@ function renderTabs() {
     if (t.visible === false) {
       btn.style.textDecoration = 'line-through';
       btn.style.opacity = '.55';
-      btn.title += ' — APAGADA (fuera de la salida)';
+      btn.title += ' — APAGADA: no sale a la salida (no es un fallo de la señal)';
       const ojo = document.createElement('button');
       ojo.textContent = '⦸';
-      ojo.title = 'Pista apagada por una escena o por el visor de control: clic para volver a mostrarla';
+      ojo.title = 'Pista APAGADA: una escena o el visor de control la sacó de la salida. No es un fallo de la señal. Clic para volver a mostrarla';
       ojo.style.cssText = 'background:none;border:none;color:var(--hot);cursor:pointer;font-size:10px;padding:0;line-height:1;';
-      ojo.onclick = e => { e.stopPropagation(); t.visible = true; renderTabs(); };
+      ojo.onclick = e => { e.stopPropagation(); t.visible = true; renderTabs(); renderTrackInfo(); };
       wrap.appendChild(ojo);
     }
 
@@ -3266,10 +3277,15 @@ function renderTrackInfo() {
 </div>` : '';
 
   const camSes = CAM.sesiones.get(idx);
+  const camVuelve = CAM.volver.get(idx);
   const camEsperando = camSes && camSes.estado !== 'lista'
-    ? `<span style="color:var(--yellow);font-size:8px;">⏳ esperando cámara ${camSes.slot}…</span>` : '';
+    ? `<span style="color:var(--yellow);font-size:8px;">⏳ esperando cámara ${camSes.slot}…</span>`
+    : camVuelve ? `<span style="color:var(--yellow);font-size:8px;" title="La cámara se cortó sin que la quitaras: en cuanto el teléfono vuelva a /camara se conecta sola a esta pista. ✕ cancela la espera.">⏳ cámara ${camVuelve.slot} cortada · vuelve sola</span>` : '';
+  const apagada = t.visible === false
+    ? `<div class="ti-row" style="gap:6px;padding:3px 5px;border:1px solid var(--hot);border-radius:3px;"><span style="font-family:var(--mono);font-size:8px;color:var(--hot);flex:1;">⦸ PISTA APAGADA · no sale a la salida (la apagó una escena o el visor de control)</span><button class="hbtn" style="font-size:8px;padding:2px 6px;" onclick="mostrarPista(S.tracks[${idx}])">MOSTRAR</button></div>` : '';
 
   document.getElementById('track-info').innerHTML = `
+${apagada}
 <div class="ti-row">
   <span class="ti-name">${trackSourceLabel(t, srcIco)}</span>
   <span class="ti-dur">${t.loaded&&t.dur?ft(t.dur):(t.loaded?'∞':'—')}</span>
@@ -3424,7 +3440,8 @@ function renderPlaylistPanel(t) {
     <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackGallery()" title="Agregar imágenes a la lista">+ 🖼</button>
     <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="clearPlaylist(${idx})" title="Vaciar la lista">🗑 VACIAR</button>`,
   `${t.playlist.length ? rows : '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">Sin medios en la lista.</div>'}
-  ${live ? `<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">${srcIcon(t.sourceType)} Fuente en vivo: <b>${escHtml(t.loadedName)}</b> → GENERAR CLIPS crea un clip-interruptor (toggle) para mostrarla/ocultarla.</div>` : ''}
+  ${live ? `<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">${srcIcon(t.sourceType)} Fuente en vivo: <b>${escHtml(t.loadedName)}</b> → GENERAR CLIPS crea un clip-interruptor (toggle) para mostrarla/ocultarla.</div>
+  <div class="ti-row" style="gap:6px;"><button class="hbtn" style="font-size:9px;padding:3px 7px;${t.fijo ? 'border-color:var(--accent);color:var(--accent);' : ''}" onclick="alternarFijo(${idx})" title="Seguro de la fuente en vivo. 🔒 = se ve siempre que la pista esté encendida, aunque su clip-interruptor esté apagado. 🔓 = el clip decide si se ve.">${t.fijo ? '🔒 SIEMPRE VISIBLE' : '🔓 SEGÚN EL CLIP'}</button></div>` : ''}
   <div class="ti-row" style="gap:6px;margin-top:4px;flex-wrap:wrap;">
     <label style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:8px;color:var(--text3);cursor:pointer;">
       <input type="checkbox" ${t.playlistLoop?'checked':''} onchange="S.tracks[${idx}].playlistLoop=this.checked">
@@ -4057,6 +4074,15 @@ function mostrarPista(t) {
   if (t.visible !== false) return;
   t.visible = true;
   renderTabs();
+  if (S.tracks[S.ati] === t) renderTrackInfo();
+}
+/* Seguro de la fuente en vivo (ver vivoVisible) */
+function alternarFijo(i) {
+  const t = S.tracks[i];
+  t.fijo = !t.fijo;
+  renderTrackInfo();
+  renderTL();
+  publicarEstadoVisor(false);
 }
 function manualStopClip(id) {
   const r = findClip(id); if(!r) return;
@@ -6840,6 +6866,8 @@ function drawTrackMedia(t, ti, zdx0, zdy0, zdw0, zdh0, mH, mV, rgb) {
 /* ¿Se ve ahora la fuente en vivo de la pista? Sin clips, siempre: ocupa
    todo el timeline, encima o debajo de los videos de las otras pistas. */
 function vivoVisible(t) {
+  /* Seguro puesto (🔒): la fuente se ve mientras la pista esté encendida */
+  if (t.fijo) return true;
   /* Clips-interruptor (srcLive, ⚡ GENERAR CLIPS sobre una fuente en
      vivo): si la pista tiene alguno, la fuente sólo se ve mientras uno
      esté activo. Si no, ventana de visibilidad clásica por rango. */
@@ -6901,8 +6929,42 @@ function drawLayer(t, ti, layer, zdx, zdy, zdw, zdh) {
 }
 
 let _outBlanked = false;   // ver loop(): el lienzo ya se limpió por no haber nada activo
+/* ── SEGUNDO PLANO ──
+   Con la pestaña oculta o la ventana tapada por otra, el navegador deja de
+   llamar a requestAnimationFrame: la salida (HDMI, OBS, visor, grabación)
+   se congelaba. Mientras está oculta, un Worker —cuyos temporizadores no
+   se frenan— marca el paso a ~30 cuadros por segundo. Si rAF sigue vivo,
+   el paso de fondo no hace nada. */
+const FONDO = { w: null, t: 0, raf: 0, ms: 33 };
+function fondoPaso() {
+  const ahora = performance.now();
+  if (ahora - FONDO.raf < 150) return;
+  try { masterPaso(ahora); cuadro(); } catch (e) { /* un cuadro que falla no detiene el paso */ }
+}
+function fondoAjustar() {
+  const oculta = document.hidden;
+  if (!FONDO.w && oculta && !FONDO.t) {
+    try {
+      const src = 'let t=0;onmessage=e=>{clearInterval(t);t=e.data?setInterval(()=>postMessage(0),e.data):0;};';
+      FONDO.w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      FONDO.w.onmessage = fondoPaso;
+      FONDO.w.onerror = () => { FONDO.w = null; };
+    } catch (e) { FONDO.w = null; }
+  }
+  if (FONDO.w) FONDO.w.postMessage(oculta ? FONDO.ms : 0);
+  else {
+    /* sin Worker: el temporizador de la página (más lento en segundo plano) */
+    clearInterval(FONDO.t); FONDO.t = oculta ? setInterval(fondoPaso, FONDO.ms) : 0;
+  }
+}
+document.addEventListener('visibilitychange', fondoAjustar);
+
 function loop() {
   requestAnimationFrame(loop);
+  FONDO.raf = performance.now();
+  cuadro();
+}
+function cuadro() {
   S.frame++;
   const W=cvs.width, H=cvs.height;
 
@@ -7676,7 +7738,7 @@ async function saveProject() {
     media: { folderHint: MEDIA.library?.rootName || '' },
     tracks: S.tracks.map(t=>({id:t.id,name:t.name,opacity:t.opacity,videoOffset:t.videoOffset||0,
       ajuste:t.ajuste||'auto', transIn:t.transIn||'none', transOut:t.transOut||'none', transDur:t.transDur ?? 0.5,
-      excl:t.excl||'auto',
+      excl:t.excl||'auto', fijo:!!t.fijo,
       xform:{...t.xform},
       vproc:{...t.vproc},
       media:t.sourceType==='file' ? serializeMediaRef(t.mediaRef) : null,
@@ -7813,7 +7875,8 @@ const APP_DISP = (() => {
 const CAM = {
   sesiones: new Map(),   // trackIdx -> { slot, pc, candidatosPendientes, estado, timeout }
   porSlot:  new Map(),   // slot -> trackIdx
-  disponibles: []        // última presencia.camaras recibida, para el selector
+  disponibles: [],       // última presencia.camaras recibida, para el selector
+  volver: new Map()      // trackIdx -> { slot, intentos, timer }: cámaras que se cortaron solas y deben volver
 };
 
 /* Visores de /salida (OBS u otro navegador) conectados por WebRTC — ver la
@@ -8053,6 +8116,7 @@ function _camIniciar(trackIdx, slot) {
   const timeout = setTimeout(() => {
     _camLog('cámara '+slot+' (pista '+trackIdx+') no respondió a "camara-iniciar" en 15 s — cancelando pedido');
     _camCerrar(trackIdx, true, 'timeout esperando oferta del teléfono (15s)');
+    _camReintentarLuego();
   }, 15000);
   CAM.sesiones.set(trackIdx, { slot, pc: null, candidatosPendientes: [], estado: 'pidiendo', timeout });
   CAM.porSlot.set(slot, trackIdx);
@@ -8098,6 +8162,8 @@ async function _camRecibirOferta(slot, sdp) {
        marca, _camCerrar() cerraba la conexión que se acababa de establecer
        en el mismo instante en que llegaba: conectaba y se cortaba sola,
        siempre, cada vez. Ver ADR-004, complemento (6). */
+    const v = CAM.volver.get(trackIdx);
+    if (v) { _camOlvidar(trackIdx); _camLog('cámara '+slot+' (pista '+trackIdx+'): volvió sola'); }
     sesion.aplicando = true;
     try { _applyStream(S.tracks[trackIdx], ev.streams[0], 'phone', 'Cámara — Mando '+slot); }
     finally { sesion.aplicando = false; }
@@ -8117,12 +8183,14 @@ async function _camRecibirOferta(slot, sdp) {
     if (pc.connectionState === 'connected') { clearTimeout(timerDesconexion); return; }
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       _camCerrar(trackIdx, true, 'RTCPeerConnection en estado "'+pc.connectionState+'"');
+      _camQuiereVolver(trackIdx, slot, 'se cayó la conexión');
     } else if (pc.connectionState === 'disconnected') {
       clearTimeout(timerDesconexion);
       timerDesconexion = setTimeout(() => {
         if (pc.connectionState === 'disconnected') {
           _camLog('cámara '+slot+' (pista '+trackIdx+'): siguió "disconnected" 8 s sin recuperarse — se da por caída');
           _camCerrar(trackIdx, true, 'RTCPeerConnection "disconnected" por más de 8s sin recuperarse');
+          _camQuiereVolver(trackIdx, slot, 'se cayó la conexión');
         }
       }, 8000);
     }
@@ -8138,6 +8206,7 @@ async function _camRecibirOferta(slot, sdp) {
   } catch (e) {
     _camLog('⚠ error negociando cámara '+slot+' (pista '+trackIdx+'): '+e.name+' — '+e.message);
     _camCerrar(trackIdx, true, 'error negociando: '+e.message);
+    _camReintentarLuego();
   }
 }
 
@@ -8154,8 +8223,11 @@ function _camColgarRecibido(slot, motivo) {
   if (trackIdx === undefined) return;
   const t = S.tracks[trackIdx];
   _camLog('el teléfono (cámara '+slot+', pista '+trackIdx+') avisó que cuelga — motivo del teléfono: "'+(motivo||'sin especificar')+'"');
-  if (t.sourceType === 'phone') { stopTrackSource(trackIdx); return; }
-  _camCerrar(trackIdx, false, 'colgado remoto (teléfono)');
+  const v = CAM.volver.get(trackIdx);   // un reintento en curso conserva su cuenta
+  if (t.sourceType === 'phone') stopTrackSource(trackIdx);
+  else _camCerrar(trackIdx, false, 'colgado remoto (teléfono)');
+  if (v) CAM.volver.set(trackIdx, v);
+  _camQuiereVolver(trackIdx, slot, motivo);
 }
 
 function _camError(slot, motivo) {
@@ -8163,6 +8235,7 @@ function _camError(slot, motivo) {
   if (trackIdx === undefined) return;
   _camLog('⚠ cámara '+slot+' (pista '+trackIdx+') reportó error: '+(motivo || 'sin especificar'));
   _camCerrar(trackIdx, false, 'error reportado por el teléfono: '+(motivo || 'sin especificar'));
+  _camReintentarLuego();
 }
 
 /* ── CONFIG. DE CÁMARA DEL TELÉFONO ──
@@ -8288,6 +8361,54 @@ function _camCerrar(trackIdx, avisarPhone, motivo) {
   CAM.porSlot.delete(sesion.slot);
   if (avisarPhone) _camEnviar({ type: 'camara-colgar', slot: sesion.slot, motivo });
   if (S.ati === trackIdx) renderTrackInfo();
+}
+
+/* ── LA CÁMARA VUELVE SOLA ──
+   Si la cámara de un teléfono se corta sin que nadie la quite (el teléfono
+   se bloqueó o cambió de app, la Wi-Fi parpadeó, se recargó /camara), la
+   pista la recuerda y la vuelve a pedir en cuanto ese teléfono aparece de
+   nuevo en el relay. Quitar la fuente (✕), ponerle otra a la pista o el
+   botón DETENER del teléfono cancelan la espera. */
+const CAM_REINTENTOS = 8;
+function _camOlvidar(trackIdx) {
+  const v = CAM.volver.get(trackIdx);
+  if (!v) return;
+  clearTimeout(v.timer);
+  CAM.volver.delete(trackIdx);
+}
+function _camQuiereVolver(trackIdx, slot, motivo) {
+  if (/DETENER/.test(motivo || '')) { _camOlvidar(trackIdx); return; }   // la apagaron a propósito desde el teléfono
+  const t = S.tracks[trackIdx];
+  if (t.loaded && t.sourceType !== 'phone') return;   // la pista ya tiene otra fuente
+  if (!CAM.volver.has(trackIdx)) {
+    CAM.volver.set(trackIdx, { slot, intentos: 0, timer: 0 });
+    _camLog('cámara '+slot+' (pista '+trackIdx+') se cortó sola — vuelve a esta pista en cuanto el teléfono reaparezca');
+  }
+  if (S.ati === trackIdx) renderTrackInfo();
+  _camReintentarLuego();
+}
+function _camReintentarLuego() {
+  CAM.volver.forEach(v => { clearTimeout(v.timer); v.timer = setTimeout(_camReintentar, 2500); });
+}
+function _camReintentar() {
+  if (!netWS || netWS.readyState !== 1) return;
+  CAM.volver.forEach((v, trackIdx) => {
+    const t = S.tracks[trackIdx];
+    if (CAM.sesiones.has(trackIdx)) return;                       // ya hay un pedido en curso
+    if (t.loaded && t.sourceType !== 'phone') { _camOlvidar(trackIdx); return; }
+    if (!CAM.disponibles.some(c => c.slot === v.slot)) return;    // el teléfono no está: se espera a la próxima presencia
+    const otra = CAM.porSlot.get(v.slot);
+    if (otra !== undefined && otra !== trackIdx) { _camOlvidar(trackIdx); return; }
+    if (v.intentos >= CAM_REINTENTOS) {
+      _camLog('cámara '+v.slot+' (pista '+trackIdx+'): no volvió tras '+CAM_REINTENTOS+' intentos — elige 📱 CÁMARA de nuevo');
+      _camOlvidar(trackIdx);
+      if (S.ati === trackIdx) renderTrackInfo();
+      return;
+    }
+    v.intentos++;
+    _camLog('cámara '+v.slot+' (pista '+trackIdx+'): pidiéndola de nuevo (intento '+v.intentos+')');
+    _camIniciar(trackIdx, v.slot);
+  });
 }
 
 /* Sólo diagnóstico: si esta pestaña pasa a segundo plano justo antes de que
@@ -8630,6 +8751,7 @@ function pintarPresenciaMandos(msg) {
   }
 
   CAM.disponibles = msg.camaras || [];
+  if (CAM.volver.size) _camReintentar();
   const nCam = CAM.disponibles.length;
   const maxCam = msg.maxCamaras || 4;
   const listaCam = document.getElementById('rp-camaras');
@@ -9261,7 +9383,7 @@ const VISOR_FPS = 30;
 function pistaDeEscena(p) {
   const o = p && typeof p === 'object' ? p : {};
   const opa = +o.opacidad;
-  return { on: o.on !== false, opacidad: Number.isFinite(opa) ? Math.max(0, Math.min(1, opa)) : 1, clip: typeof o.clip === 'string' && o.clip ? o.clip : null };
+  return { on: o.on !== false, opacidad: Number.isFinite(opa) ? Math.max(0, Math.min(1, opa)) : 1, clip: typeof o.clip === 'string' && o.clip ? o.clip : null, fijo: o.fijo === true };
 }
 function escenaLimpia(e) {
   if (!e || !Array.isArray(e.pistas)) return null;
@@ -9273,13 +9395,19 @@ function escenaLimpia(e) {
 }
 /* El arreglo que está ahora en la salida */
 function escenaDeSalida() {
-  return { pistas: S.tracks.map(t => ({ on: t.visible !== false, opacidad: t.opacity, clip: t.activeClip ? t.activeClip.id : null })) };
+  return { pistas: S.tracks.map(t => ({ on: t.visible !== false, opacidad: t.opacity, clip: t.activeClip ? t.activeClip.id : null, fijo: !!t.fijo })) };
 }
+/* La previa sigue a la salida hasta que el visor la edita (VIS.previa):
+   así, lo que se dispara en MIDIVJ o por MIDI también se ve en la previa.
+   Cuando vuelve a quedar igual a la salida, la sigue otra vez. */
 function previaActual() {
+  return VIS.previa || escenaDeSalida();
+}
+function previaEditable() {
   if (!VIS.previa) VIS.previa = escenaDeSalida();
   return VIS.previa;
 }
-const mismasPistas = (a, b) => JSON.stringify(a.pistas) === JSON.stringify(b.pistas);
+const mismasPistas = (a, b) => JSON.stringify(a.pistas.map(pistaDeEscena)) === JSON.stringify(b.pistas.map(pistaDeEscena));
 
 /** Lleva un arreglo a la salida. `seg` > 0 = con la transición `tipo`
     (ver TRANSICIONES DE ESCENA) desde lo que había; 0 = corte. */
@@ -9300,6 +9428,7 @@ function aplicarEscena(esc, seg, tipo) {
       if (!p) return;
       t.visible = p.on !== false;
       t.opacity = p.opacidad;
+      t.fijo = p.fijo === true;
       const actual = t.activeClip ? t.activeClip.id : null;
       if (p.on && p.clip && p.clip !== actual) {
         const r = findClip(p.clip);
@@ -9682,8 +9811,9 @@ function dibujarPrevia() {
         if (layer.kind !== 'media') { drawLayer(t, ti, layer, 0, 0, W, H); continue; }
         const src = fuentePista(t);
         if (!src) continue;
-        /* Fuente en vivo con clips-interruptor: sólo se ve si el arreglo trae uno */
-        if (t.sourceType !== 'file' && t.clips.some(c => c.srcLive)) {
+        /* Fuente en vivo con clips-interruptor: sólo se ve si el arreglo trae
+           uno, salvo que la pista tenga el seguro puesto (🔒) */
+        if (t.sourceType !== 'file' && !p.fijo && t.clips.some(c => c.srcLive)) {
           const r = p.clip ? findClip(p.clip) : null;
           if (!r || !r.clip.srcLive) continue;
         }
@@ -9715,8 +9845,9 @@ function dibujarMosaico() {
 
 /* ── Estado para los visores ── */
 function estadoVisor() {
-  const previa = previaActual();
   const salida = escenaDeSalida();
+  if (VIS.previa && mismasPistas(VIS.previa, salida)) VIS.previa = null;   // sin cambios pendientes: vuelve a seguir a la salida
+  const previa = previaActual();
   return {
     type: 'visor-estado',
     salida: { w: cvs.width, h: cvs.height },
@@ -9725,7 +9856,8 @@ function estadoVisor() {
       nombre: t.name, color: t.acc, cargada: !!t.loaded,
       tipo: t.loaded ? (t.sourceType === 'file' ? (t.mediaKind === 'image' ? 'imagen' : 'video') : t.sourceType) : '',
       fuente: t.loaded ? String(t.loadedName || '').slice(0, 60) : '',
-      on: salida.pistas[i].on, opacidad: salida.pistas[i].opacidad, clip: salida.pistas[i].clip,
+      on: salida.pistas[i].on, opacidad: salida.pistas[i].opacidad, clip: salida.pistas[i].clip, fijo: salida.pistas[i].fijo,
+      vivo: !!t.loaded && t.sourceType !== 'file', interruptor: t.sourceType !== 'file' && t.clips.some(c => c.srcLive),
     })),
     previa: previa.pistas,
     igual: mismasPistas(previa, salida),
@@ -9757,7 +9889,7 @@ function relojVisor() {
 
 /* ── Órdenes del visor ── */
 function visorOrden(msg) {
-  const previa = previaActual();
+  const previa = /^previa-(pista|solo|clip)$/.test(msg.cmd) ? previaEditable() : previaActual();
   const i = parseInt(msg.pista, 10);
   const enRango = i >= 0 && i < N_TRACKS;
   const seg = msg.trans === 'corte' ? 0 : Math.max(0, Math.min(10, +msg.fundido || 0));
@@ -9770,6 +9902,7 @@ function visorOrden(msg) {
       if (!enRango) return;
       if (typeof msg.on === 'boolean') previa.pistas[i].on = msg.on;
       if (msg.opacidad !== undefined && Number.isFinite(+msg.opacidad)) previa.pistas[i].opacidad = Math.max(0, Math.min(1, +msg.opacidad));
+      if (typeof msg.fijo === 'boolean') previa.pistas[i].fijo = msg.fijo;
       break;
     case 'previa-solo':
       if (!enRango) return;
@@ -9785,7 +9918,7 @@ function visorOrden(msg) {
       break;
     }
     case 'previa-copiar':
-      VIS.previa = escenaDeSalida();
+      VIS.previa = null;
       break;
     case 'tomar':
       aplicarEscena(previa, seg, msg.trans);
@@ -9797,13 +9930,16 @@ function visorOrden(msg) {
       const t = S.tracks[i];
       if (typeof msg.on === 'boolean') t.visible = msg.on;
       if (msg.opacidad !== undefined && Number.isFinite(+msg.opacidad)) { t.opacity = Math.max(0, Math.min(1, +msg.opacidad)); refrescarSlidersDePista(i); }
+      if (typeof msg.fijo === 'boolean') { t.fijo = msg.fijo; renderTL(); }
       renderTabs();
+      if (S.ati === i) renderTrackInfo();
       break;
     }
     case 'salida-solo':
       if (!enRango) return;
       S.tracks.forEach((t, k) => { t.visible = k === i || !t.loaded; });
       renderTabs();
+      renderTrackInfo();
       break;
     case 'salida-clip': {
       const r = msg.clip ? findClip(msg.clip) : null;
