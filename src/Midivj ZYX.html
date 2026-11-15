@@ -6395,14 +6395,53 @@ function vprocSrcDims(src) {
   return [ src.videoWidth || src.naturalWidth || src.width || 0,
            src.videoHeight || src.naturalHeight || src.height || 0 ];
 }
+/* Cuenta los cuadros nuevos de un <video> (requestVideoFrameCallback): así
+   el procesador sabe si la imagen cambió desde la última vez. */
+function vprocVigilar(src) {
+  if (src._vfc !== undefined) return src._vfc;
+  src._vfc = typeof src.requestVideoFrameCallback === 'function';
+  if (!src._vfc) return false;
+  src._nf = 0;
+  const paso = () => { src._nf++; src.requestVideoFrameCallback(paso); };
+  src.requestVideoFrameCallback(paso);
+  src.addEventListener('seeked', () => { src._nf++; });
+  src.addEventListener('loadeddata', () => { src._nf++; });
+  src.addEventListener('emptied', () => { src._nf++; });
+  return true;
+}
+/* Tamaño al que se procesa: el de la fuente, pero no más grande de lo que
+   la salida puede mostrar (un video 4K en una salida 1080p se procesa a
+   1080p). Si la pista está agrandada (TRANSFORM) se respeta ese aumento, y
+   si se está grabando su señal limpia se procesa al tamaño original. */
+function vprocTamano(t, w, h) {
+  if (typeof SEN !== 'undefined' && SEN[t.i] && SEN[t.i].cvs && senalEnUso(SEN[t.i])) return [w, h];
+  const x = t.xform || {};
+  const z = Math.max(1, Math.abs(x.scaleX || 1), Math.abs(x.scaleY || 1));
+  const k = Math.max(cvs.width * z / w, cvs.height * z / h);
+  if (!(k < 0.8)) return [w, h];              // menos de 25 % de ahorro: no vale la pena reescalar
+  return [Math.max(2, Math.round(w * k)), Math.max(2, Math.round(h * k))];
+}
 /* Devuelve la fuente tal cual si el procesador está apagado o en neutro
-   (costo cero), o el canvas procesado de la pista si hay algo que aplicar. */
+   (costo cero), o el canvas procesado de la pista si hay algo que aplicar.
+   El resultado se reutiliza mientras la fuente no entregue un cuadro nuevo
+   y los ajustes no cambien: la salida, la previa, el mosaico del visor y la
+   grabación piden la misma imagen varias veces por cuadro, y la pantalla
+   refresca más rápido (60–144 Hz) que el video (24–30 cuadros/s). */
 function vprocApply(t, src) {
   const v = t.vproc;
   if (!v || !v.on || vprocIsIdentity(v)) return src;
   const G = vprocInit(); if (!G) return src;
-  const [w, h] = vprocSrcDims(src);
-  if (!w || !h) return src;
+  const [sw, sh] = vprocSrcDims(src);
+  if (!sw || !sh) return src;
+  const [w, h] = vprocTamano(t, sw, sh);
+  const ahora = performance.now();
+  const esVideo = src instanceof HTMLVideoElement && vprocVigilar(src);
+  const firma = (esVideo ? 'v' + src._nf : 'c' + S.frame) + '|' + w + 'x' + h + '|' +
+    v.gain + ',' + v.brightness + ',' + v.contrast + ',' + v.gamma + ',' + v.wb + ',' + v.backlight + ',' + v.hue + ',' + v.saturation + ',' + v.sharpness;
+  /* Con la página oculta requestVideoFrameCallback no avisa: ahí se procesa siempre.
+     Tope de 250 ms por si algún cuadro nuevo no se anuncia. */
+  if (t._vprocOut && t._vprocSrc === src && t._vprocFirma === firma &&
+      (!esVideo || (!document.hidden && ahora - t._vprocT < 250))) return t._vprocOut;
   const { cvs: cvsGL, gl, tex, u } = G;
   if (cvsGL.width !== w || cvsGL.height !== h) { cvsGL.width = w; cvsGL.height = h; }
   gl.viewport(0, 0, w, h);
@@ -6424,6 +6463,7 @@ function vprocApply(t, src) {
   const o = t._vprocOut;
   if (o.width !== w || o.height !== h) { o.width = w; o.height = h; }
   t._vprocOutCtx.drawImage(cvsGL, 0, 0);
+  t._vprocSrc = src; t._vprocFirma = firma; t._vprocT = ahora;
   return o;
 }
 
