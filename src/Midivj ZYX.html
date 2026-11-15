@@ -10298,6 +10298,7 @@ function estadoVisor() {
       forma: efxParams({ type: 'xform' }).map(p => ({ key: p.key, lbl: p.lbl, min: p.min, max: p.max, step: p.step, def: p.def })),
     },
     grabando: grabacionActiva(),
+    mezcla: estadoMezclaVisor(),
   };
 }
 function publicarEstadoVisor(forzar) {
@@ -10306,6 +10307,27 @@ function publicarEstadoVisor(forzar) {
   if (!forzar && texto === VIS.firma) return;
   VIS.firma = texto;
   netWS.send(texto);
+}
+/* ── La mezcla de audio en el visor ──
+   El estado viaja con 'visor-estado'; los medidores, aparte y sólo mientras
+   algún visor tiene la pestaña AUDIO abierta ('visor-niveles', ~11 por s). */
+function estadoMezclaVisor() {
+  if (typeof mezclaDisponible !== 'function' || !mezclaDisponible()) return null;
+  if (!mezcla) return { activa: false, canales: [], master: { vol: 1, mute: false }, entrada: { label: '', activa: false } };
+  const st = mezcla.getStatus();
+  /* dormida: se pidió encender pero el navegador no deja arrancar el audio sin un clic en MIDIVJ */
+  return { activa: mezcla.activa(), dormida: !!mezcla.ctx && !mezcla.activa(), canales: st.canales, master: st.master, entrada: { label: st.entrada.label, activa: st.entrada.activa } };
+}
+function relojNivelesVisor() {
+  const hace = !!mezcla && [...VIS.sesiones.values()].some(s => s.ver && s.ver.audio);
+  if (hace && !VIS.tNiveles) {
+    VIS.tNiveles = setInterval(() => {
+      if (!mezcla || !netWS || netWS.readyState !== 1) return;
+      const n = mezcla.niveles(), o = {};
+      for (const k in n) o[k] = Math.round(n[k] * 1000) / 1000;
+      netWS.send(JSON.stringify({ type: 'visor-niveles', n: o }));
+    }, 90);
+  } else if (!hace && VIS.tNiveles) { clearInterval(VIS.tNiveles); VIS.tNiveles = 0; }
 }
 function relojVisor() {
   if (VIS.sesiones.size && !VIS.timer) VIS.timer = setInterval(() => publicarEstadoVisor(false), 250);
@@ -10427,8 +10449,9 @@ function visorOrden(msg) {
     case 'ver': {
       const sesion = VIS.sesiones.get(msg.id);
       if (!sesion) return;
-      sesion.ver = { salida: msg.salida !== false, previa: msg.previa !== false, pistas: msg.pistas === 'grande' ? 'grande' : msg.pistas !== false };
+      sesion.ver = { salida: msg.salida !== false, previa: msg.previa !== false, pistas: msg.pistas === 'grande' ? 'grande' : msg.pistas !== false, audio: msg.audio === true };
       _visAplicarVer(sesion);
+      relojNivelesVisor();
       VIS.firma = '';
       publicarEstadoVisor(false);   // el tamaño de las celdas del mosaico puede haber cambiado
       return;
@@ -10446,6 +10469,27 @@ function visorOrden(msg) {
       def.set(val);
       try { def.ui(val); } catch (e) {}
       if (msg.grupo !== 'color' && S.ati === i && typeof syncXov === 'function') syncXov();
+      break;
+    }
+    /* — mezcla de audio — */
+    case 'mezcla-encender':
+      /* El navegador sólo deja arrancar el audio si ya hubo un clic en la página de MIDIVJ */
+      if (!mezclaInicializar()) return;
+      mezcla.start().then(() => {
+        mezclaSincronizar();
+        relojNivelesVisor();
+        VIS.firma = ''; publicarEstadoVisor(false);
+      }).catch(() => {});
+      return;
+    case 'mezcla-canal': {
+      if (!mezcla) return;
+      const canal = String(msg.canal || '');
+      if (canal !== 'master' && !mezcla.canales.has(canal)) return;
+      const k = {};
+      if (msg.vol !== undefined && Number.isFinite(+msg.vol)) k.vol = +msg.vol;
+      if (typeof msg.mute === 'boolean') k.mute = msg.mute;
+      if (typeof msg.rec === 'boolean' && canal !== 'master') k.rec = msg.rec;
+      mezcla.fijar(canal, k);
       break;
     }
     case 'pista-color': {
@@ -10603,6 +10647,7 @@ function _visCerrar(id, avisar, motivo) {
   if (sesion.pc) { sesion.pc.onconnectionstatechange = null; sesion.pc.close(); }
   VIS.sesiones.delete(id);
   relojVisor();
+  relojNivelesVisor();
   if (!VIS.sesiones.size) {
     soltarLienzosVisor();
     if (!SAL.sesiones.size && !outputWindowOpen()) resetOutputStream();

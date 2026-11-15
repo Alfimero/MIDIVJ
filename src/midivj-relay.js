@@ -1310,7 +1310,7 @@ const TIPOS_RTC = new Set(['camara-iniciar', 'camara-colgar', 'camara-error', 'r
    resuelven un pedido de cámara pendiente */
 const TIPOS_CAMARA_CFG = new Set(['camara-config', 'camara-estado']);
 const TIPOS_SALIDA = new Set(['salida-oferta', 'salida-respuesta', 'salida-candidato', 'salida-cerrar', 'salida-error']);
-const TIPOS_VISOR = new Set(['visor-oferta', 'visor-respuesta', 'visor-candidato', 'visor-cerrar', 'visor-error', 'visor-estado', 'visor-cmd']);
+const TIPOS_VISOR = new Set(['visor-oferta', 'visor-respuesta', 'visor-candidato', 'visor-cerrar', 'visor-error', 'visor-estado', 'visor-cmd', 'visor-niveles']);
 /* El estado lleva la lista de clips, medios y escenas: puede ser grande. */
 const MAX_VISOR_MSG = 512 * 1024;
 
@@ -1810,11 +1810,11 @@ function alConectar(ws) {
         if (Number.isFinite(id)) {
           const destino = sala.visores.get(id);
           if (destino) enviar(destino, { ...msg, id: undefined });
-        } else if (msg.type === 'visor-estado') {
+        } else if (msg.type === 'visor-estado' || msg.type === 'visor-niveles') {   // sin id: a todos los visores
           const texto = JSON.stringify(msg);
           for (const visor of sala.visores.values()) if (visor.readyState === 1) visor.send(texto);
         }
-      } else if (ws._rol === 'visor' && ws._visorId && sala.app && msg.type !== 'visor-estado' && msg.type !== 'visor-oferta') {
+      } else if (ws._rol === 'visor' && ws._visorId && sala.app && msg.type !== 'visor-estado' && msg.type !== 'visor-niveles' && msg.type !== 'visor-oferta') {
         enviar(sala.app, { ...msg, id: ws._visorId });
       }
       return;

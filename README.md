@@ -311,6 +311,8 @@ Detalles en `docs/decisions/ADR-008-grabacion-de-la-salida.md`.
 
 La mezcla arranca al abrirla, al abrir GRABACIÓN o al elegir una entrada; hasta entonces los videos suenan como siempre. Lo elegido (volúmenes, M, REC, la entrada) se recuerda en este navegador.
 
+La misma mezcla está en el **visor de control**, en la pestaña **AUDIO** de la barra inferior: una tira por pista con fuente, la ENTRADA y el MASTER, con medidor, fader, M y REC. Si la mezcla todavía no está encendida, el visor ofrece encenderla; el navegador de la PC sólo deja arrancar el audio si ya hubo algún clic en la ventana de MIDIVJ. La entrada de audio se elige en la PC.
+
 ## Audio: mover visuales con sonido
 
 El botón **🔊 AUDIO** abre el primer módulo desacoplado de MIDIVJ (`src/modules/audio/`). Analiza una entrada de audio (interfaz, micrófono, loopback) dentro de un `AudioWorklet` y convierte lo que oye en dos cosas:

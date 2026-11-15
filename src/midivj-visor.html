@@ -104,6 +104,18 @@ body[data-modo="directo"] #inferior{border-top-color:var(--aire);}
 .tarj .clips{display:flex;align-items:center;gap:5px;padding:0 6px 5px;}
 .tarj .clips select{flex:1;min-width:0;font-size:9px;padding:4px 3px;}
 .tarj .clips button{flex:none;padding:4px 7px;font-size:11px;}
+.tarj.audio{cursor:default;width:150px;padding-bottom:6px;}
+.tarj.audio.sin{opacity:.45;}
+.tarj.audio.entrada{border-color:var(--accent2);}
+.tarj.audio.master{border-color:var(--previa);margin-left:8px;}
+.tarj.audio .vu{height:9px;margin:2px 7px 6px;background:#05070a;border:1px solid var(--border2);border-radius:3px;position:relative;overflow:hidden;}
+.tarj.audio .vu i{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(to right,#00d68f 0,#00d68f 70%,#ffcc00 88%,#ff3355 100%);background-size:134px 100%;}
+.tarj.audio .pie{margin-top:0;padding-bottom:4px;}
+.tarj.audio .pct{flex:1;font-size:9.5px;color:var(--text2);padding-left:1px;}
+.tarj.audio button.m.on{background:var(--warn);border-color:var(--warn);color:#000;}
+.tarj.audio button.r.on{background:var(--aire);border-color:var(--aire);color:#fff;}
+.tarj.encender{width:300px;cursor:pointer;padding:12px;justify-content:center;gap:8px;line-height:1.7;color:var(--text2);}
+.tarj.encender b{color:var(--text);font-size:12px;}
 .tarj .aviso{flex:none;padding:0 7px 3px;font-size:8px;color:#ffb020;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .tarj .franja{height:4px;flex:none;}
 .tarj.clip{width:150px;justify-content:flex-start;}
@@ -234,6 +246,7 @@ body[data-vista="cuadricula"] #monitores,body[data-vista="cuadricula"] #transpor
     <button class="tab" data-tab="materiales">MATERIALES</button>
     <button class="tab" data-tab="escenas">ESCENAS</button>
     <button class="tab on" data-tab="pistas">PISTAS</button>
+    <button class="tab" data-tab="audio" title="Mezcla de audio: volumen, silencio y REC de cada pista y de la entrada">AUDIO</button>
     <span class="sp"></span>
     <label id="lbl-todas"><input type="checkbox" id="todas"> todas las pistas</label>
   </div>
@@ -287,7 +300,7 @@ try {
     if (g.cq.filas >= 1 && g.cq.filas <= 4) V.cq.filas = g.cq.filas | 0;
     if (['cargadas', 'vivo', 'todas'].includes(g.cq.ver)) V.cq.ver = g.cq.ver;
   }
-  if (['materiales', 'escenas', 'pistas'].includes(g.tab)) V.tab = g.tab;
+  if (['materiales', 'escenas', 'pistas', 'audio'].includes(g.tab)) V.tab = g.tab;
   /* la lista completa llega con el estado: hasta entonces se recuerda el id */
   if (typeof g.trans === 'string') V.trans = g.trans;
   else if (g.fundido !== undefined) { V.trans = +g.fundido ? 'disolver' : 'corte'; if (+g.fundido) $('dur').value = String(g.fundido); }
@@ -406,6 +419,9 @@ function recibir(msg) {
       V.est = msg;
       pintar();
       break;
+    case 'visor-niveles':
+      V.niveles = msg.n || {};
+      break;
     case 'toast':
       toast(msg.texto);
       break;
@@ -473,7 +489,7 @@ function avisarVer() {
   const vista = document.body.dataset.vista, oculto = document.hidden;
   const ver = vista === 'cuadricula'
     ? { salida: !oculto, previa: false, pistas: oculto ? false : 'grande' }   // mini salida + mosaico grande
-    : { salida: !oculto && vista !== 'previa', previa: !oculto && vista !== 'salida', pistas: !oculto && V.tab === 'pistas' };
+    : { salida: !oculto && vista !== 'previa', previa: !oculto && vista !== 'salida', pistas: !oculto && V.tab === 'pistas', audio: !oculto && V.tab === 'audio' };
   const firma = JSON.stringify(ver);
   if (firma === V.verFirma) return;
   V.verFirma = firma;
@@ -561,7 +577,7 @@ function arreglo() {
 function pintarTira() {
   const e = V.est;
   if (!e || V.arrastrando) return;
-  const html = V.tab === 'pistas' ? tiraPistas(e) : V.tab === 'escenas' ? tiraEscenas(e) : tiraMateriales(e);
+  const html = V.tab === 'pistas' ? tiraPistas(e) : V.tab === 'escenas' ? tiraEscenas(e) : V.tab === 'audio' ? tiraAudio(e) : tiraMateriales(e);
   const firma = V.tab + '|' + html;
   if (firma === V.firmaTira) return;
   V.firmaTira = firma;
@@ -703,7 +719,16 @@ $('tira').addEventListener('click', ev => {
   const arr = arreglo();
   if (acc !== 'escena-borrar' && V.borrar) { V.borrar = null; V.firmaTira = ''; }
   switch (acc) {
-    case 'opacidad': return;   // lo maneja 'input'
+    case 'opacidad': case 'vol': return;   // lo maneja 'input'
+    case 'mezcla-on':
+      orden('mezcla-encender');
+      toast('Encendiendo la mezcla de audio…');
+      break;
+    case 'mute': case 'rec': {
+      const c = canalDe(el.dataset.canal);
+      if (c) orden('mezcla-canal', { canal: el.dataset.canal, [acc]: !c[acc] });
+      break;
+    }
     case 'pista':
       if (!e.pistas[i].cargada) { toast(nPista(i) + ' no tiene fuente'); return; }
       if (V.modo === 'directo' && !arr[i].on) {
@@ -789,6 +814,7 @@ $('tira').addEventListener('change', ev => {
 });
 $('tira').addEventListener('input', ev => {
   const el = ev.target;
+  if (el.dataset.acc === 'vol') { moverVolumen(el); return; }
   if (el.dataset.acc !== 'opacidad') return;
   orden(P() + '-pista', { pista: parseInt(el.dataset.i, 10), opacidad: (+el.value) / 100 });
 });
@@ -856,6 +882,70 @@ document.addEventListener('visibilitychange', () => {
 pintarControles();
 conectar();
 requestAnimationFrame(dibujarMiniaturas);
+
+/* ── Mezcla de audio (pestaña AUDIO) ──────────────────────────────────
+   Las mismas tiras que 🎚 MEZCLA en MIDIVJ: fader, M (silenciar en la PC),
+   REC (entra en la grabación) y medidor, que llega aparte ('visor-niveles'). */
+function tiraAudio(e) {
+  const mz = e.mezcla;
+  if (!mz) return '<div class="hueco">Esta versión de MIDIVJ no tiene mezcla de audio.<br>Actualiza y reinicia el relay.</div>';
+  if (!mz.activa) {
+    return '<div class="tarj encender" data-acc="mezcla-on"><b>🔊 ENCENDER LA MEZCLA</b>' +
+      '<span>' + (mz.dormida ? '⚠ El navegador de la PC no dejó arrancar el audio: haz un clic en la ventana de MIDIVJ (o abre 🎚 MEZCLA ahí) y vuelve a tocar aquí.'
+        : 'El audio de MIDIVJ todavía no pasa por la mezcla. Toca aquí para encenderla (o abre 🎚 MEZCLA en la PC).') + '</span></div>';
+  }
+  const visibles = mz.canales.filter(c => {
+    if (c.tipo === 'entrada') return true;
+    const i = parseInt(String(c.id).replace('pista-', ''), 10) - 1;
+    return !!(e.pistas[i] && e.pistas[i].cargada);
+  }).sort((a, b) => (a.tipo === 'entrada') - (b.tipo === 'entrada'));
+  const tarj = (c, clase) =>
+    '<div class="tarj audio ' + clase + (c.conSenal === false ? ' sin' : '') + '" data-canal="' + esc(c.id) + '">' +
+      '<div class="nom">' + esc(c.nombre) + '</div>' +
+      '<div class="det" title="' + esc(c.detalle || '') + '">' + esc(c.detalle || (c.conSenal === false ? 'sin sonido' : '\u00a0')) + '</div>' +
+      '<div class="vu"><i data-vu="' + esc(c.id) + '"></i></div>' +
+      '<div class="pie"><input type="range" min="0" max="150" step="1" value="' + Math.round(c.vol * 100) + '" data-acc="vol" data-canal="' + esc(c.id) + '" title="Volumen (doble toque: 100 %)"></div>' +
+      '<div class="pie"><span class="pct">' + Math.round(c.vol * 100) + ' %</span>' +
+        '<button data-acc="mute" data-canal="' + esc(c.id) + '" class="m' + (c.mute ? ' on' : '') + '" title="Silenciar en la PC de MIDIVJ (no cambia lo que se graba)">M</button>' +
+        (c.rec === undefined ? '' : '<button data-acc="rec" data-canal="' + esc(c.id) + '" class="r' + (c.rec ? ' on' : '') + '" title="Este canal entra en la grabación">REC</button>') +
+      '</div></div>';
+  return (visibles.length ? '' : '<div class="hueco">Ninguna pista tiene fuente.</div>') +
+    visibles.map(c => tarj(c, c.tipo === 'entrada' ? 'entrada' : '')).join('') +
+    tarj({ id: 'master', nombre: 'MASTER', detalle: 'lo que suena en la PC', vol: mz.master.vol, mute: mz.master.mute }, 'master');
+}
+const canalDe = id => { const mz = V.est && V.est.mezcla; return !mz ? null : id === 'master' ? mz.master : mz.canales.find(c => c.id === id) || null; };
+/* Medidores: escala en dB (-54 abajo) y caída suave entre un aviso y el siguiente */
+const VU = { picos: {}, cola: new Map(), raf: 0 };
+function dibujarVU() {
+  requestAnimationFrame(dibujarVU);
+  if (V.tab !== 'audio' || !V.est || !V.est.mezcla || !V.est.mezcla.activa) return;
+  const n = V.niveles || {}, mz = V.est.mezcla;
+  let master = 0;
+  for (const c of mz.canales) if (!c.mute) master = Math.max(master, (n[c.id] || 0) * c.vol);
+  document.querySelectorAll('#tira [data-vu]').forEach(el => {
+    const id = el.dataset.vu;
+    const v = id === 'master' ? (mz.master.mute ? 0 : master * mz.master.vol) : (n[id] || 0);
+    const alto = v > 0 ? Math.max(0, Math.min(1, 1 + 20 * Math.log10(v) / 54)) : 0;
+    VU.picos[id] = Math.max(alto, (VU.picos[id] || 0) - 0.025);
+    el.style.width = (VU.picos[id] * 100).toFixed(1) + '%';
+  });
+}
+requestAnimationFrame(dibujarVU);
+function enviarVolumenes() {
+  VU.raf = 0;
+  for (const [canal, vol] of VU.cola) orden('mezcla-canal', { canal, vol });
+  VU.cola.clear();
+}
+function moverVolumen(el) {
+  el.closest('.tarj').querySelector('.pct').textContent = el.value + ' %';
+  VU.cola.set(el.dataset.canal, (+el.value) / 100);
+  if (!VU.raf) VU.raf = requestAnimationFrame(enviarVolumenes);
+}
+$('tira').addEventListener('dblclick', ev => {
+  if (ev.target.dataset.acc !== 'vol') return;
+  ev.target.value = '100';
+  moverVolumen(ev.target);
+});
 
 /* ── Cuadrícula: varias pistas a la vez y sus ajustes ─────────────────
    Cada celda es el recorte de una pista en el mosaico (su señal limpia,
