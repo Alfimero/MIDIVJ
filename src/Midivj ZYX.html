@@ -379,7 +379,8 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <button class="hbtn out" onclick="openOutputWindow()">⊡ HDMI</button>
   <button class="hbtn" onclick="window.open(salidaURL(),'_blank','noopener')" title="Abre la página que agregarías en OBS como Fuente de navegador (también en 📡 RELAY → 5)">🎥 OBS</button>
   <button class="hbtn" onclick="window.open(visorURL(),'_blank','noopener')" title="Visor de control: la salida, una salida nueva (previa) y una barra con materiales, escenas y pistas. Ábrelo también en una tableta (QR en 📡 RELAY → 6)">🎚 VISOR</button>
-  <button class="hbtn" id="grab-btn" onclick="abrirPanelGrabacion()" title="Graba la salida y, si quieres, cada pista por separado (sin audio)">⏺ GRABAR</button>
+  <button class="hbtn" id="grab-btn" onclick="abrirPanelGrabacion()" title="Graba la salida y, si quieres, cada pista por separado, con su audio y con la entrada de audio que elijas">⏺ GRABAR</button>
+  <button class="hbtn" id="mezcla-btn" onclick="abrirPanelMezcla()" title="Mezcla de audio: volumen, silencio y REC del sonido de cada pista (videos y cámaras) y de la entrada de audio">🎚 MEZCLA</button>
   <button class="hbtn" onclick="abrirPanelRes()" title="Resolución y tamaño del video de salida">⛶ SALIDA</button>
   <button class="hbtn" id="mando-btn" onclick="abrirPanelRelay()" title="Relay, conexión y códigos QR de los mandos">📡 RELAY <span id="mando-count">—</span></button>
   <button class="hbtn" id="audio-btn" onclick="abrirPanelAudio()" title="Entradas de audio, análisis y mapeos audio → visual">🔊 AUDIO</button>
@@ -778,6 +779,8 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 <script src="modules/audio/midivj-audio-ui.js"></script>
 <script src="modules/grabacion/midivj-grabacion.js"></script>
 <script src="modules/grabacion/midivj-grabacion-ui.js"></script>
+<script src="modules/mezcla/midivj-mezcla.js"></script>
+<script src="modules/mezcla/midivj-mezcla-ui.js"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════
@@ -8238,8 +8241,11 @@ async function _camRecibirOferta(slot, sdp) {
   sesion.pc = pc;
 
   pc.ontrack = ev => {
+    /* El micrófono del teléfono llega como otra pista del mismo stream: la
+       toma la MEZCLA desde liveVid.srcObject. Sólo el video arma la fuente. */
+    if (ev.track.kind !== 'video') { _camLog('cámara '+slot+' (pista '+trackIdx+'): llegó el audio del teléfono'); return; }
     sesion.estado = 'lista';
-    const track = ev.streams[0].getVideoTracks()[0];
+    const track = ev.track;
     _camLog('cámara '+slot+' (pista '+trackIdx+') conectada — llegó el video', {
       track: track && { readyState: track.readyState, muted: track.muted, label: track.label }
     });
@@ -8261,7 +8267,7 @@ async function _camRecibirOferta(slot, sdp) {
     const v = CAM.volver.get(trackIdx);
     if (v) { _camOlvidar(trackIdx); _camLog('cámara '+slot+' (pista '+trackIdx+'): volvió sola'); }
     sesion.aplicando = true;
-    try { _applyStream(S.tracks[trackIdx], ev.streams[0], 'phone', 'Cámara — Mando '+slot); }
+    try { _applyStream(S.tracks[trackIdx], ev.streams[0] || new MediaStream([ev.track]), 'phone', 'Cámara — Mando '+slot); }
     finally { sesion.aplicando = false; }
   };
 
@@ -8345,6 +8351,7 @@ const TEL_OPC = {
   formato: [['original','original (como el teléfono)'], ['16:9','16:9 horizontal'], ['9:16','9:16 vertical'], ['4:3','4:3'], ['3:4','3:4 vertical'], ['1:1','1:1 cuadrado']],
   calidad: [['auto','auto'], ['2','2 Mbps'], ['4','4 Mbps'], ['8','8 Mbps'], ['15','15 Mbps']],
   lente:   [['environment','trasera'], ['user','frontal (selfie)']],
+  audio:   [['si','micrófono del teléfono'], ['no','sin audio']],
 };
 const TEL_RES_PX = { '480':480, '720':720, '1080':1080, '2160':2160 };
 
@@ -8357,7 +8364,7 @@ function _camEstadoRecibido(slot, msg) {
   const r = msg.real || {};
   ses.tel = {
     config: msg.config && typeof msg.config === 'object' ? msg.config : {},
-    real: { w: +r.w || 0, h: +r.h || 0, fps: +r.fps || 0 },
+    real: { w: +r.w || 0, h: +r.h || 0, fps: +r.fps || 0, audio: !!r.audio, errorAudio: r.errorAudio ? String(r.errorAudio).slice(0, 80) : null },
     caps: msg.caps && typeof msg.caps === 'object' ? msg.caps : null,
     error: msg.error ? String(msg.error).slice(0, 200) : null,
   };
@@ -8397,6 +8404,7 @@ function camTelCuerpoHTML(idx, ses) {
     sel('formato', 'Formato', 'Proporción de lo que envía el teléfono. Original = como lo tenga (vertical u horizontal); las demás recortan el centro de la toma en el teléfono'),
     sel('calidad', 'Calidad', 'Tope de Mbps del envío: más = más nitidez, pero necesita buena Wi-Fi'),
     sel('lente', 'Lente', 'Cámara trasera o frontal del teléfono'),
+    sel('audio', 'Audio', 'El micrófono del teléfono viaja con el video: se oye y se graba desde 🎚 MEZCLA (entra silenciado para que no acople)'),
     `<div class="ep-row"><span class="ep-note" id="camtel-st"${tel.error ? ' style="color:var(--hot);"' : ''}>${tel.error ? '⚠ ' + escHtml(tel.error) : envia}</span></div>`,
     `<div class="ep-row"><span class="ep-note" id="camtel-llega">Llega: —</span></div>`,
     `<div class="ep-row"><span class="ep-note">También se cambia desde el teléfono (⚙ en /camara). Con un formato vertical, el AJUSTE de abajo decide si se encaja o llena la salida.</span></div>`,
@@ -9320,10 +9328,13 @@ function grabacionActiva() {
 }
 function grabacionInicializar() {
   if (grabador || !grabacionDisponible()) return grabador;
+  mezclaInicializar();
   MIDIVJ.capturas.registrar({
     id: 'salida', nombre: 'Salida',
     capturar: fps => cvs.captureStream ? cvs.captureStream(fps) : null,
     tamano: () => ({ ancho: cvs.width, alto: cvs.height }),
+    /* la mezcla de los canales con REC */
+    audio: () => (mezcla ? mezcla.pistaDeMezcla() : null),
   });
   /* Cada pista por separado: su señal limpia (ver SEÑALES POR PISTA) */
   S.tracks.forEach((t, i) => MIDIVJ.capturas.registrar({
@@ -9333,14 +9344,129 @@ function grabacionInicializar() {
     tamano: () => tamanoSenal(i),
     detalle: () => (S.tracks[i].loaded ? S.tracks[i].loadedName : ''),
     disponible: () => !!S.tracks[i].loaded,
+    /* su sonido limpio; si no tiene, la entrada de referencia (para sincronizar) */
+    audio: () => (mezcla ? (mezcla.pistaDeCanal('pista-' + (i + 1)) ||
+      (grabador.config.audioRef !== false ? mezcla.pistaDeCanal('entrada') : null)) : null),
   }));
+  /* La entrada de audio elegida, en un archivo aparte */
+  if (mezcla) MIDIVJ.capturas.registrar({
+    id: 'audio-entrada', nombre: 'Audio de entrada', soloAudio: true,
+    capturar: () => { const p = mezcla.pistaDeCanal('entrada'); return p ? new MediaStream([p]) : null; },
+    detalle: () => mezcla.entrada.label || '',
+    disponible: () => !!mezcla.entrada.activa && !!(mezcla.canales.get('entrada') || {}).rec,
+  });
   grabador = MIDIVJGrabacion.crear({
     log: msg => appendNetLog('[grabación] ' + msg),
     onChange: () => { pintarBotonGrabacion(); if (grabadorUI) grabadorUI.refrescar(); },
   });
   MIDIVJ.modulos.registrar(grabador);
-  grabadorUI = MIDIVJGrabacionUI.crear(grabador, MIDIVJ.host, { avisar: msg => appendNetLog('[grabación] ' + msg) });
+  grabadorUI = MIDIVJGrabacionUI.crear(grabador, MIDIVJ.host, {
+    avisar: msg => appendNetLog('[grabación] ' + msg),
+    antesDeGrabar: async () => {
+      if (!mezcla || grabador.config.audio === false) return;
+      await mezcla.start();
+      mezclaSincronizar();
+    },
+    audio: mezcla ? {
+      idCaptura: 'audio-entrada',
+      dispositivos: pedirPermiso => mezcla.listarDispositivos(pedirPermiso),
+      elegir: (deviceId, label) => mezcla.usarEntrada(deviceId, label),
+      actual: () => mezcla.entrada,
+      nivel: () => mezcla.niveles().entrada || 0,
+      abrirMezcla: () => abrirPanelMezcla(),
+      canalesConSonido: () => [...mezcla.canales.values()].filter(c => c.tipo !== 'entrada' && c.conSenal && c.rec).map(c => c.nombre),
+    } : null,
+  });
   return grabador;
+}
+
+/* ═══════════════════════════════════════════════════════
+   MEZCLA — puente con src/modules/mezcla/
+   Un canal por pista ('pista-1'…) y uno para la entrada de audio del
+   equipo ('entrada'). Aquí se le dice a la mezcla qué alimenta cada canal:
+   los <video> de archivo de la pista (vidA/vidB) o el audio de su fuente
+   en vivo (el micrófono de la cámara del teléfono). Hasta que la mezcla
+   arranca (abrir 🎚 MEZCLA, elegir una entrada o grabar con audio) no se
+   toca nada: los videos suenan por su cuenta, como siempre.
+═══════════════════════════════════════════════════════ */
+let mezcla = null, mezclaUI = null, mezclaEntradaActiva = false;
+function mezclaDisponible() {
+  return !!(window.MIDIVJ && window.MIDIVJMezcla && window.MIDIVJMezclaUI);
+}
+function mezclaInicializar() {
+  if (mezcla || !mezclaDisponible()) return mezcla;
+  mezcla = MIDIVJMezcla.crear({
+    log: msg => appendNetLog('[mezcla] ' + msg),
+    onChange: () => {
+      /* Una entrada recién abierta entra sola en la toma (su archivo de audio) */
+      if (mezcla.entrada.activa !== mezclaEntradaActiva) {
+        mezclaEntradaActiva = mezcla.entrada.activa;
+        if (grabador && !grabador.grabando()) {
+          const set = new Set(grabador.config.fuentes);
+          if (mezclaEntradaActiva) set.add('audio-entrada'); else set.delete('audio-entrada');
+          grabador.config.fuentes = [...set];
+        }
+      }
+      if (mezclaUI) mezclaUI.refrescar();
+      if (grabadorUI) grabadorUI.refrescar();
+    },
+  });
+  MIDIVJ.modulos.registrar(mezcla);
+  S.tracks.forEach((t, i) => mezcla.canal('pista-' + (i + 1), { nombre: 'T' + (i + 1) }));
+  mezcla.canal('entrada', { nombre: 'ENTRADA', tipo: 'entrada', mute: true });
+  mezclaUI = MIDIVJMezclaUI.crear(mezcla, { alAbrir: mezclaSincronizar });
+  setInterval(mezclaSincronizar, 500);
+  return mezcla;
+}
+/* ¿La fuente de la pista tiene sonido? En vivo: si su stream trae audio.
+   Un archivo: sí, salvo que ya se haya reproducido más de un segundo sin
+   decodificar nada de audio (un video mudo). */
+function segundosReproducidos(v) {
+  let n = 0;
+  try { for (let i = 0; i < v.played.length; i++) n += v.played.end(i) - v.played.start(i); } catch (e) {}
+  return n;
+}
+function pistaTieneAudio(t) {
+  if (!t.loaded) return false;
+  if (t.sourceType !== 'file') {
+    const s = t.liveVid.srcObject;
+    return !!(s && s.getAudioTracks && s.getAudioTracks().some(a => a.readyState === 'live'));
+  }
+  if (t.mediaKind === 'image') return false;
+  const vs = [t.vidA, t.vidB].filter(v => v.src);
+  if (vs.some(v => v.webkitAudioDecodedByteCount === undefined || v.webkitAudioDecodedByteCount > 0)) return true;
+  return !vs.some(v => segundosReproducidos(v) > 1);   // todavía no sonó nada: no se sabe, se da por bueno
+}
+function mezclaSincronizar() {
+  if (!mezcla) return;
+  S.tracks.forEach((t, i) => {
+    const id = 'pista-' + (i + 1);
+    const vivo = !!t.loaded && t.sourceType !== 'file';
+    if (mezcla.activa()) {
+      if (t.loaded && t.sourceType === 'file' && t.mediaKind !== 'image') {
+        mezcla.conectarElemento(id, t.vidA);
+        mezcla.conectarElemento(id, t.vidB);
+      }
+      mezcla.conectarFlujo(id, vivo ? t.liveVid.srcObject : null);
+    }
+    mezcla.describir(id, {
+      nombre: 'T' + (i + 1), detalle: t.loaded ? String(t.loadedName || '') : '',
+      conSenal: pistaTieneAudio(t),
+      muteDeArranque: vivo,   // el micrófono de una cámara acopla con los parlantes: entra silenciado
+    });
+  });
+}
+function abrirPanelMezcla() {
+  if (!mezclaDisponible()) {
+    alert('El módulo de mezcla no cargó.\n\nAbre MIDIVJ desde el relay local (src/INICIAR_RELAY.bat → http://localhost:9191), no como archivo suelto.');
+    return;
+  }
+  mezclaInicializar();
+  mezclaUI.abrir();
+}
+if (!mezclaDisponible()) {
+  const btn = document.getElementById('mezcla-btn');
+  if (btn) btn.style.display = 'none';
 }
 function abrirPanelGrabacion() {
   if (!grabacionDisponible()) {
@@ -9348,6 +9474,8 @@ function abrirPanelGrabacion() {
     return;
   }
   grabacionInicializar();
+  /* Con audio, la mezcla arranca aquí (este clic es el gesto que el navegador pide) y vuelve la entrada guardada */
+  if (mezcla && grabador.config.audio !== false) mezcla.start().then(mezclaSincronizar).catch(() => {});
   grabadorUI.abrir();
 }
 function pintarBotonGrabacion() {

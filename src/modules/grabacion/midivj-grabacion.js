@@ -20,6 +20,11 @@
    responde, los trozos esperan en memoria y se reenvían solos (`?desde=`
    hace que un reintento nunca escriba dos veces lo mismo).
 
+   Audio: cada señal puede traer su sonido (`cap.audio()`: la mezcla para
+   la salida, el sonido propio de cada pista) y entra en el mismo archivo.
+   Una captura `soloAudio` (la entrada de audio elegida) se graba en un
+   archivo de audio aparte (`audio-entrada.m4a`).
+
    Una toma es una carpeta con todos sus archivos juntos: `salida.mp4`,
    `pista-1.mp4`, `pista-3.mp4`… Todas las tomas van a una misma carpeta,
    que se elige en el panel (por defecto, Grabaciones/ del proyecto). Si una
@@ -51,6 +56,29 @@
     { id: 'webm-vp9', ext: 'webm', etiqueta: 'WebM · VP9', mimes: ['video/webm;codecs=vp9'] },
     { id: 'webm-vp8', ext: 'webm', etiqueta: 'WebM · VP8', mimes: ['video/webm;codecs=vp8', 'video/webm'] },
   ];
+
+  /* Sólo audio (la entrada elegida): M4A/AAC si el navegador lo graba, si no WebM/Opus */
+  const FORMATOS_AUDIO = [
+    { ext: 'm4a', etiqueta: 'M4A · AAC', mimes: ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4'] },
+    { ext: 'webm', etiqueta: 'WebM · Opus', mimes: ['audio/webm;codecs=opus', 'audio/webm'] },
+  ];
+  const AUDIO_BPS = 192000;
+  function formatoAudio() {
+    for (const f of FORMATOS_AUDIO) {
+      const mime = f.mimes.find(soportado);
+      if (mime) return { ext: f.ext, etiqueta: f.etiqueta, mime };
+    }
+    return null;
+  }
+  /* El MIME de video con su códec de audio (AAC en MP4, Opus en WebM) */
+  function mimeConAudio(f) {
+    const video = (f.mime.split('codecs=')[1] || '').trim();
+    const base = f.mime.split(';')[0];
+    const candidatos = base === 'video/mp4'
+      ? [video && base + ';codecs=' + video + ',mp4a.40.2', video && base + ';codecs=' + video + ',opus']
+      : [video && base + ';codecs=' + video + ',opus'];
+    return candidatos.filter(Boolean).find(soportado) || f.mime;
+  }
 
   /* Bits por píxel y por cuadro. 1080p30: normal ≈ 5, alta ≈ 9, máxima ≈ 19 Mbps. */
   const CALIDADES = {
@@ -97,7 +125,9 @@
       /* ── estado propio ── */
       host: null,
       /* fuentes: ids de `host.capturas` que entran en la toma */
-      config: { formato: 'auto', calidad: 'alta', fps: 30, titulo: '', fuentes: ['salida'] },
+      /* titulo + conFecha: nombre de la carpeta de la toma ("Jupiter - 2026-11-15 20-30-05",
+         "Jupiter" sin fecha). audio: los archivos llevan sonido si la señal lo tiene. */
+      config: { formato: 'auto', calidad: 'alta', fps: 30, titulo: '', conFecha: true, audio: true, audioRef: true, fuentes: ['salida'] },
       fase: 'lista',        // 'lista' | 'abriendo' | 'grabando' | 'cerrando'
       toma: null,           // { nombre, carpeta, inicio: Date, t0: ms, fin: Date|null }
       canales: [],          // una fuente que se está grabando: { cap, actual }
@@ -106,7 +136,8 @@
       ultimoError: '',
     };
 
-    let formato = null, tick = 0;
+    let formato = null, fAudio = null, tick = 0;
+    const extDe = cap => (cap.soloAudio ? fAudio.ext : formato.ext);
     let sinRelayDesde = 0, ocultaDesde = 0, avisoCola = false;
     let manifiestoEnCurso = Promise.resolve();
 
@@ -208,22 +239,36 @@
       const cap = canal.cap;
       /* Primero el stream: una pista fija su tamaño al empezar a capturarse */
       const flujo = cap.capturar(g.config.fps);
-      if (!flujo || !flujo.getVideoTracks().length) throw new Error('El navegador no pudo capturar ' + cap.nombre + '.');
-      const tam = cap.tamano() || {};
-      const bps = bitsPorSegundo(tam.ancho, tam.alto, g.config.fps, g.config.calidad);
+      if (!flujo || !(cap.soloAudio ? flujo.getAudioTracks() : flujo.getVideoTracks()).length) {
+        if (flujo) flujo.getTracks().forEach(t => t.stop());
+        throw new Error('El navegador no pudo capturar ' + cap.nombre + '.');
+      }
+      /* El sonido de la señal (la mezcla, el de la pista…), si lo trae */
+      let conAudio = !!cap.soloAudio;
+      if (!cap.soloAudio && g.config.audio !== false && cap.audio) {
+        let pista = null;
+        try { pista = cap.audio(); } catch (e) { pista = null; }
+        if (pista) { flujo.addTrack(pista); conAudio = true; }
+      }
+      const tam = cap.soloAudio ? {} : (cap.tamano() || {});
+      const bps = cap.soloAudio ? 0 : bitsPorSegundo(tam.ancho, tam.alto, g.config.fps, g.config.calidad);
+      const mime = cap.soloAudio ? fAudio.mime : conAudio ? mimeConAudio(formato) : formato.mime;
       let rec;
       try {
         /* Un cuadro clave por segundo: el MP4 se escribe por fragmentos que
            empiezan en uno, así que sin esto llegaba a disco cada ~3,4 s. De
            paso, los editores saltan mejor dentro del archivo. */
-        rec = new MediaRecorder(flujo, { mimeType: formato.mime, videoBitsPerSecond: bps, videoKeyFrameIntervalDuration: TROZO_MS });
+        rec = new MediaRecorder(flujo, cap.soloAudio
+          ? { mimeType: mime, audioBitsPerSecond: AUDIO_BPS }
+          : { mimeType: mime, videoBitsPerSecond: bps, videoKeyFrameIntervalDuration: TROZO_MS, ...(conAudio ? { audioBitsPerSecond: AUDIO_BPS } : {}) });
       } catch (e) {
         flujo.getTracks().forEach(t => t.stop());
         throw e;
       }
       const seg = {
-        canal, archivo, fuente: cap.id, nombre: cap.nombre, detalle: cap.detalle ? cap.detalle() : '', mime: formato.mime,
-        ancho: tam.ancho || 0, alto: tam.alto || 0, fps: g.config.fps, kbps: Math.round(bps / 1000),
+        canal, archivo, fuente: cap.id, nombre: cap.nombre, detalle: cap.detalle ? cap.detalle() : '', mime,
+        audio: conAudio, soloAudio: !!cap.soloAudio,
+        ancho: tam.ancho || 0, alto: tam.alto || 0, fps: cap.soloAudio ? 0 : g.config.fps, kbps: Math.round((bps + (conAudio ? AUDIO_BPS : 0)) / 1000),
         desdeMs: msDeToma(), hastaMs: null,
         flujo, rec, enviados: 0, cola: [], colaBytes: 0, bombeando: false, roto: false, esperando: [],
       };
@@ -282,7 +327,7 @@
         return;
       }
       if (viejo) cerrarSegmento(viejo).then(escribirManifiesto);
-      pedir('POST', API, { toma: g.toma.nombre, nombre: canal.cap.id, ext: formato.ext })
+      pedir('POST', API, { toma: g.toma.nombre, nombre: canal.cap.id, ext: extDe(canal.cap) })
         .then(datos => {
           nuevo.archivo = datos.archivo;
           aviso((motivo || 'Archivo nuevo') + ' → sigue en ' + datos.archivo);
@@ -345,6 +390,7 @@
         nota: 'desdeMs/hastaMs: milisegundos desde el inicio de la toma, con el mismo reloj para todos los archivos (salida y pistas).',
         archivos: g.segmentos.filter(s => s.archivo).map(s => ({
           archivo: s.archivo, fuente: s.fuente, nombre: s.nombre, contenido: s.detalle || undefined, formato: s.mime,
+          audio: !!s.audio, soloAudio: s.soloAudio || undefined,
           ancho: s.ancho, alto: s.alto, fps: s.fps, kbps: s.kbps,
           desdeMs: s.desdeMs, hastaMs: s.hastaMs, bytes: s.enviados, completo: !s.roto,
         })),
@@ -373,6 +419,7 @@
         return {
           id: cap.id, nombre: cap.nombre, detalle: cap.detalle ? cap.detalle() : '',
           disponible: cap.disponible ? !!cap.disponible() : true,
+          soloAudio: !!cap.soloAudio,
           ancho: tam.ancho || 0, alto: tam.alto || 0,
           elegida: g.config.fuentes.includes(cap.id),
         };
@@ -398,14 +445,17 @@
       if (g.fase !== 'lista') return g;
       const disponibles = formatos();
       formato = disponibles.find(f => f.id === g.config.formato) || disponibles[0] || null;
-      const caps = fuentesAGrabar();
+      fAudio = formatoAudio();
+      let caps = fuentesAGrabar();
+      /* Sin grabación de audio (apagada o el navegador no la tiene), las capturas de sólo audio no entran */
+      if (g.config.audio === false || !fAudio) caps = caps.filter(cap => !cap.soloAudio);
       g.fase = 'abriendo';
       g.estado = 'iniciando';
       g.ultimoError = '';
       g.avisos = [];
       cambio();
       try {
-        if (!formato) throw new Error('Este navegador no puede grabar video (MediaRecorder sin MP4 ni WebM).');
+        if (!formato && caps.some(cap => !cap.soloAudio)) throw new Error('Este navegador no puede grabar video (MediaRecorder sin MP4 ni WebM).');
         if (!caps.length) {
           throw new Error(g.config.fuentes.length
             ? 'Ninguna de las fuentes elegidas tiene señal ahora.'
@@ -421,8 +471,8 @@
         let toma = null;
         for (const canal of g.canales) {
           const nuevo = await pedir('POST', API, toma
-            ? { toma, nombre: canal.cap.id, ext: formato.ext }
-            : { titulo: g.config.titulo, nombre: canal.cap.id, ext: formato.ext });
+            ? { toma, nombre: canal.cap.id, ext: extDe(canal.cap) }
+            : { titulo: g.config.titulo, conFecha: g.config.conFecha !== false, nombre: canal.cap.id, ext: extDe(canal.cap) });
           if (!toma) {
             toma = nuevo.toma;
             g.toma.nombre = nuevo.toma;
@@ -436,8 +486,8 @@
         tick = setInterval(revisar, 1000);
         escribirManifiesto();
         log('grabando en ' + g.toma.carpeta + ': ' + g.canales.map(c =>
-          c.actual.archivo + ' (' + c.actual.ancho + '×' + c.actual.alto + ' · ' + (c.actual.kbps / 1000).toFixed(1) + ' Mbps)').join(', ') +
-          ' · ' + formato.mime);
+          c.actual.archivo + ' (' + (c.actual.soloAudio ? 'sólo audio' : c.actual.ancho + '×' + c.actual.alto + ' · ' + (c.actual.kbps / 1000).toFixed(1) + ' Mbps' + (c.actual.audio ? ' · con audio' : '')) + ')').join(', ') +
+          (formato ? ' · ' + formato.mime : ''));
       } catch (e) {
         for (const seg of g.segmentos) {
           try { seg.rec.stop(); } catch (_) {}
@@ -498,7 +548,8 @@
       const a = actuales[0] || null;
       const porFuente = new Map();
       for (const s of g.segmentos) {
-        const f = porFuente.get(s.fuente) || { id: s.fuente, nombre: s.nombre, archivo: null, archivos: 0, bytes: 0, ancho: 0, alto: 0, kbps: 0, activa: false };
+        const f = porFuente.get(s.fuente) || { id: s.fuente, nombre: s.nombre, archivo: null, archivos: 0, bytes: 0, ancho: 0, alto: 0, kbps: 0, activa: false, audio: false, soloAudio: false };
+        f.audio = !!s.audio; f.soloAudio = !!s.soloAudio;
         f.archivo = s.archivo || '…';
         f.archivos += 1;
         f.bytes += s.enviados;
@@ -528,10 +579,19 @@
     };
 
     g.formatos = formatos;
+    g.formatoAudio = formatoAudio;
+    /** Nombre que tendrá la carpeta de la próxima toma (el relay evita pisar una que ya exista) */
+    g.nombreDeCarpeta = function (fecha) {
+      const d = fecha || new Date(), dos = n => String(n).padStart(2, '0');
+      const f = d.getFullYear() + '-' + dos(d.getMonth() + 1) + '-' + dos(d.getDate()) + ' ' + dos(d.getHours()) + '-' + dos(d.getMinutes()) + '-' + dos(d.getSeconds());
+      const t = String(g.config.titulo || '').trim();
+      return g.config.conFecha !== false ? (t ? t + ' - ' + f : f) : (t || 'Toma');
+    };
     g.calidades = () => Object.keys(CALIDADES).map(id => ({ id, etiqueta: CALIDADES[id].etiqueta }));
     /** Suma de lo que ocuparían las fuentes elegidas que tienen señal */
     g.estimarMbps = function () {
       return fuentesAGrabar().reduce((n, cap) => {
+        if (cap.soloAudio) return n + (g.config.audio === false ? 0 : AUDIO_BPS / 1e6);
         const t = cap.tamano() || {};
         return n + bitsPorSegundo(t.ancho, t.alto, g.config.fps, g.config.calidad) / 1e6;
       }, 0);

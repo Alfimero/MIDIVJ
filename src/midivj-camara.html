@@ -171,6 +171,7 @@ body.limpio #volver-ver{display:block;}
   <div class="fila"><label for="cfg-formato">FORMATO</label><select id="cfg-formato"></select></div>
   <div class="fila"><label for="cfg-calidad">CALIDAD</label><select id="cfg-calidad"></select></div>
   <div class="fila"><label for="cfg-lente">LENTE</label><select id="cfg-lente"></select></div>
+  <div class="fila"><label for="cfg-audio">AUDIO</label><select id="cfg-audio"></select></div>
   <div id="cfg-envia"></div>
   <div class="nota">También se cambia desde MIDIVJ (CONFIG. DE CÁMARA de la pista). FORMATO recorta el centro de la toma: lo que ves aquí es lo que llega.</div>
 </div>
@@ -261,12 +262,14 @@ const FPS_OPC = [15, 24, 25, 30, 60];
 const FORMATOS = { original: 0, '16:9': 16 / 9, '9:16': 9 / 16, '4:3': 4 / 3, '3:4': 3 / 4, '1:1': 1 };
 const CALIDADES = ['auto', '2', '4', '8', '15'];   // Mbps máximos del envío
 const LENTES = ['environment', 'user'];
-const CFG_DEF = { res: '720', fps: 30, formato: 'original', calidad: 'auto', lente: 'environment' };
+const AUDIOS = ['si', 'no'];   // el micrófono del teléfono viaja con el video
+const CFG_DEF = { res: '720', fps: 30, formato: 'original', calidad: 'auto', lente: 'environment', audio: 'si' };
 const ETQ = {
   res: { '480': '480p', '720': '720p (HD)', '1080': '1080p (Full HD)', '2160': '2160p (4K)' },
   formato: { original: 'original (como el teléfono)', '16:9': '16:9 horizontal', '9:16': '9:16 vertical', '4:3': '4:3', '3:4': '3:4 vertical', '1:1': '1:1 cuadrado' },
   calidad: { auto: 'auto', '2': '2 Mbps', '4': '4 Mbps', '8': '8 Mbps', '15': '15 Mbps' },
-  lente: { environment: 'trasera', user: 'frontal (selfie)' }
+  lente: { environment: 'trasera', user: 'frontal (selfie)' },
+  audio: { si: 'micrófono del teléfono', no: 'sin audio' }
 };
 const tiene = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 function sanearCfg(c) {
@@ -277,6 +280,7 @@ function sanearCfg(c) {
     if (tiene(FORMATOS, String(c.formato))) o.formato = String(c.formato);
     if (CALIDADES.includes(String(c.calidad))) o.calidad = String(c.calidad);
     if (LENTES.includes(c.lente)) o.lente = c.lente;
+    if (AUDIOS.includes(c.audio)) o.audio = c.audio;
   }
   return o;
 }
@@ -345,8 +349,35 @@ function crearProcesador(raw) {
   return P;
 }
 
+/* Con AUDIO encendido se piden cámara y micrófono juntos (en iPhone, pedir
+   el micrófono aparte puede cortar la cámara). Sin procesamiento de voz: la
+   cancelación de eco y el control de ganancia deforman la música. Si el
+   micrófono no se puede abrir (permiso negado, ocupado), sigue sólo el video. */
 async function abrirCamara(cfg) {
+  C.errorAudio = null;
+  if (cfg.audio === 'si') {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: restricciones(cfg),
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+    } catch (e) {
+      C.errorAudio = 'sin micrófono (' + (e.name === 'NotAllowedError' ? 'permiso denegado' : e.name || e.message) + ')';
+      _log('⚠ no se pudo abrir cámara + micrófono (' + e.name + ') — se intenta sólo el video');
+    }
+  }
   return navigator.mediaDevices.getUserMedia({ video: restricciones(cfg), audio: false });
+}
+/* El micrófono va por su propio emisor de la llamada: se cambia sin renegociar */
+async function ponerAudio() {
+  const tx = C.audioTx;
+  if (!tx || !C.pc) return;
+  const pista = (C.raw && C.raw.getAudioTracks()[0]) || null;
+  try {
+    await tx.sender.replaceTrack(pista);
+    const p = tx.sender.getParameters();
+    if (pista && p.encodings && p.encodings.length) { p.encodings[0].maxBitrate = 128000; await tx.sender.setParameters(p); }
+  } catch (e) { _log('⚠ no se pudo enviar el audio: ' + (e.message || e)); }
 }
 
 /* Límites de la cámara abierta, para no ofrecer lo que no puede dar */
@@ -430,7 +461,7 @@ async function aplicarEnCaliente(antes, ahora) {
   C.errorCfg = null;
   const capturaCambia = antes.res !== ahora.res || antes.fps !== ahora.fps ||
     JSON.stringify(restricciones(antes, false)) !== JSON.stringify(restricciones(ahora, false));
-  let reabrir = antes.lente !== ahora.lente;
+  let reabrir = antes.lente !== ahora.lente || antes.audio !== ahora.audio;
   if (!reabrir && capturaCambia) {
     try { await C.raw.getVideoTracks()[0].applyConstraints(restricciones(ahora, false)); }
     catch (e) { _log('applyConstraints no aceptado (' + e.name + ') — se reabre la cámara'); reabrir = true; }
@@ -453,6 +484,7 @@ async function aplicarEnCaliente(antes, ahora) {
     vigilarCamara(nueva);
     await leerCaps(nueva);
     if (C.proc) C.proc.cambiarFuente(nueva);
+    await ponerAudio();
     if (!FORMATOS[CFG.formato]) {
       C.stream = nueva;
       $('previa').srcObject = nueva;
@@ -493,7 +525,7 @@ function medidaReal() {
     const f = C.raw && C.raw.getVideoTracks()[0].getSettings().frameRate;
     if (f) fps = Math.min(Math.round(f), CFG.fps);
   } catch (_) {}
-  return { w: v.videoWidth || 0, h: v.videoHeight || 0, fps };
+  return { w: v.videoWidth || 0, h: v.videoHeight || 0, fps, audio: !!(C.raw && C.raw.getAudioTracks().length), errorAudio: C.errorAudio || null };
 }
 let timerEstado = 0;
 function informarEstado() {
@@ -516,10 +548,11 @@ function opcionesDe(campo) {
   if (campo === 'formato') return Object.keys(FORMATOS);
   if (campo === 'calidad') return CALIDADES;
   if (campo === 'lente') return LENTES.filter(l => l === 'environment' || k.frontal !== false || l === CFG.lente);
+  if (campo === 'audio') return AUDIOS;
   return [];
 }
 function pintarConfig() {
-  ['res', 'fps', 'formato', 'calidad', 'lente'].forEach(campo => {
+  ['res', 'fps', 'formato', 'calidad', 'lente', 'audio'].forEach(campo => {
     const sel = $('cfg-' + campo);
     const vals = opcionesDe(campo);
     const etq = v => campo === 'fps' ? v + ' fps' : ETQ[campo][v];
@@ -531,10 +564,10 @@ function pintarConfig() {
   const r = C.stream ? medidaReal() : null;
   env.className = C.errorCfg ? 'err' : '';
   env.textContent = C.errorCfg ? '⚠ ' + C.errorCfg
-    : r && r.w ? `Enviando: ${r.w}×${r.h} · ${r.fps} fps${CFG.calidad !== 'auto' ? ' · máx. ' + CFG.calidad + ' Mbps' : ''}`
+    : r && r.w ? `Enviando: ${r.w}×${r.h} · ${r.fps} fps${CFG.calidad !== 'auto' ? ' · máx. ' + CFG.calidad + ' Mbps' : ''}${r.audio ? ' · 🎤 con audio' : (CFG.audio === 'si' ? ' · ' + (r.errorAudio || 'sin micrófono') : '')}`
     : 'Se aplica al empezar a transmitir.';
 }
-['res', 'fps', 'formato', 'calidad', 'lente'].forEach(campo => {
+['res', 'fps', 'formato', 'calidad', 'lente', 'audio'].forEach(campo => {
   $('cfg-' + campo).addEventListener('change', ev => cambiarConfig({ [campo]: ev.target.value }, 'teléfono'));
 });
 $('btn-cfg').onclick = ev => { ev.stopPropagation(); pintarConfig(); $('ajustes').classList.toggle('vis'); $('btn-cfg').classList.toggle('act', $('ajustes').classList.contains('vis')); };
@@ -745,6 +778,11 @@ async function iniciarTransmision() {
   C.pc = pc;
   C.candidatosPendientes = [];
   stream.getVideoTracks().forEach(t => pc.addTrack(t, stream));
+  /* El audio siempre tiene su lugar en la llamada (aunque arranque vacío):
+     encender o apagar el micrófono después no obliga a renegociar */
+  try { C.audioTx = pc.addTransceiver('audio', { direction: 'sendonly', streams: [stream] }); }
+  catch (e) { C.audioTx = null; _log('⚠ este navegador no pudo preparar el audio: ' + (e.message || e)); }
+  await ponerAudio();
 
   pc.onicecandidate = ev => {
     if (ev.candidate) enviar({ type: 'rtc-candidato', candidato: ev.candidate });
@@ -817,6 +855,7 @@ function detenerCamara({ avisar, motivo }) {
   if (C.stream) { C.stream.getTracks().forEach(t => t.stop()); C.stream = null; }
   $('previa').srcObject = null;
   if (C.pc) { C.pc.onconnectionstatechange = null; C.pc.oniceconnectionstatechange = null; C.pc.close(); C.pc = null; }
+  C.audioTx = null;
   C.candidatosPendientes = [];
   const habiaSesion = C.estado !== 'esperando';
   C.estado = 'esperando';

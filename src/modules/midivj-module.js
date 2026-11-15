@@ -99,7 +99,9 @@
     _defs: new Map(),
 
     /** def = { id, nombre, capturar(fps) → MediaStream|null, tamano() → { ancho, alto },
-                 detalle() → texto de qué lleva ahora (opcional), disponible() → ¿tiene señal? (opcional) } */
+                 detalle() → texto de qué lleva ahora (opcional), disponible() → ¿tiene señal? (opcional),
+                 audio() → MediaStreamTrack NUEVA con el sonido de esa señal, o null (opcional),
+                 soloAudio: true si capturar() entrega sólo audio (opcional) } */
     registrar(def) {
       if (!def || !def.id || typeof def.capturar !== 'function') return null;
       const completo = {
@@ -109,6 +111,8 @@
         tamano: typeof def.tamano === 'function' ? def.tamano : () => null,
         detalle: typeof def.detalle === 'function' ? def.detalle : () => '',
         disponible: typeof def.disponible === 'function' ? def.disponible : () => true,
+        audio: typeof def.audio === 'function' ? def.audio : () => null,
+        soloAudio: !!def.soloAudio,
       };
       this._defs.set(completo.id, completo);
       return completo;

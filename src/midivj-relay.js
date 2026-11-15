@@ -249,7 +249,7 @@ async function readSession(req, res, name) {
    reescribe con lo que sabe de cada archivo (formato, tamaño, inicio, fin).
 ═══════════════════════════════════════════════════════ */
 
-const EXT_GRABACION = new Set(['mp4', 'webm']);
+const EXT_GRABACION = new Set(['mp4', 'webm', 'm4a']);
 const MANIFIESTO = 'toma.json';
 const filasEscritura = new Map();   // ruta → última escritura pendiente
 
@@ -303,7 +303,7 @@ async function crearGrabacion(req, res) {
   const pedido = await readJson(req, MAX_MANIFIESTO_BYTES);
   const ext = String((pedido && pedido.ext) || '').toLowerCase();
   if (!EXT_GRABACION.has(ext)) {
-    sendJson(res, 400, { error: 'Formato no admitido (mp4 o webm).' });
+    sendJson(res, 400, { error: 'Formato no admitido (mp4, webm o m4a).' });
     return;
   }
   await fsp.mkdir(RECORDINGS_DIR, { recursive: true });
@@ -315,8 +315,13 @@ async function crearGrabacion(req, res) {
       return;
     }
   } else {
+    /* Nombre de la carpeta: "<nombre> - <fecha hora>", sólo la fecha, o sólo
+       el nombre (conFecha: false). Si ya existe, se agrega " (2)", " (3)"… */
     const titulo = limpiarNombre(pedido.titulo, 60);
-    toma = await crearSinPisar(RECORDINGS_DIR, fechaParaCarpeta() + (titulo ? ` ${titulo}` : ''), '', p => fsp.mkdir(p));
+    const base = pedido.conFecha === false
+      ? (titulo || 'Toma')
+      : (titulo ? `${titulo} - ${fechaParaCarpeta()}` : fechaParaCarpeta());
+    toma = await crearSinPisar(RECORDINGS_DIR, base, '', p => fsp.mkdir(p));
   }
   const dir = rutaGrabacion(toma);
   const archivo = await crearSinPisar(dir, limpiarNombre(pedido.nombre, 60) || 'video', `.${ext}`,
@@ -1065,7 +1070,9 @@ const MODULOS = new Set([
   '/modules/audio/midivj-audio-ui.js',
   '/modules/audio/midivj-audio-worklet.js',
   '/modules/grabacion/midivj-grabacion.js',
-  '/modules/grabacion/midivj-grabacion-ui.js'
+  '/modules/grabacion/midivj-grabacion-ui.js',
+  '/modules/mezcla/midivj-mezcla.js',
+  '/modules/mezcla/midivj-mezcla-ui.js'
 ]);
 
 async function serveFile(res, filename, contentType) {
