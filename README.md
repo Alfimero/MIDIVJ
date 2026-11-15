@@ -234,13 +234,18 @@ Desde la computadora (sección **⚙ CONFIG. DE CÁMARA · 📱** de la pista) o
 - **Formato**: *original* envía la toma tal cual (vertical u horizontal según cómo se sostenga el teléfono); 16:9, 9:16, 4:3, 3:4 y 1:1 recortan el centro **en el teléfono**, así lo que se ve allá es exactamente lo que llega (un teléfono en vertical puede mandar 16:9 y llenar la salida).
 - **Calidad**: tope de Mbps del envío (auto, 2, 4, 8 o 15). Más Mbps = más nitidez, pero pide buena Wi-Fi.
 - **Lente**: trasera o frontal.
+- **Audio**: el micrófono del teléfono viaja con el video (o *sin audio*). Se oye y se graba desde **🎚 MEZCLA**, donde entra silenciado para que no acople con los parlantes.
 
 El teléfono guarda su configuración y la muestra de los dos lados: la sección de la pista indica lo que el teléfono **envía** y lo que **llega** a MIDIVJ. WebRTC mantiene la resolución elegida y, si falta ancho de banda, baja los FPS. Si la sección se queda "esperando que el teléfono informe su configuración", recarga `/camara` en el teléfono y reinicia el relay (ambos tienen que estar actualizados).
 
 ### Notas
 
 - **La primera vez, el teléfono muestra "conexión no privada".** `/camara` necesita HTTPS — es la única forma de que el navegador del teléfono dé acceso a la cámara en una IP de red, `getUserMedia` no funciona por HTTP salvo en `localhost`. El relay genera un certificado autofirmado en esta misma computadora (nada de internet ni de una CA real), así que el teléfono avisa que no reconoce el certificado: toca **Avanzado → continuar de todos modos**. Es esperado, una sola vez por teléfono (mientras la red no cambie), y no significa que algo esté mal.
-- Sólo video, sin audio — igual que `PANTALLA` y `CAPTURA`.
+- El teléfono manda video y, si AUDIO está en *micrófono*, también su sonido (el navegador pedirá permiso de micrófono; si se niega, sigue sólo el video). `PANTALLA` y `CAPTURA` siguen siendo sólo video.
+
+### Hub de cámaras: el formato de todas a la vez
+
+**📷 CÁMARAS** (en el encabezado) abre una tabla con todas las cámaras de teléfono: la pista, lo que cada una **envía**, lo que **llega** y sus ajustes (resolución, FPS, formato, calidad, lente, audio). La fila **TODAS** cambia un ajuste en todas a la vez — por ejemplo, dejarlas en 1080p · 30 fps · 16:9 con un solo cambio — y marca en amarillo lo que es distinto entre cámaras. Los teléfonos conectados que todavía no están en una pista también reciben el cambio y lo usan al empezar a transmitir.
 - Cada cámara ocupa un slot propio (independiente de los slots del mando): un mismo teléfono puede abrir `/mando` y `/camara` a la vez si hace falta.
 - Sin STUN ni TURN: la conexión sólo usa candidatos de la propia red local, consistente con que el resto del proyecto no depende de internet. Esto puede fallar en una red con "aislamiento de cliente" (poco común en routers domésticos o en el hotspot de esta misma PC, que es el escenario principal — ver `docs/decisions/ADR-004-camara-movil-por-webrtc.md`).
 - Si el teléfono cierra la pestaña a media transmisión, el relay detecta la desconexión y avisa a MIDIVJ solo — no depende de que el teléfono alcance a despedirse.
@@ -273,6 +278,7 @@ Notas: sólo video, sin audio (igual que HDMI/PANTALLA/CAPTURA/cámara). `/salid
   - **MATERIALES**: los clips (y los medios sin clip) de las pistas del arreglo. Tocar un clip lo deja listo en la previa.
   - **ESCENAS**: arreglos guardados (van en la sesión `.vjp`). Tocar una la carga en la previa; **▶** la manda directo a la salida; 💾 la sobrescribe, ✎ la renombra, ✕ la borra.
 - **DIRECTO A SALIDA**: cada toque de la barra actúa al aire, sin pasar por la previa.
+- **⊞ CUADRÍCULA**: varias pistas a la vez, para comparar cámaras. Se elige cuántas columnas y filas (hasta 6 × 4) y qué pistas entran (con fuente, sólo cámaras y en vivo, o todas). Cada celda es la señal limpia de la pista, más grande y a todos los cuadros. Tocar una celda la elige y el panel edita su **COLOR** (el PROCESADOR DE VIDEO: ganancia, brillo, contraste, gamma, balance de blancos, contraluz, matiz, saturación, nitidez; **ON/OFF** para comparar antes y después, **↺** para volver a neutro) y su **TRANSFORMACIÓN** (posición, escala, rotación, profundidad). Los sliders de MIDIVJ se mueven solos, y la mini **SALIDA** del panel muestra el resultado en la mezcla. Doble toque en un slider lo devuelve a su valor.
 
 En MIDIVJ, una pista apagada desde el visor se marca tachada en su pestaña con **⦸** (clic para volver a mostrarla). La previa usa las mismas fuentes que la salida: muestra el arreglo (posición, recorte, color, capas), no los efectos globales, y una pista de video enseña el cuadro que tiene en ese momento.
 
@@ -280,20 +286,30 @@ En MIDIVJ, una pista apagada desde el visor se marca tachada en su pestaña con 
 
 **⏺ GRABAR** (en el encabezado) abre el panel GRABACIÓN. Marca qué grabar: la **salida** (tal como se ve en HDMI y OBS) y, si quieres, **cada pista por separado** (su señal limpia: el video o la cámara con su corrección de color, sin mezcla ni efectos, se vea o no en la salida). Todas las tomas van a una misma carpeta, que eliges en **CARPETA DE LAS GRABACIONES** (📁 ELEGIR… o escribiendo la ruta; por defecto `Grabaciones/` del proyecto, fuera de Git):
 
-1. Elige **formato** (MP4 · H.264, recomendado: lo abre cualquier editor), **calidad** (Normal / Alta / Máxima ≈ 5 / 9 / 19 Mbps a 1080p30) y **FPS**. El nombre de la toma es opcional y se agrega a la fecha.
+1. Elige **formato** (MP4 · H.264, recomendado: lo abre cualquier editor), **calidad** (Normal / Alta / Máxima ≈ 5 / 9 / 19 Mbps a 1080p30) y **FPS**. **NOMBRE DE LA CARPETA** (opcional) y la casilla **FECHA Y HORA** deciden cómo se llama la carpeta de la toma: `Jupiter - 2026-11-15 20-30-05`, sólo `Jupiter`, sólo la fecha, o `Toma` si no hay ni nombre ni fecha. El panel muestra el nombre antes de grabar; una carpeta que ya existe no se pisa (`Jupiter (2)`).
 2. **⏺ GRABAR** empieza; el botón del encabezado se pone rojo con el tiempo. **⏹ DETENER** termina de guardar.
 3. **📂 ABRIR CARPETA** abre `Grabaciones/` (o una toma) en el explorador.
 
-Cada toma es una carpeta (`2026-10-30 21-15-03 nombre/`) con todos sus archivos juntos (`salida.mp4`, `pista-1.mp4`, `pista-3.mp4`…) y `toma.json`, que dice el formato, el tamaño y cuándo empezó y terminó cada archivo, con un mismo reloj para alinearlos al editar.
+Cada toma es una carpeta (`nombre - 2026-10-30 21-15-03/`) con todos sus archivos juntos (`salida.mp4`, `pista-1.mp4`, `pista-3.mp4`, `audio-entrada.m4a`…) y `toma.json`, que dice el formato, el tamaño y cuándo empezó y terminó cada archivo, con un mismo reloj para alinearlos al editar.
 
 - Cada segundo grabado va directo a disco a través del relay: si la pestaña se cierra o algo se cae a media función, lo grabado hasta ese segundo ya está guardado. Si el relay se reinicia, la grabación sigue en el mismo archivo.
 - Mientras grabas, la salida no cambia sola de tamaño con el video de la pista 1. Si cambias la resolución tú (⛶ SALIDA), la grabación sigue en `salida (2).mp4` de la misma toma.
 - Cada pista conserva el tamaño con el que empezó la toma; si cambia de fuente, la nueva entra encajada. Cada archivo es un codificador más: en equipos modestos graba sólo las pistas que necesites.
-- **Sin audio**: graba el sonido aparte (OBS o la mezcladora) y júntalos al editar.
+- **Audio** (sección AUDIO del panel): con **GRABAR AUDIO** marcado, la **salida** lleva la mezcla de los canales con REC, cada **pista** lleva su propio sonido limpio (el del video o el micrófono de la cámara) y la **ENTRADA** de audio que elijas (la interfaz, un micrófono, la salida de la consola) queda además en un archivo aparte, `audio-entrada.m4a`. Con **PONER LA ENTRADA EN LAS PISTAS SIN SONIDO PROPIO**, una cámara sin micrófono o un video mudo llevan el de la entrada como referencia: así el editor puede sincronizar todos los archivos por la forma de onda.
 - Deja la ventana de MIDIVJ a la vista: minimizada, el navegador frena el dibujo (igual que para HDMI y OBS).
 - Sólo se graba desde la PC donde corre el relay, como el guardado de sesiones. Después de actualizar, cierra y vuelve a abrir `INICIAR_RELAY` para que el relay conozca la grabación.
 
 Detalles en `docs/decisions/ADR-008-grabacion-de-la-salida.md`.
+
+## Mezcla de audio
+
+**🎚 MEZCLA** (en el encabezado) abre una mezcladora con un canal por pista, la **ENTRADA** de audio del equipo y el **MASTER**. Cada canal tiene medidor, **fader** (hasta 150 %; doble clic vuelve a 100 %), **M** y **REC**:
+
+- **M** silencia el canal en esta PC. No cambia lo que se graba.
+- **REC** decide si el canal entra en la grabación (en la mezcla de la salida y en el archivo de su pista).
+- Las cámaras y la entrada entran silenciadas (su micrófono acopla con los parlantes) pero con REC puesto. Los canales en gris no tienen sonido ahora.
+
+La mezcla arranca al abrirla, al abrir GRABACIÓN o al elegir una entrada; hasta entonces los videos suenan como siempre. Lo elegido (volúmenes, M, REC, la entrada) se recuerda en este navegador.
 
 ## Audio: mover visuales con sonido
 

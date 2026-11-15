@@ -9732,8 +9732,15 @@ function dibujarSenales() {
   }
   if (VIS.sesiones.size) {
     if (visNecesita('previa')) dibujarPrevia();
-    if (S.frame % 2 === 0 && visNecesita('pistas')) dibujarMosaico();
+    const grande = visMosaicoGrande();
+    if ((grande || S.frame % 2 === 0) && visNecesita('pistas')) dibujarMosaico(grande);
   }
+}
+/* La vista CUADRÍCULA del visor compara cámaras: pide el mosaico con celdas
+   más grandes y a todos los cuadros (ver.pistas === 'grande'). */
+function visMosaicoGrande() {
+  for (const s of VIS.sesiones.values()) if (s.ver && s.ver.pistas === 'grande') return true;
+  return false;
 }
 /* Cada visor avisa qué videos tiene a la vista (orden 'ver'): lo que nadie
    mira no se dibuja ni se codifica. Sin aviso, se manda todo. */
@@ -9747,8 +9754,14 @@ async function _visAplicarVer(sesion) {
       const p = sender.getParameters();
       if (!p.encodings || !p.encodings.length) continue;
       const activo = !sesion.ver || sesion.ver[nombre] !== false;
-      if (p.encodings[0].active === activo) continue;
+      /* el mosaico grande (cuadrícula del visor) va con más cuadros y más bits */
+      const grande = nombre === 'pistas' && !!sesion.ver && sesion.ver.pistas === 'grande';
+      const fps = nombre === 'pistas' ? (grande ? 30 : 15) : p.encodings[0].maxFramerate;
+      const bps = nombre === 'pistas' ? (grande ? 8_000_000 : 2_500_000) : p.encodings[0].maxBitrate;
+      if (p.encodings[0].active === activo && p.encodings[0].maxFramerate === fps && p.encodings[0].maxBitrate === bps) continue;
       p.encodings[0].active = activo;
+      p.encodings[0].maxFramerate = fps;
+      p.encodings[0].maxBitrate = bps;
       await sender.setParameters(p);
     } catch (e) { /* el navegador decide */ }
   }
@@ -10179,7 +10192,7 @@ function lienzosVisor() {
     VIS.mv = { cvs: m, ctx: m.getContext('2d', { alpha: false }), flujo: null };
   }
   if (!VIS.pv.flujo) VIS.pv.flujo = VIS.pv.cvs.captureStream(VISOR_FPS);
-  if (!VIS.mv.flujo) VIS.mv.flujo = VIS.mv.cvs.captureStream(15);
+  if (!VIS.mv.flujo) VIS.mv.flujo = VIS.mv.cvs.captureStream(30);   // el tope real lo pone el envío (15, o 30 con la cuadrícula)
 }
 function soltarLienzosVisor() {
   [VIS.pv, VIS.mv].forEach(x => {
@@ -10231,9 +10244,13 @@ function dibujarPrevia() {
     ctx = real;
   }
 }
-function dibujarMosaico() {
+function dibujarMosaico(grande) {
   const mv = VIS.mv;
   if (!mv) return;
+  MOSAICO.cw = grande ? 640 : 320;
+  MOSAICO.ch = grande ? 360 : 180;
+  const mw = MOSAICO.cols * MOSAICO.cw, mh = Math.ceil(N_TRACKS / MOSAICO.cols) * MOSAICO.ch;
+  if (mv.cvs.width !== mw || mv.cvs.height !== mh) { mv.cvs.width = mw; mv.cvs.height = mh; }
   const c = mv.ctx, { cols, cw, ch } = MOSAICO;
   c.fillStyle = '#000';
   c.fillRect(0, 0, mv.cvs.width, mv.cvs.height);
@@ -10258,6 +10275,8 @@ function estadoVisor() {
       fuente: t.loaded ? String(t.loadedName || '').slice(0, 60) : '',
       on: salida.pistas[i].on, opacidad: salida.pistas[i].opacidad, clip: salida.pistas[i].clip, fijo: salida.pistas[i].fijo,
       capa: t.excl === 'capa',
+      color: { on: !!t.vproc.on, ...Object.fromEntries(VPROC_PARAMS.map(p => [p.key, t.vproc[p.key] ?? p.def])) },
+      forma: Object.fromEntries(efxParams({ type: 'xform' }).map(p => [p.key, t.xform[p.key] ?? p.def])),
       vivo: !!t.loaded && t.sourceType !== 'file', interruptor: t.sourceType !== 'file' && t.clips.some(c => c.srcLive),
     })),
     previa: previa.pistas,
@@ -10273,6 +10292,11 @@ function estadoVisor() {
       .map(e => ({ id: e.id, pista: i, nombre: String(e.name || '').slice(0, 60), dur: e.dur || 0 }))).slice(0, 400),
     escenas: S.escenas.map(e => ({ id: e.id, nombre: e.nombre, pistas: e.pistas })),
     transiciones: TRANS_ESCENA.lista,
+    /* Lo que se puede ajustar por pista desde la cuadrícula del visor */
+    ajustes: {
+      color: VPROC_PARAMS.map(p => ({ key: p.key, lbl: p.lbl, min: p.min, max: p.max, step: p.step, def: p.def })),
+      forma: efxParams({ type: 'xform' }).map(p => ({ key: p.key, lbl: p.lbl, min: p.min, max: p.max, step: p.step, def: p.def })),
+    },
     grabando: grabacionActiva(),
   };
 }
@@ -10403,9 +10427,44 @@ function visorOrden(msg) {
     case 'ver': {
       const sesion = VIS.sesiones.get(msg.id);
       if (!sesion) return;
-      sesion.ver = { salida: msg.salida !== false, previa: msg.previa !== false, pistas: msg.pistas !== false };
+      sesion.ver = { salida: msg.salida !== false, previa: msg.previa !== false, pistas: msg.pistas === 'grande' ? 'grande' : msg.pistas !== false };
       _visAplicarVer(sesion);
+      VIS.firma = '';
+      publicarEstadoVisor(false);   // el tamaño de las celdas del mosaico puede haber cambiado
       return;
+    }
+    /* — ajustes de una pista desde la cuadrícula del visor: corrección de
+         color (PROCESADOR DE VIDEO) y TRANSFORM. Van por el mismo catálogo
+         de parámetros que los controles MIDI, así los sliders de MIDIVJ se
+         mueven solos. — */
+    case 'pista-ajuste': {
+      if (!enRango) return;
+      const def = paramDe(msg.grupo === 'color' ? 't' + i + '.vproc.' + msg.key : 't' + i + '.' + msg.key);
+      const v = +msg.valor;
+      if (!def || !Number.isFinite(v) || !/^[a-zA-Z]+$/.test(String(msg.key))) return;
+      const val = Math.max(def.min, Math.min(def.max, v));
+      def.set(val);
+      try { def.ui(val); } catch (e) {}
+      if (msg.grupo !== 'color' && S.ati === i && typeof syncXov === 'function') syncXov();
+      break;
+    }
+    case 'pista-color': {
+      if (!enRango) return;
+      const t = S.tracks[i];
+      if (typeof msg.on === 'boolean') t.vproc.on = msg.on;
+      if (msg.reset === true) t.vproc = { ...vprocDefault(), on: t.vproc.on };
+      if (S.ati === i) {
+        if (msg.reset === true) VPROC_PARAMS.forEach(p => setSliderRow('#vproc-params', p.key, p.def, p.fmt));
+        syncVprocBtn(t);
+      }
+      break;
+    }
+    case 'pista-forma': {
+      if (!enRango || msg.reset !== true) return;
+      const t = S.tracks[i];
+      t.xform = xformDefault({ scaleLink: !!t.xform.scaleLink, pinLink: [...(t.xform.pinLink || [])] });
+      if (S.ati === i) { renderTrackInfo(); if (typeof syncXov === 'function') syncXov(); }
+      break;
     }
     default:
       return;
