@@ -3442,6 +3442,7 @@ function renderPlaylistPanel(t) {
   `${t.playlist.length ? rows : '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">Sin medios en la lista.</div>'}
   ${live ? `<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">${srcIcon(t.sourceType)} Fuente en vivo: <b>${escHtml(t.loadedName)}</b> → GENERAR CLIPS crea un clip-interruptor (toggle) para mostrarla/ocultarla.</div>
   <div class="ti-row" style="gap:6px;"><button class="hbtn" style="font-size:9px;padding:3px 7px;${t.fijo ? 'border-color:var(--accent);color:var(--accent);' : ''}" onclick="alternarFijo(${idx})" title="Seguro de la fuente en vivo. 🔒 = se ve siempre que la pista esté encendida, aunque su clip-interruptor esté apagado. 🔓 = el clip decide si se ve.">${t.fijo ? '🔒 SIEMPRE VISIBLE' : '🔓 SEGÚN EL CLIP'}</button></div>` : ''}
+  ${t.loaded ? `<div class="ti-row" style="gap:6px;margin-top:4px;"><button class="hbtn" style="font-size:9px;padding:3px 7px;${t.excl === 'capa' ? 'border-color:var(--accent);color:var(--accent);' : ''}" onclick="alternarCapa(${idx})" title="⧉ MANTENER ENCENDIDA: los clips de esta pista siguen sonando aunque dispares clips en otras pistas (dos videos a la vez, cada uno en su pista), y los suyos tampoco apagan a las demás. ⇄ SE REEMPLAZA: con EXCL ●, disparar un clip en otra pista del mismo tipo detiene el de ésta. Es el mismo ajuste que EXCL en 🎞 AJUSTE Y TRANSICIÓN.">${t.excl === 'capa' ? '⧉ SE MANTIENE ENCENDIDA' : (t.excl === 'todas' ? '⇄ APAGA A TODAS' : '⇄ SE REEMPLAZA CON OTRAS')}</button></div>` : ''}
   <div class="ti-row" style="gap:6px;margin-top:4px;flex-wrap:wrap;">
     <label style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:8px;color:var(--text3);cursor:pointer;">
       <input type="checkbox" ${t.playlistLoop?'checked':''} onchange="S.tracks[${idx}].playlistLoop=this.checked">
@@ -3590,6 +3591,7 @@ function loadLayerFile(l, file) {
       const v = document.createElement('video');
       v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto';
       v.style.display = 'none'; document.body.appendChild(v);
+      v._capa = true;   // ver «Videos que el navegador pausa al ocultarse la ventana»
       l._el = v;
     }
     l._el.src = l._objectURL;
@@ -4916,6 +4918,12 @@ function setTrackAjuste(idx, v) {
 function setTrackExcl(idx, v) {
   S.tracks[idx].excl = EXCL_MODOS.includes(v) ? v : 'auto';
   renderTL();
+  if (S.ati === idx) renderTrackInfo();
+  if (typeof publicarEstadoVisor === 'function') publicarEstadoVisor(false);
+}
+/* ⧉ Mantener encendida: atajo visible de EXCL 'capa' (ver EXCL POR GRUPOS) */
+function alternarCapa(idx) {
+  setTrackExcl(idx, S.tracks[idx].excl === 'capa' ? 'auto' : 'capa');
 }
 function setTrackTrans(idx, campo, v) {
   const t = S.tracks[idx];
@@ -6935,14 +6943,62 @@ let _outBlanked = false;   // ver loop(): el lienzo ya se limpió por no haber n
    se congelaba. Mientras está oculta, un Worker —cuyos temporizadores no
    se frenan— marca el paso a ~30 cuadros por segundo. Si rAF sigue vivo,
    el paso de fondo no hace nada. */
-const FONDO = { w: null, t: 0, raf: 0, ms: 33 };
+const FONDO = { w: null, t: 0, raf: 0, ms: 33, cambio: -1e9, n: 0 };
 function fondoPaso() {
   const ahora = performance.now();
   if (ahora - FONDO.raf < 150) return;
   try { masterPaso(ahora); cuadro(); } catch (e) { /* un cuadro que falla no detiene el paso */ }
+  if (++FONDO.n % 30 === 0) reanudarPausadosPorNavegador();
+}
+
+/* ── Videos que el navegador pausa al ocultarse la ventana ──
+   Al minimizar o tapar la ventana, el navegador pausa por su cuenta los
+   videos sin sonido (o silenciados): el clip quedaba congelado en la salida
+   y seguía en pausa al volver. Un play() dado con la ventana oculta sí se
+   respeta, así que el video que el navegador pausó (y que MIDIVJ no mandó
+   pausar) se reanuda solo. */
+function videoDebeCorrer(v) {
+  if (!v || !v.isConnected && !v.src) return false;
+  if (v._capa) return !!v.src && !v.ended;
+  for (const t of S.tracks) {
+    if (t.sourceType !== 'file' || !t.loaded || t.mediaKind === 'image') continue;
+    const c = t.activeClip;
+    if (v === t.revVid) return !!c && !!t._useRev;
+    if (v !== t.vid) continue;
+    if (!c) return !!S.masterPlaying;          // sin clip: sigue al PLAY general (masterPaso lo retoma)
+    if (t._onceEnded || t._useRev || t._revTimer || t._revPending) return false;
+    if (c.loopMode === 'reverse' || (c.loopMode === 'pingpong' && t.pingDir === -1)) return false;
+    return true;
+  }
+  return false;
+}
+function enVentanaDeOcultar() {
+  return document.hidden || performance.now() - FONDO.cambio < 3000;
+}
+document.addEventListener('pause', ev => {
+  const v = ev.target;
+  if (!(v instanceof HTMLVideoElement) || !enVentanaDeOcultar()) return;
+  if (!videoDebeCorrer(v)) return;
+  v._pausaNav = true;
+  v.play().then(() => { v._pausaNav = false; }).catch(() => {});
+}, true);
+function reanudarPausadosPorNavegador() {
+  document.querySelectorAll('video').forEach(v => {
+    if (!v._pausaNav) return;
+    if (!v.paused || !videoDebeCorrer(v)) { v._pausaNav = false; return; }
+    v.play().then(() => { v._pausaNav = false; }).catch(() => {});
+  });
+  /* vidA/vidB/revVid no están en el documento */
+  S.tracks.forEach(t => [t.vidA, t.vidB, t.revVid].forEach(v => {
+    if (!v || !v._pausaNav) return;
+    if (!v.paused || !videoDebeCorrer(v)) { v._pausaNav = false; return; }
+    v.play().then(() => { v._pausaNav = false; }).catch(() => {});
+  }));
 }
 function fondoAjustar() {
   const oculta = document.hidden;
+  FONDO.cambio = performance.now();
+  setTimeout(reanudarPausadosPorNavegador, 300);
   if (!FONDO.w && oculta && !FONDO.t) {
     try {
       const src = 'let t=0;onmessage=e=>{clearInterval(t);t=e.data?setInterval(()=>postMessage(0),e.data):0;};';
@@ -9411,7 +9467,10 @@ const mismasPistas = (a, b) => JSON.stringify(a.pistas.map(pistaDeEscena)) === J
 
 /** Lleva un arreglo a la salida. `seg` > 0 = con la transición `tipo`
     (ver TRANSICIONES DE ESCENA) desde lo que había; 0 = corte. */
-function aplicarEscena(esc, seg, tipo) {
+/* Toma la foto de la salida actual y arranca la transición de escena: lo
+   que cambie en la salida a continuación entra con ella. La usan ▶ A SALIDA,
+   las escenas y los cambios hechos en DIRECTO A SALIDA desde el visor. */
+function fotoTransicion(seg, tipo) {
   const W = cvs.width, H = cvs.height;
   if (seg > 0) {
     if (!VIS.tk) { VIS.tk = document.createElement('canvas'); VIS.tkCtx = VIS.tk.getContext('2d', { alpha: false }); }
@@ -9419,6 +9478,9 @@ function aplicarEscena(esc, seg, tipo) {
     VIS.tkCtx.drawImage(cvs, 0, 0);
     VIS.fundido = { t0: performance.now(), ms: Math.min(10, seg) * 1000, tipo: TRANS_ESCENA.resolver(tipo), semilla: Math.random() * 1000 };
   } else VIS.fundido = null;
+}
+function aplicarEscena(esc, seg, tipo) {
+  fotoTransicion(seg, tipo);
   /* Los clips del arreglo conviven: EXCL no aplica entre ellos */
   const excl = S.exclMode;
   S.exclMode = false;
@@ -9857,6 +9919,7 @@ function estadoVisor() {
       tipo: t.loaded ? (t.sourceType === 'file' ? (t.mediaKind === 'image' ? 'imagen' : 'video') : t.sourceType) : '',
       fuente: t.loaded ? String(t.loadedName || '').slice(0, 60) : '',
       on: salida.pistas[i].on, opacidad: salida.pistas[i].opacidad, clip: salida.pistas[i].clip, fijo: salida.pistas[i].fijo,
+      capa: t.excl === 'capa',
       vivo: !!t.loaded && t.sourceType !== 'file', interruptor: t.sourceType !== 'file' && t.clips.some(c => c.srcLive),
     })),
     previa: previa.pistas,
@@ -9928,27 +9991,40 @@ function visorOrden(msg) {
     case 'salida-pista': {
       if (!enRango) return;
       const t = S.tracks[i];
+      /* Tocar la pista en DIRECTO puede traer el clip a disparar */
+      const r = msg.clip ? findClip(msg.clip) : null;
+      const conClip = !!r && r.track === t && !r.clip.layerId;
+      if (seg && (typeof msg.on === 'boolean' || typeof msg.fijo === 'boolean' || conClip)) fotoTransicion(seg, msg.trans);
       if (typeof msg.on === 'boolean') t.visible = msg.on;
       if (msg.opacidad !== undefined && Number.isFinite(+msg.opacidad)) { t.opacity = Math.max(0, Math.min(1, +msg.opacidad)); refrescarSlidersDePista(i); }
       if (typeof msg.fijo === 'boolean') { t.fijo = msg.fijo; renderTL(); }
+      if (conClip && t.activeClip !== r.clip) trigClip(t, r.clip);
       renderTabs();
       if (S.ati === i) renderTrackInfo();
       break;
     }
+    /* ⧉ ajuste de la pista (no es parte del arreglo): vale para previa y salida */
+    case 'pista-capa':
+      if (!enRango) return;
+      setTrackExcl(i, msg.capa === false ? 'auto' : 'capa');
+      break;
     case 'salida-solo':
       if (!enRango) return;
+      if (seg) fotoTransicion(seg, msg.trans);
       S.tracks.forEach((t, k) => { t.visible = k === i || !t.loaded; });
       renderTabs();
       renderTrackInfo();
       break;
     case 'salida-clip': {
       const r = msg.clip ? findClip(msg.clip) : null;
+      if (seg && ((r && !r.clip.layerId) || (!msg.clip && enRango && S.tracks[i].activeClip))) fotoTransicion(seg, msg.trans);
       if (r && !r.clip.layerId) { mostrarPista(r.track); trigClip(r.track, r.clip); }
       else if (!msg.clip && enRango && S.tracks[i].activeClip) deactivateClip(S.tracks[i]);
       break;
     }
     case 'salida-medio':
       if (!enRango || !S.tracks[i].playlist.some(e => e.id === msg.medio)) return;
+      if (seg) fotoTransicion(seg, msg.trans);
       useMediaEntryAsSource(i, msg.medio);
       break;
     /* — escenas — */

@@ -94,7 +94,12 @@ body[data-modo="directo"] #inferior{border-top-color:var(--aire);}
 .tarj .pie button{padding:5px 7px;font-size:9px;}
 .tarj .pie button.peligro{border-color:var(--aire);color:var(--aire);}
 .tarj .pie button.seguro{padding:4px 6px;font-size:12px;}
+.tarj .pie button.capa{padding:4px 6px;font-size:12px;}
+.tarj .pie button.capa.on{border-color:var(--previa);background:rgba(0,220,130,.14);color:var(--previa);}
 .tarj .pie button.seguro.on{border-color:var(--previa);background:rgba(0,220,130,.14);}
+.tarj .clips{display:flex;align-items:center;gap:5px;padding:0 6px 5px;}
+.tarj .clips select{flex:1;min-width:0;font-size:9px;padding:4px 3px;}
+.tarj .clips button{flex:none;padding:4px 7px;font-size:11px;}
 .tarj .aviso{flex:none;padding:0 7px 3px;font-size:8px;color:#ffb020;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .tarj .franja{height:4px;flex:none;}
 .tarj.clip{width:150px;justify-content:flex-start;}
@@ -216,6 +221,7 @@ const V = {
   todas: false,         // MATERIALES: todas las pistas o sólo las del arreglo
   arrastrando: false,   // un deslizador en uso: no se repinta la tira debajo del dedo
   firmaTira: '',
+  ultimo: {},           // pista → último clip puesto desde el visor (para volver a él al tocar la pista)
   borrar: null,         // escena esperando el segundo toque de ✕
   trans: 'disolver',    // transición elegida para ▶ A SALIDA ('corte', 'azar' o un id de la app)
   firmaTrans: '',
@@ -459,14 +465,24 @@ function tiraPistas(e) {
     const clipVivo = !!a.clip && e.clips.some(c => c.id === a.clip && c.vivo);
     const tapada = p.interruptor && a.on && !a.fijo && !clipVivo;
     const seguro = p.vivo ? '<button data-acc="fijo" data-i="' + i + '" class="seguro' + (a.fijo ? ' on' : '') + '" title="Seguro: 🔒 la fuente se ve siempre que la pista esté encendida, aunque su clip esté apagado. 🔓 el clip decide si se ve.">' + (a.fijo ? '🔒' : '🔓') + '</button>' : '';
+    /* Clips de la pista: con varios, se elige uno o se avanza en secuencia (⏭) */
+    const cl = e.clips.filter(c => c.pista === i);
+    const fila = p.cargada && cl.length > 1
+      ? '<div class="clips"><select data-acc="elige" data-i="' + i + '" title="Clip de esta pista">' +
+          '<option value="">— sin clip —</option>' +
+          cl.map(c => '<option value="' + esc(c.id) + '"' + (a.clip === c.id ? ' selected' : '') + '>' + esc(c.nombre) + '</option>').join('') +
+        '</select><button data-acc="sigue" data-i="' + i + '" title="Siguiente clip de la pista (en secuencia)">⏭</button></div>'
+      : '';
     return '<div class="tarj pista' + (aire ? ' aire' : '') + (previa ? ' previa' : '') + (p.cargada ? '' : ' sin') + '" data-acc="pista" data-i="' + i + '">' +
       '<div class="franja" style="background:' + esc(p.color) + '"></div>' +
       '<canvas data-i="' + i + '" width="320" height="180"></canvas>' + marcas(aire, previa) +
       '<div class="nom">' + nPista(i) + ' · ' + (p.cargada ? (ICONO[p.tipo] || '') + ' ' + esc(p.fuente) : 'sin fuente') + '</div>' +
       (tapada ? '<div class="aviso">clip apagado · 🔓 para verla</div>' : '') +
+      fila +
       '<div class="pie">' +
         '<input type="range" min="0" max="100" value="' + Math.round(a.opacidad * 100) + '" data-acc="opacidad" data-i="' + i + '" title="Opacidad"' + (p.cargada ? '' : ' disabled') + '>' +
         seguro +
+        (p.cargada ? '<button data-acc="capa" data-i="' + i + '" class="capa' + (p.capa ? ' on' : '') + '" title="⧉ Mantener encendida: los clips de esta pista siguen aunque se disparen clips en otras pistas (dos videos a la vez). Apagado: un clip de otra pista del mismo tipo la reemplaza.">⧉</button>' : '') +
         '<button data-acc="solo" data-i="' + i + '" title="Deja sólo esta pista encendida"' + (p.cargada ? '' : ' disabled') + '>SOLO</button>' +
       '</div></div>';
   }).join('');
@@ -548,6 +564,15 @@ function dibujarMiniaturas() {
 
 /* ── Acciones ─────────────────────────────────────────── */
 const P = () => (V.modo === 'directo' ? 'salida' : 'previa');
+/* En DIRECTO A SALIDA los cambios entran con la transición elegida */
+const conTrans = () => (V.modo === 'directo' ? entrada() : {});
+/* Pone un clip de la pista: en directo lo dispara (y enciende la pista); en previa lo deja preparado */
+function ponerClip(i, id) {
+  if (V.modo === 'directo') {
+    if (id) orden('salida-pista', { pista: i, on: true, clip: id, ...entrada() });
+    else orden('salida-clip', { pista: i, clip: null, ...entrada() });
+  } else orden('previa-clip', { pista: i, clip: id || null });
+}
 
 $('tira').addEventListener('click', ev => {
   const e = V.est;
@@ -561,23 +586,45 @@ $('tira').addEventListener('click', ev => {
     case 'opacidad': return;   // lo maneja 'input'
     case 'pista':
       if (!e.pistas[i].cargada) { toast(nPista(i) + ' no tiene fuente'); return; }
-      orden(P() + '-pista', { pista: i, on: !arr[i].on });
+      if (V.modo === 'directo' && !arr[i].on) {
+        /* Tocar la pista en directo la enciende y, si no tiene un clip corriendo, dispara el suyo */
+        const cl = e.clips.filter(c => c.pista === i);
+        const cual = arr[i].clip ? null : (cl.find(c => c.id === V.ultimo[i]) || cl[0] || null);
+        if (cual) V.ultimo[i] = cual.id;
+        orden('salida-pista', { pista: i, on: true, ...(cual ? { clip: cual.id } : {}), ...entrada() });
+      } else orden(P() + '-pista', { pista: i, on: !arr[i].on, ...conTrans() });
       break;
+    case 'elige': return;   // lo maneja 'change'
+    case 'sigue': {
+      const cl = e.clips.filter(c => c.pista === i);
+      if (!cl.length) return;
+      const base = arr[i].clip || V.ultimo[i];   // si otra pista lo detuvo, la secuencia sigue donde iba
+      const sig = cl[(cl.findIndex(c => c.id === base) + 1) % cl.length];
+      V.ultimo[i] = sig.id;
+      ponerClip(i, sig.id);
+      toast(nPista(i) + ' ▶ ' + sig.nombre);
+      break;
+    }
     case 'solo':
-      orden(P() + '-solo', { pista: i });
+      orden(P() + '-solo', { pista: i, ...conTrans() });
       break;
     case 'fijo':
-      orden(P() + '-pista', { pista: i, fijo: !arr[i].fijo });
+      orden(P() + '-pista', { pista: i, fijo: !arr[i].fijo, ...conTrans() });
+      break;
+    case 'capa':
+      orden('pista-capa', { pista: i, capa: !e.pistas[i].capa });
+      toast(nPista(i) + (e.pistas[i].capa ? ': se reemplaza con otras pistas' : ': se mantiene encendida ⧉'));
       break;
     case 'clip': {
       const puesto = arr[i].clip === id && arr[i].on;
-      if (V.modo === 'directo') orden('salida-clip', puesto ? { pista: i, clip: null } : { clip: id });
+      if (!puesto) V.ultimo[i] = id;
+      if (V.modo === 'directo') orden('salida-clip', puesto ? { pista: i, clip: null, ...entrada() } : { clip: id, ...entrada() });
       else orden('previa-clip', { pista: i, clip: puesto ? null : id });
       break;
     }
     case 'medio':
       if (V.modo !== 'directo') { toast('Un medio sin clip sólo se puede poner en DIRECTO A SALIDA (cambia la fuente de la pista)'); return; }
-      orden('salida-medio', { pista: i, medio: id });
+      orden('salida-medio', { pista: i, medio: id, ...entrada() });
       break;
     case 'escena':
       if (V.modo === 'directo') orden('escena-salida', { escena: id, ...entrada() });
@@ -613,6 +660,13 @@ $('tira').addEventListener('click', ev => {
   if (ev.target.matches('input[type=range]')) ev.stopPropagation();
 }, true);
 
+$('tira').addEventListener('change', ev => {
+  const el = ev.target;
+  if (el.dataset.acc !== 'elige') return;
+  const i = parseInt(el.dataset.i, 10);
+  if (el.value) V.ultimo[i] = el.value;
+  ponerClip(i, el.value);
+});
 $('tira').addEventListener('input', ev => {
   const el = ev.target;
   if (el.dataset.acc !== 'opacidad') return;
