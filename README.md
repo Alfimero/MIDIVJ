@@ -282,6 +282,25 @@ Notas: sólo video, sin audio (igual que HDMI/PANTALLA/CAPTURA/cámara). `/salid
 
 En MIDIVJ, una pista apagada desde el visor se marca tachada en su pestaña con **⦸** (clic para volver a mostrarla). La previa usa las mismas fuentes que la salida: muestra el arreglo (posición, recorte, color, capas), no los efectos globales, y una pista de video enseña el cuadro que tiene en ese momento.
 
+## Varios MIDIVJ en la misma red: compartir los controles
+
+Dos o más equipos con MIDIVJ en la misma red se reconocen entre sí, y uno puede **recibir las señales de control del otro**. Ejemplo: la PC 1 (visuales) tiene conectado el teléfono que hace de pedalera; la PC 2 (grabación) recibe esos mismos botones, sliders, palancas y pads y los mapea a lo suyo. Una sola botonera sirve a varias sesiones.
+
+Está en **📡 RELAY → 7 · OTROS MIDIVJ EN LA RED**:
+
+1. En cada equipo, abre MIDIVJ con su relay. **ESTE EQUIPO** muestra el nombre con el que aparece ante los demás (se puede cambiar) y su dirección.
+2. En el equipo que va a recibir, los otros MIDIVJ aparecen solos en la lista; si no, pulsa **🔍 BUSCAR EN LA RED** (tarda unos 3 segundos) o escribe la IP del otro equipo en **A MANO**.
+3. Pulsa **↙ RECIBIR SUS CONTROLES**. Desde ese momento, lo que se toque en los mandos del otro equipo llega también aquí, como si estuvieran conectados a esta PC.
+4. Mapea como siempre: **🎯 MAPEO** para un parámetro o el MIDI de un clip o efecto, y mueve o toca el control en el otro equipo.
+
+- El otro equipo no cambia nada: sólo se le escucha. Su panel muestra «Reciben los controles de este equipo: …».
+- Para ir en los dos sentidos, cada equipo recibe del otro; las señales no rebotan.
+- **COMPARTIR TAMBIÉN EL MIDI FÍSICO DE ESTE EQUIPO**: además de los mandos, los otros equipos reciben lo que entra por los controladores MIDI (USB) de esta PC.
+- **⏸ PAUSAR** deja de recibir sin borrar el enlace y **✕ QUITAR** lo borra. El relay recuerda los enlaces y los reconecta solo si el otro equipo se apaga y vuelve.
+- Las señales llegan con los mismos números de nota y CC que en el equipo de origen: si en los dos equipos hay algo mapeado al mismo botón, el botón dispara las dos cosas.
+- Dos sesiones en la misma PC (dos relays, en los puertos 9191 y 9192) también se ven entre sí.
+- Red: usa el mismo puerto que los teléfonos (TCP 9191), así que funciona donde funciona el mando. Los avisos automáticos van por UDP 9189; si el firewall los bloquea, BUSCAR hace lo mismo. Hay que actualizar y reiniciar el relay en los equipos; un equipo con la versión anterior sirve de origen si se escribe su IP a mano.
+
 ## Grabar la salida y las pistas
 
 **⏺ GRABAR** (en el encabezado) abre el panel GRABACIÓN. Marca qué grabar: la **salida** (tal como se ve en HDMI y OBS) y, si quieres, **cada pista por separado** (su señal limpia: el video o la cámara con su corrección de color, sin mezcla ni efectos, se vea o no en la salida). Todas las tomas van a una misma carpeta, que eliges en **CARPETA DE LAS GRABACIONES** (📁 ELEGIR… o escribiendo la ruta; por defecto `Grabaciones/` del proyecto, fuera de Git):

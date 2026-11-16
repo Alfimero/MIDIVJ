@@ -25,6 +25,7 @@ const { execFile } = require('child_process');
 const { WebSocketServer } = require('ws');
 const selfsigned = require('selfsigned');
 const QRLite = require('./midivj-qr.js');
+const { crearEnlace } = require('./midivj-enlace.js');
 
 /* Puerto: si el pedido está ocupado se prueban los siguientes. `PORT` deja de
    ser constante a propósito — todo lo que publica direcciones lee el real. */
@@ -1194,6 +1195,10 @@ async function handleHttp(req, res) {
     }
     return;
   }
+  if (ruta === '/api/enlace' || ruta.startsWith('/api/enlace/')) {
+    await enlace.atender(req, res, ruta, { sendJson, readJson, isLoopback });
+    return;
+  }
   if (req.method === 'GET' && ruta === '/health') {
     sendJson(res, 200, { ok: true, sessionsDirectory: 'Sessions', mandos: MAX_MANDOS, camaras: MAX_CAMARAS, salidas: MAX_SALIDAS, visores: MAX_VISORES });
     return;
@@ -1257,6 +1262,8 @@ entrada.on('listening', () => server.emit('listening'));
    Protocolo (todo JSON):
      cliente → { type:'join', room, rol:'app'|'mando'|'emisor'|'camara'|'salida', slot, disp, nombre }
      cliente → { type:'midi', data:[status,num,vel] }          (se reenvía tal cual)
+     app     → { type:'midi-local', data:[status,num,vel] }    (su MIDI físico: sólo a los enlaces de otros equipos)
+     relay   → { type:'midi', data, remoto:{enlace,nombre} }   (a la app: señal que llegó por un enlace con otro equipo)
      cliente → { type:'layout', layout:{...} }                 (se valida y persiste)
      cliente → { type:'pedir-layout' }
      app     → { type:'inventario', clips, efectos, bancos, parametros, mapeos }
@@ -1499,9 +1506,37 @@ function presencia(room) {
     mandos: listarSlots(sala.mandos, 'Mando'),
     camaras: listarSlots(sala.camaras, 'Cámara'),
     salidas: sala.salidas.size,
-    visores: sala.visores.size
+    visores: sala.visores.size,
+    /* Otros equipos que están recibiendo las señales de esta sala */
+    enlaces: [...sala.clientes].filter(c => c._rol === 'enlace').map(c => c._nombre || 'otro equipo')
   };
 }
+
+/* ═══════════════════════════════════════════════════════
+   Enlace entre equipos: otros MIDIVJ de la red y las señales
+   que se reciben de ellos (src/midivj-enlace.js).
+═══════════════════════════════════════════════════════ */
+const enlace = crearEnlace({
+  puerto: () => PORT,
+  dataDir: DATA_DIR,
+  direcciones,
+  salas: () => [...rooms.entries()]
+    .filter(([, s]) => s.app || s.mandos.size)
+    .map(([sala, s]) => ({
+      sala, app: !!s.app,
+      mandos: [...s.mandos.entries()].sort((a, b) => a[0] - b[0]).map(([slot, ws]) => ({ slot, nombre: ws._nombre || `Mando ${slot}` })),
+    })),
+  /* Lo que llega de otro equipo va sólo a la app de la sala: no se reparte
+     a los mandos ni a otros enlaces (sin cadenas ni ecos). */
+  entregar: (salaLocal, msg) => {
+    const sala = rooms.get(salaLocal);
+    if (!sala || !sala.app) return false;
+    enviar(sala.app, msg);
+    return true;
+  },
+  log: texto => console.log(`  [enlace] ${texto}`),
+  soloLocal: process.env.MIDIVJ_ENLACE_SOLO_LOCAL === '1',
+});
 
 function difundirPresencia(room) {
   difundir(room, presencia(room));
@@ -1545,7 +1580,8 @@ function alConectar(ws) {
       leaveRoom(ws, myRoom);
       myRoom = typeof msg.room === 'string' && msg.room.trim() ? msg.room.trim().slice(0, 40) : 'midivj';
       const sala = getOrCreate(myRoom);
-      ws._rol = ['app', 'mando', 'emisor', 'camara', 'salida', 'visor'].includes(msg.rol) ? msg.rol : 'emisor';
+      /* 'enlace': el relay de otro equipo, que entra a escuchar los `midi` de esta sala (ver midivj-enlace.js) */
+      ws._rol = ['app', 'mando', 'emisor', 'camara', 'salida', 'visor', 'enlace'].includes(msg.rol) ? msg.rol : 'emisor';
       ws._disp = typeof msg.disp === 'string' ? msg.disp.slice(0, 40) : '';
       ws._nombre = typeof msg.nombre === 'string' ? msg.nombre.slice(0, 30) : '';
 
@@ -1668,6 +1704,17 @@ function alConectar(ws) {
     }
 
     /* ── MIDI: comportamiento original, sin tocar ── */
+    /* Un enlace sólo escucha: nada de lo que mande entra a la sala */
+    if (ws._rol === 'enlace') return;
+    /* El MIDI físico de la app, si eligió compartirlo: sólo a los otros equipos */
+    if (msg.type === 'midi-local' && Array.isArray(msg.data)) {
+      if (ws._rol !== 'app' || msg.data.length > 3) return;
+      const output = JSON.stringify({ type: 'midi', data: msg.data, origen: { fisico: true } });
+      rooms.get(myRoom)?.clientes.forEach(cliente => {
+        if (cliente._rol === 'enlace' && cliente.readyState === 1) cliente.send(output);
+      });
+      return;
+    }
     if (msg.type === 'midi' && Array.isArray(msg.data)) {
       const output = JSON.stringify(msg);
       rooms.get(myRoom)?.clientes.forEach(cliente => {
@@ -1999,6 +2046,7 @@ cargarLayout()
     console.log(`\nMIDIVJ — servidor local y relay en puerto ${PORT}`);
     await iniciarHttps().catch(() => undefined);
     await printIPs().catch(() => undefined);
+    await enlace.iniciar({ sinAvisos: process.env.MIDIVJ_SIN_AVISOS === '1' }).catch(error => console.error('  [enlace]', error.message));
     abrirNavegador(`http://localhost:${PORT}/`);
     console.log('  Esperando conexiones… (Ctrl+C para detener)\n');
   })
