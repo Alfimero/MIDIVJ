@@ -378,8 +378,11 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
   <button class="hbtn" id="mapeo-btn" onclick="toggleModoMapeo()" title="Muestra todo lo que se puede mover con un slider, palanca o pad del mando (o una perilla/fader MIDI): clic en un parámetro y mueve el control para mapearlo">🎯 MAPEO</button>
   <button class="hbtn out" onclick="openOutputWindow()">⊡ HDMI</button>
   <button class="hbtn" onclick="window.open(salidaURL(),'_blank','noopener')" title="Abre la página que agregarías en OBS como Fuente de navegador (también en 📡 RELAY → 5)">🎥 OBS</button>
-  <button class="hbtn" id="grab-btn" onclick="abrirPanelGrabacion()" title="Graba la salida en Grabaciones/ del proyecto (sin audio)">⏺ GRABAR</button>
+  <button class="hbtn" onclick="window.open(visorURL(),'_blank','noopener')" title="Visor de control: la salida, una salida nueva (previa) y una barra con materiales, escenas y pistas. Ábrelo también en una tableta (QR en 📡 RELAY → 6)">🎚 VISOR</button>
+  <button class="hbtn" id="grab-btn" onclick="abrirPanelGrabacion()" title="Graba la salida y, si quieres, cada pista por separado, con su audio y con la entrada de audio que elijas">⏺ GRABAR</button>
+  <button class="hbtn" id="mezcla-btn" onclick="abrirPanelMezcla()" title="Mezcla de audio: volumen, silencio y REC del sonido de cada pista (videos y cámaras) y de la entrada de audio">🎚 MEZCLA</button>
   <button class="hbtn" onclick="abrirPanelRes()" title="Resolución y tamaño del video de salida">⛶ SALIDA</button>
+  <button class="hbtn" id="camhub-btn" onclick="abrirHubCamaras()" title="Hub de cámaras: el formato (resolución, FPS, proporción, calidad, audio) de todos los teléfonos en una tabla, y un cambio para todas a la vez">📷 CÁMARAS</button>
   <button class="hbtn" id="mando-btn" onclick="abrirPanelRelay()" title="Relay, conexión y códigos QR de los mandos">📡 RELAY <span id="mando-count">—</span></button>
   <button class="hbtn" id="audio-btn" onclick="abrirPanelAudio()" title="Entradas de audio, análisis y mapeos audio → visual">🔊 AUDIO</button>
   <button id="excl-btn" class="hbtn" onclick="toggleExcl()" title="Exclusivo: disparar un clip detiene los de las otras pistas de su tipo (un video a otro video, una fuente en vivo a otra). Una cámara encima de un video no lo detiene. Por pista: 🎞 AJUSTE Y TRANSICIÓN → EXCL (capa = se superpone siempre)" style="border-color:var(--accent);color:var(--accent);background:rgba(0,255,136,.08);">EXCL ●</button>
@@ -452,7 +455,8 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
             <span class="rp-mandos" id="rp-mandos">—</span>
           </div>
           <p class="rp-ayuda">
-            Cada teléfono escanea el QR de su número (hasta 4). Para mapear un botón, pulsa
+            Cada teléfono escanea el QR de su número; en esa página se agregan más mandos con ➕
+            según hagan falta. Para mapear un botón, pulsa
             <b>MAP</b> en el clip o efecto y tócalo en el teléfono.
           </p>
         </div>
@@ -491,6 +495,28 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
             la resolución queda fija (no la reduce sola por ancho de banda). Con la fuente agregada,
             <b>Iniciar cámara virtual</b> de OBS expone toda la escena a Zoom/Meet/Discord como si fuera
             una webcam.
+          </p>
+        </div>
+      </div>
+
+      <div class="rp-paso">
+        <h3>6 · VISOR DE CONTROL (MESA DE VIDEO)</h3>
+        <div>
+          <div class="rp-linea">
+            <label>URL</label>
+            <input class="rp-cmd" id="rp-visor-url" readonly>
+            <button class="rp-btn" onclick="copiarDeCampo('rp-visor-url', this)">COPIAR</button>
+            <button class="rp-btn" onclick="window.open(document.getElementById('rp-visor-url').value,'_blank','noopener')">ABRIR</button>
+            <button class="rp-btn pri" onclick="abrirControlRemoto()">📱 QR</button>
+          </div>
+          <div class="rp-linea">
+            <span class="rp-mandos" id="rp-visores">—</span>
+          </div>
+          <p class="rp-ayuda">
+            En una tableta, teléfono u otra computadora de la misma red: muestra la <b>salida</b> y una
+            <b>salida nueva</b> (previa) donde armas el siguiente arreglo de pistas sin tocar lo que se ve;
+            <b>▶ A SALIDA</b> lo manda al aire. Abajo, una barra con los <b>materiales</b>, las
+            <b>escenas</b> guardadas y las <b>pistas</b> en vivo.
           </p>
         </div>
       </div>
@@ -754,6 +780,8 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
 <script src="modules/audio/midivj-audio-ui.js"></script>
 <script src="modules/grabacion/midivj-grabacion.js"></script>
 <script src="modules/grabacion/midivj-grabacion-ui.js"></script>
+<script src="modules/mezcla/midivj-mezcla.js"></script>
+<script src="modules/mezcla/midivj-mezcla-ui.js"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════
@@ -883,6 +911,7 @@ const S = {
   bankLearning: null,   // index of bank being MIDI-learned
   outRes: { locked:false, w:1280, h:720 },  // resolución fija del lienzo de salida (null=auto según video)
   ccMaps: [],   // CC → parámetro continuo (ver CONTROLES CONTINUOS)
+  escenas: [],  // arreglos de pistas guardados (ver VISOR DE CONTROL)
   negro: 0,     // fundido a negro de toda la salida (0..1), sólo por CC
 };
 let clipSeq = 1;
@@ -901,7 +930,9 @@ const cvs    = document.getElementById('out-canvas');
    TRANSFORM encima) en vez de esperar al frame ya terminado, lo que se ve
    como el video "flasheando" a su posición original varias veces por
    segundo. Sin desynchronized el navegador solo muestra frames completos. */
-const ctx    = cvs.getContext('2d', { alpha:false, willReadFrequently:false });
+/* `let`: la previa del visor de control se dibuja con las mismas funciones
+   de pista, apuntando un momento a su propio lienzo (ver dibujarPrevia). */
+let ctx      = cvs.getContext('2d', { alpha:false, willReadFrequently:false });
 const tlCvs  = document.getElementById('tl-canvas');
 const tlWrap = document.getElementById('tl-wrap');
 const tlCtx  = tlCvs.getContext('2d', { alpha:false });
@@ -1147,6 +1178,9 @@ function makeTrack(i) {
        vivo entre sí), 'capa' (se superpone: ni apaga ni la apagan) o 'todas'
        (corta a cualquier pista). Ver grupoExcl(). */
     excl:'auto',
+    /* Seguro de la fuente en vivo: true = se ve siempre que la pista esté
+       encendida, aunque su clip-interruptor esté apagado. Ver vivoVisible(). */
+    fijo:false,
     _fade:null, _fadeSeq:0, _fadeTimer:0,   // fundido de opacidad en curso ('disolver')
     selLayerId:'media',    // capa que editan TRANSFORM DE PISTA y la caja interactiva (sólo si layersLinked=false)
     layersLinked:true,     // true = todas las capas comparten t.xform (el color marca dónde va todo); false = transform por capa
@@ -1492,7 +1526,7 @@ document.addEventListener('fullscreenchange',()=>{
         clearOutputTimer();
         /* Los visores de /salida (OBS) envían este mismo stream: detenerlo
            aquí los dejaba congelados aunque se reabriera la ventana. */
-        if (!SAL.sesiones.size) resetOutputStream();
+        if (!SAL.sesiones.size && !VIS.sesiones.size) resetOutputStream();
         outWinCvs = null; outWinCtx = null; outWinVid = null; outMirrorMode = 'none';
       }, { once:true });
       bindOutputSurface();
@@ -1800,6 +1834,7 @@ async function applyProjectData(d) {
       S.tracks[i].transOut = td.transOut || 'none';
       S.tracks[i].transDur = td.transDur !== undefined ? td.transDur : 0.5;
       S.tracks[i].excl = EXCL_MODOS.includes(td.excl) ? td.excl : 'auto';
+      S.tracks[i].fijo = td.fijo === true;
       if(td.videoOffset!==undefined) S.tracks[i].videoOffset=clampOffset(td.videoOffset);
       if(td.xform) S.tracks[i].xform=xformDefault(td.xform);
       /* Capas: se desechan las actuales (streams, URLs) y se reconstruyen */
@@ -1838,6 +1873,10 @@ async function applyProjectData(d) {
   S.negro = 0;
   refrescarMapeosUI();
   if (d.banks) d.banks.forEach((db,i)=>{ if(i<S.banks.length) Object.assign(S.banks[i],db); });
+  /* Escenas del visor de control; las pistas vuelven todas a la salida */
+  S.escenas = Array.isArray(d.escenas) ? d.escenas.map(escenaLimpia).filter(Boolean) : [];
+  S.tracks.forEach(t => { t.visible = true; });
+  VIS.previa = null;
   if (d.outRes && d.outRes.locked && d.outRes.w && d.outRes.h) applyOutRes(d.outRes.w, d.outRes.h, true);
   if (d.audio) audioRestaurar(d.audio);
   if (d.name) document.getElementById('proj-name').value=d.name;
@@ -1892,6 +1931,7 @@ function loadTrackFileObject(track, file, relativePath='') {
   const url = URL.createObjectURL(file);
   track._objectURL = url;
   startLoad(track, file.name, url, buildFileMediaRef(file, relativePath));
+  track.visible = true;    // un archivo recién elegido siempre entra a la salida
   track._srcFile = file;   // para no ofrecer ⇄ con el mismo archivo que ya suena
   syncSrcKey(track);
 }
@@ -2311,6 +2351,7 @@ function _applyStream(track, stream, type, label) {
   track._replaceOffer = null;
 
   track._stream    = stream;
+  track.visible    = true;   // una fuente nueva siempre entra a la salida
   track.sourceType = type;
   track.mediaRef   = null;
   track.loaded     = true;
@@ -2346,7 +2387,9 @@ function _applyStream(track, stream, type, label) {
        de que lo haga _camRecibirOferta()'s pc.onconnectionstatechange. */
     console.log('[fuente] pista '+track.i+' ('+type+' — "'+label+'"): el track de video terminó por sí solo (onended) — se corta la pista');
     appendNetLog('⚠ pista '+track.i+' ('+type+'): el video terminó por sí solo');
+    const ses = type === 'phone' ? CAM.sesiones.get(track.i) : null;
     stopTrackSource(track.i);
+    if (ses) _camQuiereVolver(track.i, ses.slot, 'el video terminó por sí solo');
   };
   renderAll();
 }
@@ -2387,6 +2430,7 @@ function releaseFileMedia(track) {
 
 function stopTrackSource(trackIdx) {
   const t = S.tracks[trackIdx];
+  _camOlvidar(trackIdx);   // quitar la fuente a mano cancela la espera de la cámara
   if (t.sourceType === 'browser') closeBrowserWindow(trackIdx, true);
   stopTrackStream(t);
   releaseFileMedia(t);
@@ -2412,10 +2456,14 @@ function toggleCapture(trackIdx) {
    MASTER CLOCK — single cursor controls all tracks
 ═══════════════════════════════════════════════════════ */
 function masterTick(now) {
+  if (masterPaso(now)) requestAnimationFrame(masterTick);
+}
+/* Un paso del reloj; true = sigue corriendo */
+function masterPaso(now) {
   if (!S.masterPlaying) {
     /* Still update masterTime from active clips so cursor follows them */
     _syncMasterFromClips();
-    return;
+    return false;
   }
   if (S.masterLastT !== null) {
     const elapsed = (now - S.masterLastT) / 1000;
@@ -2425,7 +2473,7 @@ function masterTick(now) {
   S.masterLastT = now;
   syncTracksToMaster();
   _syncMasterFromClips();
-  requestAnimationFrame(masterTick);
+  return true;
 }
 
 /* When clips are playing, update masterTime to match the first active clip */
@@ -2525,7 +2573,9 @@ function resetAll() {
     stopTrackStream(t);
     t.mediaRef = null;
     t.vid.pause(); t.vid.src=''; t.loaded=false; t.dur=0; t.loadedName='—'; t.activeClip=null; t.clips=[];
+    t.visible = true; t.fijo = false;
   });
+  S.escenas = []; VIS.previa = null;
   S.selClipId=null; clipSeq=1;
   document.getElementById('load-ov').classList.remove('hide');
   document.getElementById('res-lbl').textContent='';
@@ -2631,7 +2681,7 @@ function triggerOn(midiId, vel) {
   /* Clips */
   for (const t of S.tracks) {
     const c = t.clips.find(x => x.midi === midiId);
-    if (c) trigClip(t, c);
+    if (c) { mostrarPista(t); trigClip(t, c); }
   }
   /* Effects */
   S.efxs.forEach(e => {
@@ -3107,6 +3157,19 @@ function renderTabs() {
     btn.style.color = i===S.ati ? t.acc : '';
     btn.title = t.name + (t.loaded?' — '+t.loadedName:'');
     btn.onclick = () => { S.ati=i; renderAll(); };
+    /* Pista apagada (una escena o el visor de control la sacaron de la
+       salida): se marca y un clic en ⦸ la devuelve. */
+    if (t.visible === false) {
+      btn.style.textDecoration = 'line-through';
+      btn.style.opacity = '.55';
+      btn.title += ' — APAGADA: no sale a la salida (no es un fallo de la señal)';
+      const ojo = document.createElement('button');
+      ojo.textContent = '⦸';
+      ojo.title = 'Pista APAGADA: una escena o el visor de control la sacó de la salida. No es un fallo de la señal. Clic para volver a mostrarla';
+      ojo.style.cssText = 'background:none;border:none;color:var(--hot);cursor:pointer;font-size:10px;padding:0;line-height:1;';
+      ojo.onclick = e => { e.stopPropagation(); t.visible = true; renderTabs(); renderTrackInfo(); };
+      wrap.appendChild(ojo);
+    }
 
     /* Reorder arrows */
     const arrows = document.createElement('div');
@@ -3218,10 +3281,15 @@ function renderTrackInfo() {
 </div>` : '';
 
   const camSes = CAM.sesiones.get(idx);
+  const camVuelve = CAM.volver.get(idx);
   const camEsperando = camSes && camSes.estado !== 'lista'
-    ? `<span style="color:var(--yellow);font-size:8px;">⏳ esperando cámara ${camSes.slot}…</span>` : '';
+    ? `<span style="color:var(--yellow);font-size:8px;">⏳ esperando cámara ${camSes.slot}…</span>`
+    : camVuelve ? `<span style="color:var(--yellow);font-size:8px;" title="La cámara se cortó sin que la quitaras: en cuanto el teléfono vuelva a /camara se conecta sola a esta pista. ✕ cancela la espera.">⏳ cámara ${camVuelve.slot} cortada · vuelve sola</span>` : '';
+  const apagada = t.visible === false
+    ? `<div class="ti-row" style="gap:6px;padding:3px 5px;border:1px solid var(--hot);border-radius:3px;"><span style="font-family:var(--mono);font-size:8px;color:var(--hot);flex:1;">⦸ PISTA APAGADA · no sale a la salida (la apagó una escena o el visor de control)</span><button class="hbtn" style="font-size:8px;padding:2px 6px;" onclick="mostrarPista(S.tracks[${idx}])">MOSTRAR</button></div>` : '';
 
   document.getElementById('track-info').innerHTML = `
+${apagada}
 <div class="ti-row">
   <span class="ti-name">${trackSourceLabel(t, srcIco)}</span>
   <span class="ti-dur">${t.loaded&&t.dur?ft(t.dur):(t.loaded?'∞':'—')}</span>
@@ -3376,7 +3444,9 @@ function renderPlaylistPanel(t) {
     <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="loadTrackGallery()" title="Agregar imágenes a la lista">+ 🖼</button>
     <button class="hbtn" style="font-size:9px;padding:3px 7px;" onclick="clearPlaylist(${idx})" title="Vaciar la lista">🗑 VACIAR</button>`,
   `${t.playlist.length ? rows : '<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">Sin medios en la lista.</div>'}
-  ${live ? `<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">${srcIcon(t.sourceType)} Fuente en vivo: <b>${escHtml(t.loadedName)}</b> → GENERAR CLIPS crea un clip-interruptor (toggle) para mostrarla/ocultarla.</div>` : ''}
+  ${live ? `<div style="font-family:var(--mono);font-size:8px;color:var(--text3);padding:2px 0;">${srcIcon(t.sourceType)} Fuente en vivo: <b>${escHtml(t.loadedName)}</b> → GENERAR CLIPS crea un clip-interruptor (toggle) para mostrarla/ocultarla.</div>
+  <div class="ti-row" style="gap:6px;"><button class="hbtn" style="font-size:9px;padding:3px 7px;${t.fijo ? 'border-color:var(--accent);color:var(--accent);' : ''}" onclick="alternarFijo(${idx})" title="Seguro de la fuente en vivo. 🔒 = se ve siempre que la pista esté encendida, aunque su clip-interruptor esté apagado. 🔓 = el clip decide si se ve.">${t.fijo ? '🔒 SIEMPRE VISIBLE' : '🔓 SEGÚN EL CLIP'}</button></div>` : ''}
+  ${t.loaded ? `<div class="ti-row" style="gap:6px;margin-top:4px;"><button class="hbtn" style="font-size:9px;padding:3px 7px;${t.excl === 'capa' ? 'border-color:var(--accent);color:var(--accent);' : ''}" onclick="alternarCapa(${idx})" title="⧉ MANTENER ENCENDIDA: los clips de esta pista siguen sonando aunque dispares clips en otras pistas (dos videos a la vez, cada uno en su pista), y los suyos tampoco apagan a las demás. ⇄ SE REEMPLAZA: con EXCL ●, disparar un clip en otra pista del mismo tipo detiene el de ésta. Es el mismo ajuste que EXCL en 🎞 AJUSTE Y TRANSICIÓN.">${t.excl === 'capa' ? '⧉ SE MANTIENE ENCENDIDA' : (t.excl === 'todas' ? '⇄ APAGA A TODAS' : '⇄ SE REEMPLAZA CON OTRAS')}</button></div>` : ''}
   <div class="ti-row" style="gap:6px;margin-top:4px;flex-wrap:wrap;">
     <label style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:8px;color:var(--text3);cursor:pointer;">
       <input type="checkbox" ${t.playlistLoop?'checked':''} onchange="S.tracks[${idx}].playlistLoop=this.checked">
@@ -3525,6 +3595,7 @@ function loadLayerFile(l, file) {
       const v = document.createElement('video');
       v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto';
       v.style.display = 'none'; document.body.appendChild(v);
+      v._capa = true;   // ver «Videos que el navegador pausa al ocultarse la ventana»
       l._el = v;
     }
     l._el.src = l._objectURL;
@@ -3999,7 +4070,25 @@ function refreshPlayBtns() {
 
 function manualPlayClip(id) {
   const r = findClip(id); if(!r) return;
+  mostrarPista(r.track);
   trigClip(r.track, r.clip);
+}
+/* Disparar un clip a mano o por MIDI es querer verlo: si una escena o el
+   visor de control habían apagado la pista, vuelve a la salida. Los clips
+   que se encadenan solos no pasan por aquí: una pista apagada sigue apagada. */
+function mostrarPista(t) {
+  if (t.visible !== false) return;
+  t.visible = true;
+  renderTabs();
+  if (S.tracks[S.ati] === t) renderTrackInfo();
+}
+/* Seguro de la fuente en vivo (ver vivoVisible) */
+function alternarFijo(i) {
+  const t = S.tracks[i];
+  t.fijo = !t.fijo;
+  renderTrackInfo();
+  renderTL();
+  publicarEstadoVisor(false);
 }
 function manualStopClip(id) {
   const r = findClip(id); if(!r) return;
@@ -4833,6 +4922,12 @@ function setTrackAjuste(idx, v) {
 function setTrackExcl(idx, v) {
   S.tracks[idx].excl = EXCL_MODOS.includes(v) ? v : 'auto';
   renderTL();
+  if (S.ati === idx) renderTrackInfo();
+  if (typeof publicarEstadoVisor === 'function') publicarEstadoVisor(false);
+}
+/* ⧉ Mantener encendida: atajo visible de EXCL 'capa' (ver EXCL POR GRUPOS) */
+function alternarCapa(idx) {
+  setTrackExcl(idx, S.tracks[idx].excl === 'capa' ? 'auto' : 'capa');
 }
 function setTrackTrans(idx, campo, v) {
   const t = S.tracks[idx];
@@ -6304,14 +6399,53 @@ function vprocSrcDims(src) {
   return [ src.videoWidth || src.naturalWidth || src.width || 0,
            src.videoHeight || src.naturalHeight || src.height || 0 ];
 }
+/* Cuenta los cuadros nuevos de un <video> (requestVideoFrameCallback): así
+   el procesador sabe si la imagen cambió desde la última vez. */
+function vprocVigilar(src) {
+  if (src._vfc !== undefined) return src._vfc;
+  src._vfc = typeof src.requestVideoFrameCallback === 'function';
+  if (!src._vfc) return false;
+  src._nf = 0;
+  const paso = () => { src._nf++; src.requestVideoFrameCallback(paso); };
+  src.requestVideoFrameCallback(paso);
+  src.addEventListener('seeked', () => { src._nf++; });
+  src.addEventListener('loadeddata', () => { src._nf++; });
+  src.addEventListener('emptied', () => { src._nf++; });
+  return true;
+}
+/* Tamaño al que se procesa: el de la fuente, pero no más grande de lo que
+   la salida puede mostrar (un video 4K en una salida 1080p se procesa a
+   1080p). Si la pista está agrandada (TRANSFORM) se respeta ese aumento, y
+   si se está grabando su señal limpia se procesa al tamaño original. */
+function vprocTamano(t, w, h) {
+  if (typeof SEN !== 'undefined' && SEN[t.i] && SEN[t.i].cvs && senalEnUso(SEN[t.i])) return [w, h];
+  const x = t.xform || {};
+  const z = Math.max(1, Math.abs(x.scaleX || 1), Math.abs(x.scaleY || 1));
+  const k = Math.max(cvs.width * z / w, cvs.height * z / h);
+  if (!(k < 0.8)) return [w, h];              // menos de 25 % de ahorro: no vale la pena reescalar
+  return [Math.max(2, Math.round(w * k)), Math.max(2, Math.round(h * k))];
+}
 /* Devuelve la fuente tal cual si el procesador está apagado o en neutro
-   (costo cero), o el canvas procesado de la pista si hay algo que aplicar. */
+   (costo cero), o el canvas procesado de la pista si hay algo que aplicar.
+   El resultado se reutiliza mientras la fuente no entregue un cuadro nuevo
+   y los ajustes no cambien: la salida, la previa, el mosaico del visor y la
+   grabación piden la misma imagen varias veces por cuadro, y la pantalla
+   refresca más rápido (60–144 Hz) que el video (24–30 cuadros/s). */
 function vprocApply(t, src) {
   const v = t.vproc;
   if (!v || !v.on || vprocIsIdentity(v)) return src;
   const G = vprocInit(); if (!G) return src;
-  const [w, h] = vprocSrcDims(src);
-  if (!w || !h) return src;
+  const [sw, sh] = vprocSrcDims(src);
+  if (!sw || !sh) return src;
+  const [w, h] = vprocTamano(t, sw, sh);
+  const ahora = performance.now();
+  const esVideo = src instanceof HTMLVideoElement && vprocVigilar(src);
+  const firma = (esVideo ? 'v' + src._nf : 'c' + S.frame) + '|' + w + 'x' + h + '|' +
+    v.gain + ',' + v.brightness + ',' + v.contrast + ',' + v.gamma + ',' + v.wb + ',' + v.backlight + ',' + v.hue + ',' + v.saturation + ',' + v.sharpness;
+  /* Con la página oculta requestVideoFrameCallback no avisa: ahí se procesa siempre.
+     Tope de 250 ms por si algún cuadro nuevo no se anuncia. */
+  if (t._vprocOut && t._vprocSrc === src && t._vprocFirma === firma &&
+      (!esVideo || (!document.hidden && ahora - t._vprocT < 250))) return t._vprocOut;
   const { cvs: cvsGL, gl, tex, u } = G;
   if (cvsGL.width !== w || cvsGL.height !== h) { cvsGL.width = w; cvsGL.height = h; }
   gl.viewport(0, 0, w, h);
@@ -6333,6 +6467,7 @@ function vprocApply(t, src) {
   const o = t._vprocOut;
   if (o.width !== w || o.height !== h) { o.width = w; o.height = h; }
   t._vprocOutCtx.drawImage(cvsGL, 0, 0);
+  t._vprocSrc = src; t._vprocFirma = firma; t._vprocT = ahora;
   return o;
 }
 
@@ -6783,6 +6918,8 @@ function drawTrackMedia(t, ti, zdx0, zdy0, zdw0, zdh0, mH, mV, rgb) {
 /* ¿Se ve ahora la fuente en vivo de la pista? Sin clips, siempre: ocupa
    todo el timeline, encima o debajo de los videos de las otras pistas. */
 function vivoVisible(t) {
+  /* Seguro puesto (🔒): la fuente se ve mientras la pista esté encendida */
+  if (t.fijo) return true;
   /* Clips-interruptor (srcLive, ⚡ GENERAR CLIPS sobre una fuente en
      vivo): si la pista tiene alguno, la fuente sólo se ve mientras uno
      esté activo. Si no, ventana de visibilidad clásica por rango. */
@@ -6844,8 +6981,90 @@ function drawLayer(t, ti, layer, zdx, zdy, zdw, zdh) {
 }
 
 let _outBlanked = false;   // ver loop(): el lienzo ya se limpió por no haber nada activo
+/* ── SEGUNDO PLANO ──
+   Con la pestaña oculta o la ventana tapada por otra, el navegador deja de
+   llamar a requestAnimationFrame: la salida (HDMI, OBS, visor, grabación)
+   se congelaba. Mientras está oculta, un Worker —cuyos temporizadores no
+   se frenan— marca el paso a ~30 cuadros por segundo. Si rAF sigue vivo,
+   el paso de fondo no hace nada. */
+const FONDO = { w: null, t: 0, raf: 0, ms: 33, cambio: -1e9, n: 0 };
+function fondoPaso() {
+  const ahora = performance.now();
+  if (ahora - FONDO.raf < 150) return;
+  try { masterPaso(ahora); cuadro(); } catch (e) { /* un cuadro que falla no detiene el paso */ }
+  if (++FONDO.n % 30 === 0) reanudarPausadosPorNavegador();
+}
+
+/* ── Videos que el navegador pausa al ocultarse la ventana ──
+   Al minimizar o tapar la ventana, el navegador pausa por su cuenta los
+   videos sin sonido (o silenciados): el clip quedaba congelado en la salida
+   y seguía en pausa al volver. Un play() dado con la ventana oculta sí se
+   respeta, así que el video que el navegador pausó (y que MIDIVJ no mandó
+   pausar) se reanuda solo. */
+function videoDebeCorrer(v) {
+  if (!v || !v.isConnected && !v.src) return false;
+  if (v._capa) return !!v.src && !v.ended;
+  for (const t of S.tracks) {
+    if (t.sourceType !== 'file' || !t.loaded || t.mediaKind === 'image') continue;
+    const c = t.activeClip;
+    if (v === t.revVid) return !!c && !!t._useRev;
+    if (v !== t.vid) continue;
+    if (!c) return !!S.masterPlaying;          // sin clip: sigue al PLAY general (masterPaso lo retoma)
+    if (t._onceEnded || t._useRev || t._revTimer || t._revPending) return false;
+    if (c.loopMode === 'reverse' || (c.loopMode === 'pingpong' && t.pingDir === -1)) return false;
+    return true;
+  }
+  return false;
+}
+function enVentanaDeOcultar() {
+  return document.hidden || performance.now() - FONDO.cambio < 3000;
+}
+document.addEventListener('pause', ev => {
+  const v = ev.target;
+  if (!(v instanceof HTMLVideoElement) || !enVentanaDeOcultar()) return;
+  if (!videoDebeCorrer(v)) return;
+  v._pausaNav = true;
+  v.play().then(() => { v._pausaNav = false; }).catch(() => {});
+}, true);
+function reanudarPausadosPorNavegador() {
+  document.querySelectorAll('video').forEach(v => {
+    if (!v._pausaNav) return;
+    if (!v.paused || !videoDebeCorrer(v)) { v._pausaNav = false; return; }
+    v.play().then(() => { v._pausaNav = false; }).catch(() => {});
+  });
+  /* vidA/vidB/revVid no están en el documento */
+  S.tracks.forEach(t => [t.vidA, t.vidB, t.revVid].forEach(v => {
+    if (!v || !v._pausaNav) return;
+    if (!v.paused || !videoDebeCorrer(v)) { v._pausaNav = false; return; }
+    v.play().then(() => { v._pausaNav = false; }).catch(() => {});
+  }));
+}
+function fondoAjustar() {
+  const oculta = document.hidden;
+  FONDO.cambio = performance.now();
+  setTimeout(reanudarPausadosPorNavegador, 300);
+  if (!FONDO.w && oculta && !FONDO.t) {
+    try {
+      const src = 'let t=0;onmessage=e=>{clearInterval(t);t=e.data?setInterval(()=>postMessage(0),e.data):0;};';
+      FONDO.w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      FONDO.w.onmessage = fondoPaso;
+      FONDO.w.onerror = () => { FONDO.w = null; };
+    } catch (e) { FONDO.w = null; }
+  }
+  if (FONDO.w) FONDO.w.postMessage(oculta ? FONDO.ms : 0);
+  else {
+    /* sin Worker: el temporizador de la página (más lento en segundo plano) */
+    clearInterval(FONDO.t); FONDO.t = oculta ? setInterval(fondoPaso, FONDO.ms) : 0;
+  }
+}
+document.addEventListener('visibilitychange', fondoAjustar);
+
 function loop() {
   requestAnimationFrame(loop);
+  FONDO.raf = performance.now();
+  cuadro();
+}
+function cuadro() {
   S.frame++;
   const W=cvs.width, H=cvs.height;
 
@@ -6859,6 +7078,9 @@ function loop() {
     return;
   }
   _outBlanked = false;
+
+  /* Señales aparte de la salida: pistas que se graban y lo que ven los visores */
+  dibujarSenales();
 
   /* Strobe: black-out every other frame group */
   const strobe = gfx('strobe');
@@ -6970,6 +7192,9 @@ function loop() {
   /* Flash */
   const flashE=gfx('flash'); if(flashE) S.flash=Math.max(S.flash,(flashE.intensity||.9)*.3);
   if (S.flash>0) { ctx.globalAlpha=S.flash; ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; S.flash=Math.max(0,S.flash-.055); }
+
+  /* Fundido de ▶ A SALIDA del visor: el arreglo anterior se desvanece encima */
+  if (VIS.fundido) dibujarFundidoEscena(W, H);
 
   /* ── Transitions overlay ── */
   renderTransition(W, H);
@@ -7613,7 +7838,7 @@ async function saveProject() {
     media: { folderHint: MEDIA.library?.rootName || '' },
     tracks: S.tracks.map(t=>({id:t.id,name:t.name,opacity:t.opacity,videoOffset:t.videoOffset||0,
       ajuste:t.ajuste||'auto', transIn:t.transIn||'none', transOut:t.transOut||'none', transDur:t.transDur ?? 0.5,
-      excl:t.excl||'auto',
+      excl:t.excl||'auto', fijo:!!t.fijo,
       xform:{...t.xform},
       vproc:{...t.vproc},
       media:t.sourceType==='file' ? serializeMediaRef(t.mediaRef) : null,
@@ -7632,6 +7857,7 @@ async function saveProject() {
     efxs:   S.efxs.map(e=>({...e,on:false})),
     ccMaps: S.ccMaps.filter(m=>!(m._nuevo && m.midi===null)).map(m=>({ id:m.id, midi:m.midi, destino:m.destino, min:m.min, max:m.max, inv:!!m.inv, auto:m.auto!==false, origen:m.origen||null })),
     banks:  S.banks.map(b=>({...b})),
+    escenas: S.escenas.map(e => ({ id:e.id, nombre:e.nombre, pistas:e.pistas.map(p => ({...p})) })),
     outRes: {...S.outRes},
     mando:  await obtenerMandoLayoutActual(),
     /* Configuración del módulo de audio (entradas, buses, mapeos, eventos).
@@ -7749,13 +7975,25 @@ const APP_DISP = (() => {
 const CAM = {
   sesiones: new Map(),   // trackIdx -> { slot, pc, candidatosPendientes, estado, timeout }
   porSlot:  new Map(),   // slot -> trackIdx
-  disponibles: []        // última presencia.camaras recibida, para el selector
+  disponibles: [],       // última presencia.camaras recibida, para el selector
+  volver: new Map()      // trackIdx -> { slot, intentos, timer }: cámaras que se cortaron solas y deben volver
 };
 
 /* Visores de /salida (OBS u otro navegador) conectados por WebRTC — ver la
    sección "SALIDA A OBS" más abajo, después de netDisconnect(). */
 const SAL = {
   sesiones: new Map()   // id -> { pc, candidatosPendientes }
+};
+
+/* Visores de control (/visor) — ver "VISOR DE CONTROL" más abajo. */
+const VIS = {
+  sesiones: new Map(),  // id -> { pc, candidatosPendientes }
+  previa: null,         // el arreglo en edición ("salida nueva"): { pistas:[{ on, opacidad, clip }] }
+  pv: null,             // lienzo de la previa   { cvs, ctx, flujo }
+  mv: null,             // mosaico de pistas     { cvs, ctx, flujo }
+  fundido: null,        // { t0, ms } mientras el arreglo anterior se desvanece
+  firma: '',            // último estado enviado
+  timer: 0
 };
 
 function netToggle() {
@@ -7861,6 +8099,11 @@ function netConnect() {
       if (msg.type === 'salida-respuesta') { _salRecibirRespuesta(msg.id, msg.sdp); return; }
       if (msg.type === 'salida-candidato') { _salRecibirCandidato(msg.id, msg.candidato); return; }
       if (msg.type === 'salida-cerrar')    { _salCerrar(msg.id, false, msg.motivo || 'la fuente de salida se desconectó'); return; }
+      if (msg.type === 'visor-hola')       { _visIniciar(msg.id); return; }
+      if (msg.type === 'visor-respuesta')  { _visRecibirRespuesta(msg.id, msg.sdp); return; }
+      if (msg.type === 'visor-candidato')  { _visRecibirCandidato(msg.id, msg.candidato); return; }
+      if (msg.type === 'visor-cerrar')     { _visCerrar(msg.id, false, msg.motivo || 'el visor se desconectó'); return; }
+      if (msg.type === 'visor-cmd')        { visorOrden(msg); return; }
     } catch(_) {}
   };
 
@@ -7886,6 +8129,10 @@ function netConnect() {
     for (const [id, sesion] of [...SAL.sesiones]) {
       const vivo = sesion.pc && (sesion.pc.connectionState === 'connected' || sesion.pc.connectionState === 'connecting');
       if (!vivo) _salCerrar(id, false, 'se cayó el relay (netWS) y la sesión de salida no estaba conectada todavía');
+    }
+    for (const [id, sesion] of [...VIS.sesiones]) {
+      const vivo = sesion.pc && (sesion.pc.connectionState === 'connected' || sesion.pc.connectionState === 'connecting');
+      if (!vivo) _visCerrar(id, false, 'se cayó el relay (netWS) y el visor no estaba conectado todavía');
     }
     appendNetLog('✘ desconectado');
     refrescarPanelRelay();
@@ -7969,6 +8216,7 @@ function _camIniciar(trackIdx, slot) {
   const timeout = setTimeout(() => {
     _camLog('cámara '+slot+' (pista '+trackIdx+') no respondió a "camara-iniciar" en 15 s — cancelando pedido');
     _camCerrar(trackIdx, true, 'timeout esperando oferta del teléfono (15s)');
+    _camReintentarLuego();
   }, 15000);
   CAM.sesiones.set(trackIdx, { slot, pc: null, candidatosPendientes: [], estado: 'pidiendo', timeout });
   CAM.porSlot.set(slot, trackIdx);
@@ -7994,8 +8242,11 @@ async function _camRecibirOferta(slot, sdp) {
   sesion.pc = pc;
 
   pc.ontrack = ev => {
+    /* El micrófono del teléfono llega como otra pista del mismo stream: la
+       toma la MEZCLA desde liveVid.srcObject. Sólo el video arma la fuente. */
+    if (ev.track.kind !== 'video') { _camLog('cámara '+slot+' (pista '+trackIdx+'): llegó el audio del teléfono'); return; }
     sesion.estado = 'lista';
-    const track = ev.streams[0].getVideoTracks()[0];
+    const track = ev.track;
     _camLog('cámara '+slot+' (pista '+trackIdx+') conectada — llegó el video', {
       track: track && { readyState: track.readyState, muted: track.muted, label: track.label }
     });
@@ -8014,8 +8265,10 @@ async function _camRecibirOferta(slot, sdp) {
        marca, _camCerrar() cerraba la conexión que se acababa de establecer
        en el mismo instante en que llegaba: conectaba y se cortaba sola,
        siempre, cada vez. Ver ADR-004, complemento (6). */
+    const v = CAM.volver.get(trackIdx);
+    if (v) { _camOlvidar(trackIdx); _camLog('cámara '+slot+' (pista '+trackIdx+'): volvió sola'); }
     sesion.aplicando = true;
-    try { _applyStream(S.tracks[trackIdx], ev.streams[0], 'phone', 'Cámara — Mando '+slot); }
+    try { _applyStream(S.tracks[trackIdx], ev.streams[0] || new MediaStream([ev.track]), 'phone', 'Cámara — Mando '+slot); }
     finally { sesion.aplicando = false; }
   };
 
@@ -8033,12 +8286,14 @@ async function _camRecibirOferta(slot, sdp) {
     if (pc.connectionState === 'connected') { clearTimeout(timerDesconexion); return; }
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       _camCerrar(trackIdx, true, 'RTCPeerConnection en estado "'+pc.connectionState+'"');
+      _camQuiereVolver(trackIdx, slot, 'se cayó la conexión');
     } else if (pc.connectionState === 'disconnected') {
       clearTimeout(timerDesconexion);
       timerDesconexion = setTimeout(() => {
         if (pc.connectionState === 'disconnected') {
           _camLog('cámara '+slot+' (pista '+trackIdx+'): siguió "disconnected" 8 s sin recuperarse — se da por caída');
           _camCerrar(trackIdx, true, 'RTCPeerConnection "disconnected" por más de 8s sin recuperarse');
+          _camQuiereVolver(trackIdx, slot, 'se cayó la conexión');
         }
       }, 8000);
     }
@@ -8054,6 +8309,7 @@ async function _camRecibirOferta(slot, sdp) {
   } catch (e) {
     _camLog('⚠ error negociando cámara '+slot+' (pista '+trackIdx+'): '+e.name+' — '+e.message);
     _camCerrar(trackIdx, true, 'error negociando: '+e.message);
+    _camReintentarLuego();
   }
 }
 
@@ -8070,8 +8326,11 @@ function _camColgarRecibido(slot, motivo) {
   if (trackIdx === undefined) return;
   const t = S.tracks[trackIdx];
   _camLog('el teléfono (cámara '+slot+', pista '+trackIdx+') avisó que cuelga — motivo del teléfono: "'+(motivo||'sin especificar')+'"');
-  if (t.sourceType === 'phone') { stopTrackSource(trackIdx); return; }
-  _camCerrar(trackIdx, false, 'colgado remoto (teléfono)');
+  const v = CAM.volver.get(trackIdx);   // un reintento en curso conserva su cuenta
+  if (t.sourceType === 'phone') stopTrackSource(trackIdx);
+  else _camCerrar(trackIdx, false, 'colgado remoto (teléfono)');
+  if (v) CAM.volver.set(trackIdx, v);
+  _camQuiereVolver(trackIdx, slot, motivo);
 }
 
 function _camError(slot, motivo) {
@@ -8079,6 +8338,7 @@ function _camError(slot, motivo) {
   if (trackIdx === undefined) return;
   _camLog('⚠ cámara '+slot+' (pista '+trackIdx+') reportó error: '+(motivo || 'sin especificar'));
   _camCerrar(trackIdx, false, 'error reportado por el teléfono: '+(motivo || 'sin especificar'));
+  _camReintentarLuego();
 }
 
 /* ── CONFIG. DE CÁMARA DEL TELÉFONO ──
@@ -8092,6 +8352,7 @@ const TEL_OPC = {
   formato: [['original','original (como el teléfono)'], ['16:9','16:9 horizontal'], ['9:16','9:16 vertical'], ['4:3','4:3'], ['3:4','3:4 vertical'], ['1:1','1:1 cuadrado']],
   calidad: [['auto','auto'], ['2','2 Mbps'], ['4','4 Mbps'], ['8','8 Mbps'], ['15','15 Mbps']],
   lente:   [['environment','trasera'], ['user','frontal (selfie)']],
+  audio:   [['si','micrófono'], ['no','sin audio']],
 };
 const TEL_RES_PX = { '480':480, '720':720, '1080':1080, '2160':2160 };
 
@@ -8104,11 +8365,12 @@ function _camEstadoRecibido(slot, msg) {
   const r = msg.real || {};
   ses.tel = {
     config: msg.config && typeof msg.config === 'object' ? msg.config : {},
-    real: { w: +r.w || 0, h: +r.h || 0, fps: +r.fps || 0 },
+    real: { w: +r.w || 0, h: +r.h || 0, fps: +r.fps || 0, audio: !!r.audio, errorAudio: r.errorAudio ? String(r.errorAudio).slice(0, 80) : null },
     caps: msg.caps && typeof msg.caps === 'object' ? msg.caps : null,
     error: msg.error ? String(msg.error).slice(0, 200) : null,
   };
   if (ses.tel.error) _camLog('⚠ cámara '+slot+' (pista '+idx+'): '+ses.tel.error);
+  hubCamRefrescar();
   if (S.ati !== idx) return;
   const box = document.getElementById('camtel');
   if (box) box.innerHTML = camTelCuerpoHTML(idx, ses);
@@ -8144,6 +8406,7 @@ function camTelCuerpoHTML(idx, ses) {
     sel('formato', 'Formato', 'Proporción de lo que envía el teléfono. Original = como lo tenga (vertical u horizontal); las demás recortan el centro de la toma en el teléfono'),
     sel('calidad', 'Calidad', 'Tope de Mbps del envío: más = más nitidez, pero necesita buena Wi-Fi'),
     sel('lente', 'Lente', 'Cámara trasera o frontal del teléfono'),
+    sel('audio', 'Audio', 'El micrófono del teléfono viaja con el video: se oye y se graba desde 🎚 MEZCLA (entra silenciado para que no acople)'),
     `<div class="ep-row"><span class="ep-note" id="camtel-st"${tel.error ? ' style="color:var(--hot);"' : ''}>${tel.error ? '⚠ ' + escHtml(tel.error) : envia}</span></div>`,
     `<div class="ep-row"><span class="ep-note" id="camtel-llega">Llega: —</span></div>`,
     `<div class="ep-row"><span class="ep-note">También se cambia desde el teléfono (⚙ en /camara). Con un formato vertical, el AJUSTE de abajo decide si se encaja o llena la salida.</span></div>`,
@@ -8204,6 +8467,203 @@ function _camCerrar(trackIdx, avisarPhone, motivo) {
   CAM.porSlot.delete(sesion.slot);
   if (avisarPhone) _camEnviar({ type: 'camara-colgar', slot: sesion.slot, motivo });
   if (S.ati === trackIdx) renderTrackInfo();
+  HUBCAM.llega.delete(trackIdx);
+  hubCamRefrescar();
+}
+
+/* ═══════════════════════════════════════════════════════
+   HUB DE CÁMARAS — el formato de todos los teléfonos en un lugar
+   Una fila por cámara conectada a una pista: lo que envía, lo que llega y
+   sus ajustes (resolución, FPS, formato, calidad, lente, audio). La fila de
+   arriba cambia un ajuste en TODAS a la vez, para dejarlas en el mismo
+   formato sin ir teléfono por teléfono. Usa los mismos mensajes que
+   CONFIG. DE CÁMARA de la pista ('camara-config' / 'camara-estado'); los
+   teléfonos conectados que todavía no están en una pista también reciben
+   el cambio y lo aplican al empezar a transmitir.
+═══════════════════════════════════════════════════════ */
+const HUB_CAMPOS = [['res', 'RESOLUCIÓN'], ['fps', 'FPS'], ['formato', 'FORMATO'], ['calidad', 'CALIDAD'], ['lente', 'LENTE'], ['audio', 'AUDIO']];
+const HUBCAM = { el: null, firma: '', llega: new Map() };
+function hubCamCrear() {
+  if (HUBCAM.el) return;
+  const st = document.createElement('style');
+  st.textContent = `
+  #hubcam-ovl{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;z-index:60;}
+  #hubcam-ovl.vis{display:flex;}
+  #hubcam{background:var(--panel);border:1px solid var(--border2);border-radius:6px;width:min(1120px,97vw);max-height:92vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.6);font-family:var(--mono);font-size:9px;color:var(--text2);}
+  #hubcam header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);}
+  #hubcam h2{margin:0;font-size:12px;letter-spacing:2px;color:var(--accent);flex:1;}
+  #hubcam table{border-collapse:collapse;width:100%;}
+  #hubcam th,#hubcam td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+  #hubcam th{font-weight:400;letter-spacing:1px;color:var(--text3);}
+  #hubcam tr.todas td{background:rgba(0,255,136,.05);border-bottom:1px solid var(--accent);}
+  #hubcam select{background:var(--panel2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:9px;padding:3px 4px;outline:none;max-width:150px;}
+  #hubcam td b{color:var(--text);font-weight:400;}
+  #hubcam .mal{color:var(--hot);}
+  #hubcam .dif{color:#ffcc00;}
+  #hubcam p{margin:0;padding:10px 16px 14px;font-size:8px;line-height:1.8;color:var(--text3);}
+  #hubcam .vacio{padding:22px 16px;text-align:center;color:var(--text3);}`;
+  document.head.appendChild(st);
+  const o = document.createElement('div');
+  o.id = 'hubcam-ovl';
+  o.innerHTML = '<div id="hubcam"><header><h2>CÁMARAS · FORMATO DE TODAS</h2><button class="hbtn" onclick="cerrarHubCamaras()">✕ CERRAR</button></header><div id="hubcam-cuerpo"></div>' +
+    '<p>La fila <b>TODAS</b> cambia ese ajuste en todas las cámaras a la vez (también en los teléfonos conectados que aún no están en una pista). ' +
+    '«Envía» es lo que el teléfono dice que manda y «Llega» lo que mide MIDIVJ: si no coinciden con lo pedido, la cámara o la Wi-Fi no dan para más. ' +
+    'En amarillo, lo que es distinto entre cámaras. El teléfono recuerda su configuración.</p></div>';
+  o.addEventListener('click', e => { if (e.target === o) cerrarHubCamaras(); });
+  o.addEventListener('change', e => {
+    const s = e.target.closest('select[data-campo]');
+    if (!s || !s.value) return;
+    if (s.dataset.idx === 'todas') hubCamAplicarTodas(s.dataset.campo, s.value);
+    else camTelSet(+s.dataset.idx, s.dataset.campo, s.value);
+    HUBCAM.firma = '';
+    setTimeout(hubCamRefrescar, 50);
+  });
+  document.body.appendChild(o);
+  HUBCAM.el = o;
+  setInterval(hubCamMedir, 1000);
+}
+function abrirHubCamaras() {
+  hubCamCrear();
+  HUBCAM.el.classList.add('vis');
+  HUBCAM.firma = '';
+  hubCamRefrescar();
+}
+function cerrarHubCamaras() { if (HUBCAM.el) HUBCAM.el.classList.remove('vis'); }
+function hubCamAbierto() { return !!(HUBCAM.el && HUBCAM.el.classList.contains('vis')); }
+/* Las sesiones de cámara, en orden de pista */
+function hubCamFilas() {
+  return [...CAM.sesiones.entries()].sort((a, b) => a[0] - b[0]).map(([idx, ses]) => ({ idx, ses }));
+}
+/* Las opciones de un campo que esa cámara declara poder dar (lo elegido siempre queda) */
+function hubCamOpciones(ses, campo) {
+  const cfg = (ses.tel && ses.tel.config) || {}, k = (ses.tel && ses.tel.caps) || {};
+  const tope = k.maxW && k.maxH ? Math.min(k.maxW, k.maxH) : Infinity;
+  return TEL_OPC[campo].filter(([v]) =>
+    campo === 'res' ? (TEL_RES_PX[v] <= tope || v === String(cfg.res))
+    : campo === 'fps' ? (!k.maxFps || +v <= k.maxFps + .5 || +v === +cfg.fps)
+    : campo === 'lente' ? (v === 'environment' || k.frontal !== false || v === cfg.lente)
+    : true);
+}
+function hubCamAplicarTodas(campo, valor) {
+  const parcial = { [campo]: campo === 'fps' ? +valor : valor };
+  const enUso = new Set();
+  hubCamFilas().forEach(({ idx, ses }) => { enUso.add(ses.slot); camTelSet(idx, campo, valor); });
+  /* Teléfonos conectados sin pista: guardan el ajuste y lo usan al transmitir */
+  (CAM.disponibles || []).forEach(c => { if (!enUso.has(c.slot)) _camEnviar({ type: 'camara-config', slot: c.slot, config: parcial }); });
+  _camLog('hub de cámaras: ' + campo + ' → ' + valor + ' en todas (' + enUso.size + ' en pista, ' + Math.max(0, (CAM.disponibles || []).length - enUso.size) + ' en espera)');
+}
+function hubCamRefrescar() {
+  if (!hubCamAbierto()) return;
+  const cuerpo = document.getElementById('hubcam-cuerpo');
+  if (cuerpo.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;   // no cerrar un selector abierto
+  const filas = hubCamFilas();
+  const libres = (CAM.disponibles || []).filter(c => CAM.porSlot.get(c.slot) === undefined);
+  const firma = JSON.stringify([filas.map(f => [f.idx, f.ses.slot, f.ses.estado, f.ses.tel]), libres.map(c => c.slot), [...CAM.volver.keys()]]);
+  if (firma === HUBCAM.firma) return;
+  HUBCAM.firma = firma;
+  if (!filas.length && !libres.length) {
+    cuerpo.innerHTML = '<div class="vacio">No hay teléfonos conectados en /camara.<br>Abre 📡 RELAY → 4 · CÁMARA DE TELÉFONO para ver el QR.</div>';
+    return;
+  }
+  const comun = campo => {
+    const vs = new Set(filas.filter(f => f.ses.tel).map(f => String(f.ses.tel.config[campo])));
+    return vs.size === 1 ? [...vs][0] : null;
+  };
+  const selTodas = campo => {
+    const c = comun(campo);
+    return '<select data-idx="todas" data-campo="' + campo + '" title="Cambia ' + campo + ' en todas las cámaras">' +
+      '<option value=""' + (c === null ? ' selected' : '') + '>' + (filas.length > 1 && c === null ? '— distintos —' : '— elegir —') + '</option>' +
+      TEL_OPC[campo].map(([v, l]) => '<option value="' + v + '"' + (c === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
+  };
+  let h = '<table><tr><th>PISTA</th><th>📱</th><th>ENVÍA</th><th>LLEGA</th>' + HUB_CAMPOS.map(([, l]) => '<th>' + l + '</th>').join('') + '</tr>';
+  h += '<tr class="todas"><td colspan="4"><b>TODAS</b> · ' + filas.length + ' en pista' + (libres.length ? ' · ' + libres.length + ' en espera' : '') + '</td>' +
+    HUB_CAMPOS.map(([c]) => '<td>' + (c === 'lente' ? '' : selTodas(c)) + '</td>').join('') + '</tr>';
+  for (const { idx, ses } of filas) {
+    const tel = ses.tel;
+    const r = tel ? tel.real : null;
+    const envia = !tel ? '⏳ esperando al teléfono…'
+      : tel.error ? '<span class="mal">⚠ ' + escHtml(tel.error) + '</span>'
+      : r.w ? '<b>' + r.w + '×' + r.h + '</b> · ' + r.fps + ' fps · ' + (r.h > r.w ? 'vertical' : r.h === r.w ? 'cuadrada' : 'horizontal') + (r.audio ? ' · 🎤' : '') : '—';
+    h += '<tr><td><b>T' + (idx + 1) + '</b></td><td>' + ses.slot + '</td><td>' + envia + '</td><td id="hubcam-llega-' + idx + '">' + (HUBCAM.llega.get(idx) || '—') + '</td>' +
+      HUB_CAMPOS.map(([c]) => {
+        if (!tel) return '<td>—</td>';
+        const distinto = comun(c) === null && filas.length > 1 && c !== 'lente';
+        return '<td><select data-idx="' + idx + '" data-campo="' + c + '"' + (distinto ? ' class="dif"' : '') + '>' +
+          hubCamOpciones(ses, c).map(([v, l]) => '<option value="' + v + '"' + (String(tel.config[c]) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></td>';
+      }).join('') + '</tr>';
+  }
+  for (const c of libres) {
+    h += '<tr><td>—</td><td>' + c.slot + '</td><td colspan="' + (2 + HUB_CAMPOS.length) + '">conectado, sin pista' + (c.nombre ? ' · ' + escHtml(c.nombre) : '') +
+      ' — recibe lo que cambies en TODAS y lo usa al empezar a transmitir</td></tr>';
+  }
+  cuerpo.innerHTML = h + '</table>';
+}
+/* Lo que llega de verdad de cada cámara (estadísticas del receptor) */
+async function hubCamMedir() {
+  if (!hubCamAbierto()) return;
+  for (const { idx, ses } of hubCamFilas()) {
+    if (!ses.pc) continue;
+    try {
+      (await ses.pc.getStats()).forEach(r => {
+        if (r.type === 'inbound-rtp' && r.kind === 'video' && r.frameWidth) {
+          const txt = r.frameWidth + '×' + r.frameHeight + ' @ ' + Math.round(r.framesPerSecond || 0) + ' fps';
+          HUBCAM.llega.set(idx, txt);
+          const el = document.getElementById('hubcam-llega-' + idx);
+          if (el) el.textContent = txt;
+        }
+      });
+    } catch (_) {}
+  }
+  hubCamRefrescar();
+}
+
+
+/* ── LA CÁMARA VUELVE SOLA ──
+   Si la cámara de un teléfono se corta sin que nadie la quite (el teléfono
+   se bloqueó o cambió de app, la Wi-Fi parpadeó, se recargó /camara), la
+   pista la recuerda y la vuelve a pedir en cuanto ese teléfono aparece de
+   nuevo en el relay. Quitar la fuente (✕), ponerle otra a la pista o el
+   botón DETENER del teléfono cancelan la espera. */
+const CAM_REINTENTOS = 8;
+function _camOlvidar(trackIdx) {
+  const v = CAM.volver.get(trackIdx);
+  if (!v) return;
+  clearTimeout(v.timer);
+  CAM.volver.delete(trackIdx);
+}
+function _camQuiereVolver(trackIdx, slot, motivo) {
+  if (/DETENER/.test(motivo || '')) { _camOlvidar(trackIdx); return; }   // la apagaron a propósito desde el teléfono
+  const t = S.tracks[trackIdx];
+  if (t.loaded && t.sourceType !== 'phone') return;   // la pista ya tiene otra fuente
+  if (!CAM.volver.has(trackIdx)) {
+    CAM.volver.set(trackIdx, { slot, intentos: 0, timer: 0 });
+    _camLog('cámara '+slot+' (pista '+trackIdx+') se cortó sola — vuelve a esta pista en cuanto el teléfono reaparezca');
+  }
+  if (S.ati === trackIdx) renderTrackInfo();
+  _camReintentarLuego();
+}
+function _camReintentarLuego() {
+  CAM.volver.forEach(v => { clearTimeout(v.timer); v.timer = setTimeout(_camReintentar, 2500); });
+}
+function _camReintentar() {
+  if (!netWS || netWS.readyState !== 1) return;
+  CAM.volver.forEach((v, trackIdx) => {
+    const t = S.tracks[trackIdx];
+    if (CAM.sesiones.has(trackIdx)) return;                       // ya hay un pedido en curso
+    if (t.loaded && t.sourceType !== 'phone') { _camOlvidar(trackIdx); return; }
+    if (!CAM.disponibles.some(c => c.slot === v.slot)) return;    // el teléfono no está: se espera a la próxima presencia
+    const otra = CAM.porSlot.get(v.slot);
+    if (otra !== undefined && otra !== trackIdx) { _camOlvidar(trackIdx); return; }
+    if (v.intentos >= CAM_REINTENTOS) {
+      _camLog('cámara '+v.slot+' (pista '+trackIdx+'): no volvió tras '+CAM_REINTENTOS+' intentos — elige 📱 CÁMARA de nuevo');
+      _camOlvidar(trackIdx);
+      if (S.ati === trackIdx) renderTrackInfo();
+      return;
+    }
+    v.intentos++;
+    _camLog('cámara '+v.slot+' (pista '+trackIdx+'): pidiéndola de nuevo (intento '+v.intentos+')');
+    _camIniciar(trackIdx, v.slot);
+  });
 }
 
 /* Sólo diagnóstico: si esta pestaña pasa a segundo plano justo antes de que
@@ -8360,7 +8820,7 @@ function _salCerrar(id, avisar, motivo) {
   }
   SAL.sesiones.delete(id);
   /* El último que usaba la captura del lienzo la suelta (ver beforeunload de la ventana HDMI) */
-  if (!SAL.sesiones.size && !outputWindowOpen()) resetOutputStream();
+  if (!SAL.sesiones.size && !VIS.sesiones.size && !outputWindowOpen()) resetOutputStream();
   if (avisar) _salEnviar({ type: 'salida-cerrar', id, motivo });
 }
 
@@ -8396,6 +8856,7 @@ function salidaURL() {
   const host = (conectado ? delCampo : (delOrigen || delCampo)) || 'localhost:9191';
   return 'http://'+host+'/salida?sala='+encodeURIComponent(room);
 }
+function visorURL() { return salidaURL().replace('/salida?', '/visor?'); }
 
 function abrirPanelRelay() {
   document.getElementById('rp-url').value  = document.getElementById('n-url').value;
@@ -8436,6 +8897,8 @@ function refrescarPanelRelay() {
 
   const salUrl = document.getElementById('rp-salida-url');
   if (salUrl) salUrl.value = salidaURL();
+  const visUrl = document.getElementById('rp-visor-url');
+  if (visUrl) visUrl.value = visorURL();
 }
 
 function conectarDesdePanel() {
@@ -8528,8 +8991,7 @@ function pintarPresenciaMandos(msg) {
   const btn = document.getElementById('mando-btn');
   if (!el) return;
   const n = (msg.mandos||[]).length;
-  const max = msg.maxMandos || 4;
-  el.textContent = n + '/' + max;
+  el.textContent = String(n);
   el.style.color = n ? 'var(--accent)' : 'var(--text3)';
   if (btn) {
     btn.style.borderColor = n ? 'var(--accent)' : '';
@@ -8538,12 +9000,14 @@ function pintarPresenciaMandos(msg) {
   const lista = document.getElementById('rp-mandos');
   if (lista) {
     lista.textContent = n
-      ? n+'/'+max+' conectados: '+msg.mandos.map(m => 'M'+m.slot).join(' · ')
+      ? n+' conectado'+(n===1?'':'s')+': '+msg.mandos.slice(0, 24).map(m => 'M'+m.slot).join(' · ')+(n>24?' …':'')
       : 'ningún teléfono conectado todavía';
     lista.style.color = n ? 'var(--accent)' : 'var(--text3)';
   }
 
   CAM.disponibles = msg.camaras || [];
+  hubCamRefrescar();
+  if (CAM.volver.size) _camReintentar();
   const nCam = CAM.disponibles.length;
   const maxCam = msg.maxCamaras || 4;
   const listaCam = document.getElementById('rp-camaras');
@@ -8562,6 +9026,15 @@ function pintarPresenciaMandos(msg) {
       ? nSal+'/'+maxSal+' fuentes de salida conectadas (ej. OBS)'
       : 'ninguna fuente de salida conectada todavía';
     listaSal.style.color = nSal ? 'var(--accent)' : 'var(--text3)';
+  }
+
+  const nVis = msg.visores || 0;
+  const listaVis = document.getElementById('rp-visores');
+  if (listaVis) {
+    listaVis.textContent = nVis
+      ? nVis+'/'+(msg.maxVisores || 4)+' visores de control conectados'
+      : 'ningún visor de control conectado todavía';
+    listaVis.style.color = nVis ? 'var(--accent)' : 'var(--text3)';
   }
 
   refrescarPanelRelay();
@@ -9007,18 +9480,145 @@ function grabacionActiva() {
 }
 function grabacionInicializar() {
   if (grabador || !grabacionDisponible()) return grabador;
+  mezclaInicializar();
   MIDIVJ.capturas.registrar({
     id: 'salida', nombre: 'Salida',
     capturar: fps => cvs.captureStream ? cvs.captureStream(fps) : null,
     tamano: () => ({ ancho: cvs.width, alto: cvs.height }),
+    /* la mezcla de los canales con REC */
+    audio: () => (mezcla ? mezcla.pistaDeMezcla() : null),
+  });
+  /* Cada pista por separado: su señal limpia (ver SEÑALES POR PISTA) */
+  S.tracks.forEach((t, i) => MIDIVJ.capturas.registrar({
+    id: 'pista-' + (i + 1),
+    nombre: 'Pista ' + (i + 1),
+    capturar: fps => capturarPista(i, fps),
+    tamano: () => tamanoSenal(i),
+    detalle: () => (S.tracks[i].loaded ? S.tracks[i].loadedName : ''),
+    disponible: () => !!S.tracks[i].loaded,
+    /* su sonido limpio; si no tiene, la entrada de referencia (para sincronizar) */
+    audio: () => (mezcla ? (mezcla.pistaDeCanal('pista-' + (i + 1)) ||
+      (grabador.config.audioRef !== false ? mezcla.pistaDeCanal('entrada') : null)) : null),
+  }));
+  /* La entrada de audio elegida, en un archivo aparte */
+  if (mezcla) MIDIVJ.capturas.registrar({
+    id: 'audio-entrada', nombre: 'Audio de entrada', soloAudio: true,
+    capturar: () => { const p = mezcla.pistaDeCanal('entrada'); return p ? new MediaStream([p]) : null; },
+    detalle: () => mezcla.entrada.label || '',
+    disponible: () => !!mezcla.entrada.activa && !!(mezcla.canales.get('entrada') || {}).rec,
   });
   grabador = MIDIVJGrabacion.crear({
     log: msg => appendNetLog('[grabación] ' + msg),
     onChange: () => { pintarBotonGrabacion(); if (grabadorUI) grabadorUI.refrescar(); },
   });
   MIDIVJ.modulos.registrar(grabador);
-  grabadorUI = MIDIVJGrabacionUI.crear(grabador, MIDIVJ.host, { avisar: msg => appendNetLog('[grabación] ' + msg) });
+  grabadorUI = MIDIVJGrabacionUI.crear(grabador, MIDIVJ.host, {
+    avisar: msg => appendNetLog('[grabación] ' + msg),
+    antesDeGrabar: async () => {
+      if (!mezcla || grabador.config.audio === false) return;
+      await mezcla.start();
+      mezclaSincronizar();
+    },
+    audio: mezcla ? {
+      idCaptura: 'audio-entrada',
+      dispositivos: pedirPermiso => mezcla.listarDispositivos(pedirPermiso),
+      elegir: (deviceId, label) => mezcla.usarEntrada(deviceId, label),
+      actual: () => mezcla.entrada,
+      nivel: () => mezcla.niveles().entrada || 0,
+      abrirMezcla: () => abrirPanelMezcla(),
+      canalesConSonido: () => [...mezcla.canales.values()].filter(c => c.tipo !== 'entrada' && c.conSenal && c.rec).map(c => c.nombre),
+    } : null,
+  });
   return grabador;
+}
+
+/* ═══════════════════════════════════════════════════════
+   MEZCLA — puente con src/modules/mezcla/
+   Un canal por pista ('pista-1'…) y uno para la entrada de audio del
+   equipo ('entrada'). Aquí se le dice a la mezcla qué alimenta cada canal:
+   los <video> de archivo de la pista (vidA/vidB) o el audio de su fuente
+   en vivo (el micrófono de la cámara del teléfono). Hasta que la mezcla
+   arranca (abrir 🎚 MEZCLA, elegir una entrada o grabar con audio) no se
+   toca nada: los videos suenan por su cuenta, como siempre.
+═══════════════════════════════════════════════════════ */
+let mezcla = null, mezclaUI = null, mezclaEntradaActiva = false;
+function mezclaDisponible() {
+  return !!(window.MIDIVJ && window.MIDIVJMezcla && window.MIDIVJMezclaUI);
+}
+function mezclaInicializar() {
+  if (mezcla || !mezclaDisponible()) return mezcla;
+  mezcla = MIDIVJMezcla.crear({
+    log: msg => appendNetLog('[mezcla] ' + msg),
+    onChange: () => {
+      /* Una entrada recién abierta entra sola en la toma (su archivo de audio) */
+      if (mezcla.entrada.activa !== mezclaEntradaActiva) {
+        mezclaEntradaActiva = mezcla.entrada.activa;
+        if (grabador && !grabador.grabando()) {
+          const set = new Set(grabador.config.fuentes);
+          if (mezclaEntradaActiva) set.add('audio-entrada'); else set.delete('audio-entrada');
+          grabador.config.fuentes = [...set];
+        }
+      }
+      if (mezclaUI) mezclaUI.refrescar();
+      if (grabadorUI) grabadorUI.refrescar();
+    },
+  });
+  MIDIVJ.modulos.registrar(mezcla);
+  S.tracks.forEach((t, i) => mezcla.canal('pista-' + (i + 1), { nombre: 'T' + (i + 1) }));
+  mezcla.canal('entrada', { nombre: 'ENTRADA', tipo: 'entrada', mute: true });
+  mezclaUI = MIDIVJMezclaUI.crear(mezcla, { alAbrir: mezclaSincronizar });
+  setInterval(mezclaSincronizar, 500);
+  return mezcla;
+}
+/* ¿La fuente de la pista tiene sonido? En vivo: si su stream trae audio.
+   Un archivo: sí, salvo que ya se haya reproducido más de un segundo sin
+   decodificar nada de audio (un video mudo). */
+function segundosReproducidos(v) {
+  let n = 0;
+  try { for (let i = 0; i < v.played.length; i++) n += v.played.end(i) - v.played.start(i); } catch (e) {}
+  return n;
+}
+function pistaTieneAudio(t) {
+  if (!t.loaded) return false;
+  if (t.sourceType !== 'file') {
+    const s = t.liveVid.srcObject;
+    return !!(s && s.getAudioTracks && s.getAudioTracks().some(a => a.readyState === 'live'));
+  }
+  if (t.mediaKind === 'image') return false;
+  const vs = [t.vidA, t.vidB].filter(v => v.src);
+  if (vs.some(v => v.webkitAudioDecodedByteCount === undefined || v.webkitAudioDecodedByteCount > 0)) return true;
+  return !vs.some(v => segundosReproducidos(v) > 1);   // todavía no sonó nada: no se sabe, se da por bueno
+}
+function mezclaSincronizar() {
+  if (!mezcla) return;
+  S.tracks.forEach((t, i) => {
+    const id = 'pista-' + (i + 1);
+    const vivo = !!t.loaded && t.sourceType !== 'file';
+    if (mezcla.activa()) {
+      if (t.loaded && t.sourceType === 'file' && t.mediaKind !== 'image') {
+        mezcla.conectarElemento(id, t.vidA);
+        mezcla.conectarElemento(id, t.vidB);
+      }
+      mezcla.conectarFlujo(id, vivo ? t.liveVid.srcObject : null);
+    }
+    mezcla.describir(id, {
+      nombre: 'T' + (i + 1), detalle: t.loaded ? String(t.loadedName || '') : '',
+      conSenal: pistaTieneAudio(t),
+      muteDeArranque: vivo,   // el micrófono de una cámara acopla con los parlantes: entra silenciado
+    });
+  });
+}
+function abrirPanelMezcla() {
+  if (!mezclaDisponible()) {
+    alert('El módulo de mezcla no cargó.\n\nAbre MIDIVJ desde el relay local (src/INICIAR_RELAY.bat → http://localhost:9191), no como archivo suelto.');
+    return;
+  }
+  mezclaInicializar();
+  mezclaUI.abrir();
+}
+if (!mezclaDisponible()) {
+  const btn = document.getElementById('mezcla-btn');
+  if (btn) btn.style.display = 'none';
 }
 function abrirPanelGrabacion() {
   if (!grabacionDisponible()) {
@@ -9026,6 +9626,8 @@ function abrirPanelGrabacion() {
     return;
   }
   grabacionInicializar();
+  /* Con audio, la mezcla arranca aquí (este clic es el gesto que el navegador pide) y vuelve la entrada guardada */
+  if (mezcla && grabador.config.audio !== false) mezcla.start().then(mezclaSincronizar).catch(() => {});
   grabadorUI.abrir();
 }
 function pintarBotonGrabacion() {
@@ -9047,6 +9649,1011 @@ window.addEventListener('beforeunload', e => {
   e.preventDefault();
   e.returnValue = '';
 });
+
+/* ═══════════════════════════════════════════════════════
+   SEÑALES POR PISTA
+
+   La "señal" de una pista es su fuente limpia: el video o la cámara que
+   tiene, con su corrección de color, encajada en un lienzo propio — sin
+   mezcla, posición, opacidad ni efectos, y se vea o no en la salida. La
+   usan la grabación por pista y el mosaico del visor de control.
+
+   Mientras alguien la captura, el lienzo conserva el tamaño con el que
+   empezó (un MP4 no admite cuadros de dos tamaños): si la pista cambia de
+   fuente, la nueva entra encajada con bandas.
+═══════════════════════════════════════════════════════ */
+const SEN = Array.from({ length: N_TRACKS }, () => ({ cvs: null, ctx: null, flujos: [] }));
+const SEN_LADO_MAX = 1920;
+
+/* Lo que la pista tiene para dibujar ahora, o null */
+function fuentePista(t) {
+  if (!t || !t.loaded) return null;
+  if (t.sourceType !== 'file') { const lv = t.liveVid; return lv && lv.readyState >= 2 ? lv : null; }
+  if (t._useRev && t._revReady && t.revVid && t.revVid.readyState >= 2) return t.revVid;
+  const v = t.vid;
+  return v && v.readyState >= 2 ? v : null;
+}
+function senalEnUso(s) {
+  if (s.flujos.length) s.flujos = s.flujos.filter(f => f.getVideoTracks().some(k => k.readyState === 'live'));
+  return s.flujos.length > 0;
+}
+function tamanoNaturalPista(i) {
+  const src = fuentePista(S.tracks[i]);
+  let [w, h] = src ? vprocSrcDims(src) : [0, 0];
+  if (!w || !h) { w = cvs.width || 1280; h = cvs.height || 720; }
+  const k = Math.min(1, SEN_LADO_MAX / Math.max(w, h));
+  const par = n => Math.max(2, Math.round(n * k / 2) * 2);   // los codificadores piden lados pares
+  return { ancho: par(w), alto: par(h) };
+}
+function tamanoSenal(i) {
+  const s = SEN[i];
+  return s.cvs && senalEnUso(s) ? { ancho: s.cvs.width, alto: s.cvs.height } : tamanoNaturalPista(i);
+}
+/* Dibuja `src` entero dentro de (x,y,w,h) de `c`, con bandas si no coincide la proporción */
+function dibujarEncajado(c, src, x, y, w, h) {
+  const [sw, sh] = vprocSrcDims(src);
+  if (!sw || !sh) return;
+  const k = Math.min(w / sw, h / sh);
+  const dw = sw * k, dh = sh * k;
+  try { c.drawImage(src, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); } catch (_) { /* cuadro aún no listo */ }
+}
+function dibujarSenal(i) {
+  const s = SEN[i];
+  const c = s.ctx, W = s.cvs.width, H = s.cvs.height;
+  c.fillStyle = '#000';
+  c.fillRect(0, 0, W, H);
+  const t = S.tracks[i], src = fuentePista(t);
+  if (src) dibujarEncajado(c, vprocApply(t, src), 0, 0, W, H);
+}
+/** MediaStream nuevo con la señal de la pista (quien lo pide lo detiene). */
+function capturarPista(i, fps) {
+  const s = SEN[i];
+  if (!s.cvs) {
+    s.cvs = document.createElement('canvas');
+    s.ctx = s.cvs.getContext('2d', { alpha: false });
+  }
+  if (!s.cvs.captureStream) return null;
+  if (!senalEnUso(s)) {
+    const tam = tamanoNaturalPista(i);
+    s.cvs.width = tam.ancho; s.cvs.height = tam.alto;
+  }
+  dibujarSenal(i);
+  const flujo = s.cvs.captureStream(fps);
+  s.flujos.push(flujo);
+  return flujo;
+}
+/* Una vez por cuadro, desde loop(): sólo lo que alguien está mirando o grabando */
+function dibujarSenales() {
+  for (let i = 0; i < N_TRACKS; i++) {
+    const s = SEN[i];
+    if (!s.flujos.length) continue;
+    if (S.frame % 30 === 0 && !senalEnUso(s)) continue;
+    dibujarSenal(i);
+  }
+  if (VIS.sesiones.size) {
+    if (visNecesita('previa')) dibujarPrevia();
+    const grande = visMosaicoGrande();
+    if ((grande || S.frame % 2 === 0) && visNecesita('pistas')) dibujarMosaico(grande);
+  }
+}
+/* La vista CUADRÍCULA del visor compara cámaras: pide el mosaico con celdas
+   más grandes y a todos los cuadros (ver.pistas === 'grande'). */
+function visMosaicoGrande() {
+  for (const s of VIS.sesiones.values()) if (s.ver && s.ver.pistas === 'grande') return true;
+  return false;
+}
+/* Cada visor avisa qué videos tiene a la vista (orden 'ver'): lo que nadie
+   mira no se dibuja ni se codifica. Sin aviso, se manda todo. */
+function visNecesita(nombre) {
+  for (const s of VIS.sesiones.values()) if (!s.ver || s.ver[nombre] !== false) return true;
+  return false;
+}
+async function _visAplicarVer(sesion) {
+  for (const [nombre, sender] of Object.entries(sesion.senders || {})) {
+    try {
+      const p = sender.getParameters();
+      if (!p.encodings || !p.encodings.length) continue;
+      const activo = !sesion.ver || sesion.ver[nombre] !== false;
+      /* el mosaico grande (cuadrícula del visor) va con más cuadros y más bits */
+      const grande = nombre === 'pistas' && !!sesion.ver && sesion.ver.pistas === 'grande';
+      const fps = nombre === 'pistas' ? (grande ? 30 : 15) : p.encodings[0].maxFramerate;
+      const bps = nombre === 'pistas' ? (grande ? 8_000_000 : 2_500_000) : p.encodings[0].maxBitrate;
+      if (p.encodings[0].active === activo && p.encodings[0].maxFramerate === fps && p.encodings[0].maxBitrate === bps) continue;
+      p.encodings[0].active = activo;
+      p.encodings[0].maxFramerate = fps;
+      p.encodings[0].maxBitrate = bps;
+      await sender.setParameters(p);
+    } catch (e) { /* el navegador decide */ }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   VISOR DE CONTROL — mesa de video en otro dispositivo
+
+   /visor (tableta, teléfono u otra computadora) recibe por WebRTC tres
+   videos de esta pestaña:
+     · salida   el lienzo, lo mismo que HDMI y OBS
+     · previa   la "salida nueva": el arreglo de pistas en edición, armado
+                aquí con las mismas fuentes y sin tocar la salida
+     · pistas   un mosaico con la señal de cada pista (se vea o no)
+   y manda órdenes ('visor-cmd'). El estado (pistas, materiales, escenas)
+   viaja por el relay como 'visor-estado' cada vez que cambia.
+
+   Un arreglo (escena) es, por pista: encendida o no, opacidad y qué clip
+   suena. ▶ A SALIDA aplica la previa a la salida, con corte o con la
+   transición elegida en el visor (ver TRANSICIONES DE ESCENA).
+   Las escenas se guardan en la sesión (S.escenas).
+═══════════════════════════════════════════════════════ */
+const MOSAICO = { cols: 4, cw: 320, ch: 180 };
+const VISOR_FPS = 30;
+
+function pistaDeEscena(p) {
+  const o = p && typeof p === 'object' ? p : {};
+  const opa = +o.opacidad;
+  return { on: o.on !== false, opacidad: Number.isFinite(opa) ? Math.max(0, Math.min(1, opa)) : 1, clip: typeof o.clip === 'string' && o.clip ? o.clip : null, fijo: o.fijo === true };
+}
+function escenaLimpia(e) {
+  if (!e || !Array.isArray(e.pistas)) return null;
+  return {
+    id: String(e.id || ('e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5))).slice(0, 24),
+    nombre: String(e.nombre || 'Escena').slice(0, 40),
+    pistas: Array.from({ length: N_TRACKS }, (_, i) => pistaDeEscena(e.pistas[i])),
+  };
+}
+/* El arreglo que está ahora en la salida */
+function escenaDeSalida() {
+  return { pistas: S.tracks.map(t => ({ on: t.visible !== false, opacidad: t.opacity, clip: t.activeClip ? t.activeClip.id : null, fijo: !!t.fijo })) };
+}
+/* La previa sigue a la salida hasta que el visor la edita (VIS.previa):
+   así, lo que se dispara en MIDIVJ o por MIDI también se ve en la previa.
+   Cuando vuelve a quedar igual a la salida, la sigue otra vez. */
+function previaActual() {
+  return VIS.previa || escenaDeSalida();
+}
+function previaEditable() {
+  if (!VIS.previa) VIS.previa = escenaDeSalida();
+  return VIS.previa;
+}
+const mismasPistas = (a, b) => JSON.stringify(a.pistas.map(pistaDeEscena)) === JSON.stringify(b.pistas.map(pistaDeEscena));
+
+/** Lleva un arreglo a la salida. `seg` > 0 = con la transición `tipo`
+    (ver TRANSICIONES DE ESCENA) desde lo que había; 0 = corte. */
+/* Toma la foto de la salida actual y arranca la transición de escena: lo
+   que cambie en la salida a continuación entra con ella. La usan ▶ A SALIDA,
+   las escenas y los cambios hechos en DIRECTO A SALIDA desde el visor. */
+function fotoTransicion(seg, tipo) {
+  const W = cvs.width, H = cvs.height;
+  if (seg > 0) {
+    if (!VIS.tk) { VIS.tk = document.createElement('canvas'); VIS.tkCtx = VIS.tk.getContext('2d', { alpha: false }); }
+    if (VIS.tk.width !== W || VIS.tk.height !== H) { VIS.tk.width = W; VIS.tk.height = H; }
+    VIS.tkCtx.drawImage(cvs, 0, 0);
+    VIS.fundido = { t0: performance.now(), ms: Math.min(10, seg) * 1000, tipo: TRANS_ESCENA.resolver(tipo), semilla: Math.random() * 1000 };
+  } else VIS.fundido = null;
+}
+function aplicarEscena(esc, seg, tipo) {
+  fotoTransicion(seg, tipo);
+  /* Los clips del arreglo conviven: EXCL no aplica entre ellos */
+  const excl = S.exclMode;
+  S.exclMode = false;
+  try {
+    S.tracks.forEach((t, i) => {
+      const p = esc.pistas[i];
+      if (!p) return;
+      t.visible = p.on !== false;
+      t.opacity = p.opacidad;
+      t.fijo = p.fijo === true;
+      const actual = t.activeClip ? t.activeClip.id : null;
+      if (p.on && p.clip && p.clip !== actual) {
+        const r = findClip(p.clip);
+        if (r && r.track === t && !r.clip.layerId) trigClip(t, r.clip);
+      } else if (!p.clip && actual) deactivateClip(t, true);
+    });
+  } finally { S.exclMode = excl; }
+  renderTabs();
+  renderTrackInfo();
+  S.tracks.forEach((_, i) => { if (typeof refrescarSlidersDePista === 'function') refrescarSlidersDePista(i); });
+}
+/* ── TRANSICIONES DE ESCENA ──
+   Al pasar un arreglo a la salida se guarda una foto de lo que había
+   (`viejo`) y, mientras dura la transición, se dibuja encima de la salida
+   nueva, que sigue viva debajo. Cada transición decide cómo se va lo viejo
+   según `p` (0 → 1, ya suavizado). `x.nuevo()` da una copia del cuadro
+   nuevo para las que lo mueven o lo deforman (deslizar, voltear, pixelar…).
+   `x.r(i)` es un número fijo 0..1 por toma, para los repartos al azar.
+   El visor recibe esta lista (id, nombre, grupo) y arma su selector. */
+const TRANS_ESCENA = (() => {
+  const TAU = Math.PI * 2;
+  const lim = v => Math.max(0, Math.min(1, v));
+  /* lo viejo, sólo dentro de la figura que traza `camino` */
+  const recorte = (c, V, W, H, camino, regla) => {
+    c.save(); c.beginPath(); camino(c); c.clip(regla || 'nonzero'); c.drawImage(V, 0, 0, W, H); c.restore();
+  };
+  /* lo viejo, con la transparencia que pinte `pintar` (bordes suaves) */
+  const mascara = (c, V, W, H, x, pintar) => {
+    const m = x.lienzo('m', W, H, true);
+    m.globalCompositeOperation = 'source-over';
+    m.clearRect(0, 0, W, H);
+    m.drawImage(V, 0, 0, W, H);
+    m.globalCompositeOperation = 'destination-in';
+    pintar(m);
+    m.globalCompositeOperation = 'source-over';
+    c.drawImage(m.canvas, 0, 0);
+  };
+  const negro = (c, W, H, a, color) => { c.globalAlpha = lim(a); c.fillStyle = color || '#000'; c.fillRect(0, 0, W, H); c.globalAlpha = 1; };
+  const estrella = (c, cx, cy, R, giro) => {
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 ? R * 0.45 : R, a = giro + i * TAU / 10 - Math.PI / 2;
+      c[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    c.closePath();
+  };
+  const cortina = (dx, dy) => (c, V, p, W, H) => recorte(c, V, W, H, k =>
+    k.rect(dx > 0 ? p * W : 0, dy > 0 ? p * H : 0, dx ? W * (1 - p) : W, dy ? H * (1 - p) : H));
+  const cortinaSuave = (dx, dy) => (c, V, p, W, H, x) => mascara(c, V, W, H, x, m => {
+    const L = dx ? W : H, s = L * 0.18, e = p * (L + s) - s;   // borde del barrido
+    const a = dx > 0 || dy > 0 ? e : L - e - s, b = a + s;
+    const g = dx ? m.createLinearGradient(a, 0, b, 0) : m.createLinearGradient(0, a, 0, b);
+    const sigue = dx > 0 || dy > 0;                              // lo viejo queda después del borde
+    g.addColorStop(0, sigue ? 'rgba(0,0,0,0)' : '#000');
+    g.addColorStop(1, sigue ? '#000' : 'rgba(0,0,0,0)');
+    m.fillStyle = g; m.fillRect(0, 0, W, H);
+  });
+  const deslizar = (dx, dy) => (c, V, p, W, H, x) => {
+    const N = x.nuevo();
+    c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+    c.drawImage(V, dx * p * W, dy * p * H, W, H);
+    c.drawImage(N, dx * (p - 1) * W, dy * (p - 1) * H, W, H);
+  };
+  const cubrir = (dx, dy) => (c, V, p, W, H, x) => {
+    const N = x.nuevo();
+    c.drawImage(V, 0, 0, W, H);
+    c.drawImage(N, dx * (p - 1) * W, dy * (p - 1) * H, W, H);
+  };
+  const descubrir = (dx, dy) => (c, V, p, W, H) => c.drawImage(V, dx * p * W, dy * p * H, W, H);
+  const dosTiempos = (cerrar, abrir) => (c, V, p, W, H, x) => {
+    if (p < 0.5) { c.drawImage(V, 0, 0, W, H); cerrar(c, p * 2, W, H, x); }
+    else abrir(c, (1 - p) * 2, W, H, x);
+  };
+
+  const T = [
+    /* ── Fundidos ── */
+    ['disolver', 'Disolver', 'Fundidos', (c, V, p, W, H) => { c.globalAlpha = 1 - p; c.drawImage(V, 0, 0, W, H); }],
+    ['negro', 'Por negro', 'Fundidos', dosTiempos((c, q, W, H) => negro(c, W, H, q), (c, q, W, H) => negro(c, W, H, q))],
+    ['blanco', 'Por blanco', 'Fundidos', dosTiempos((c, q, W, H) => negro(c, W, H, q, '#fff'), (c, q, W, H) => negro(c, W, H, q, '#fff'))],
+    ['resplandor', 'Resplandor', 'Fundidos', (c, V, p, W, H) => {
+      c.globalAlpha = 1 - p; c.drawImage(V, 0, 0, W, H);
+      c.globalCompositeOperation = 'lighter'; c.globalAlpha = Math.sin(Math.PI * p) * 0.7; c.drawImage(V, 0, 0, W, H);
+    }],
+    ['desenfoque', 'Desenfoque', 'Fundidos', (c, V, p, W, H, x) => {
+      const B = 28 * W / 1280, N = x.nuevo();
+      c.filter = 'blur(' + ((1 - p) * B).toFixed(1) + 'px)'; c.drawImage(N, 0, 0, W, H);
+      c.filter = 'blur(' + (p * B).toFixed(1) + 'px)'; c.globalAlpha = 1 - p; c.drawImage(V, 0, 0, W, H);
+    }],
+    ['sueno', 'Sueño (zoom + desenfoque)', 'Fundidos', (c, V, p, W, H) => {
+      const k = 1 + p * 0.35;
+      c.filter = 'blur(' + (p * 18 * W / 1280).toFixed(1) + 'px)'; c.globalAlpha = 1 - p;
+      c.drawImage(V, (W - W * k) / 2, (H - H * k) / 2, W * k, H * k);
+    }],
+    ['color', 'Lavado de color', 'Fundidos', (c, V, p, W, H) => {
+      /* lo viejo pierde el color y se aclara mientras se va */
+      c.filter = 'saturate(' + (1 - p).toFixed(2) + ') brightness(' + (1 + p * 0.8).toFixed(2) + ')';
+      c.globalAlpha = 1 - p * p; c.drawImage(V, 0, 0, W, H);
+    }],
+
+    /* ── Cortinas ── */
+    ['cortina-der', 'Cortina →', 'Cortinas', cortina(1, 0)],
+    ['cortina-izq', 'Cortina ←', 'Cortinas', cortina(-1, 0)],
+    ['cortina-abajo', 'Cortina ↓', 'Cortinas', cortina(0, 1)],
+    ['cortina-arriba', 'Cortina ↑', 'Cortinas', cortina(0, -1)],
+    ['suave-der', 'Cortina suave →', 'Cortinas', cortinaSuave(1, 0)],
+    ['suave-izq', 'Cortina suave ←', 'Cortinas', cortinaSuave(-1, 0)],
+    ['suave-abajo', 'Cortina suave ↓', 'Cortinas', cortinaSuave(0, 1)],
+    ['suave-arriba', 'Cortina suave ↑', 'Cortinas', cortinaSuave(0, -1)],
+    ['diagonal', 'Diagonal', 'Cortinas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const d = p * (W + H);   // la línea x + y = d avanza desde la esquina
+      k.moveTo(d, 0); k.lineTo(W + H, 0); k.lineTo(W + H, W + H); k.lineTo(0, W + H); k.lineTo(0, d); k.closePath();
+    })],
+    ['puertas', 'Puertas (abrir)', 'Cortinas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      k.rect(0, 0, W / 2 * (1 - p), H); k.rect(W / 2 * (1 + p), 0, W / 2 * (1 - p), H);
+    })],
+    ['puertas-cerrar', 'Puertas (cerrar)', 'Cortinas', (c, V, p, W, H) => recorte(c, V, W, H, k => k.rect(W / 2 * p, 0, W * (1 - p), H))],
+    ['telon', 'Telón (abrir ↕)', 'Cortinas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      k.rect(0, 0, W, H / 2 * (1 - p)); k.rect(0, H / 2 * (1 + p), W, H / 2 * (1 - p));
+    })],
+    ['destello', 'Barrido con destello', 'Cortinas', (c, V, p, W, H) => {
+      const e = p * W, s = W * 0.08;
+      recorte(c, V, W, H, k => k.rect(e, 0, W - e, H));
+      const g = c.createLinearGradient(e - s, 0, e + s, 0);
+      g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,' + (Math.sin(Math.PI * p) * 0.9).toFixed(2) + ')'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      c.globalCompositeOperation = 'lighter'; c.fillStyle = g; c.fillRect(e - s, 0, s * 2, H);
+    }],
+
+    /* ── Formas ── */
+    ['iris', 'Iris (abrir)', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      k.rect(0, 0, W, H); k.arc(W / 2, H / 2, p * Math.hypot(W, H) / 2, 0, TAU);
+    }, 'evenodd')],
+    ['iris-cerrar', 'Iris (cerrar)', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => k.arc(W / 2, H / 2, (1 - p) * Math.hypot(W, H) / 2, 0, TAU))],
+    ['iris-suave', 'Iris suave', 'Formas', (c, V, p, W, H, x) => mascara(c, V, W, H, x, m => {
+      const R = Math.hypot(W, H) / 2, s = R * 0.25, r = p * (R + s);
+      const g = m.createRadialGradient(W / 2, H / 2, Math.max(0, r - s), W / 2, H / 2, r);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, '#000');
+      m.fillStyle = g; m.fillRect(0, 0, W, H);
+    })],
+    ['rombo', 'Rombo', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const a = p * (W + H) / 2;
+      k.rect(0, 0, W, H); k.moveTo(W / 2, H / 2 - a); k.lineTo(W / 2 + a, H / 2); k.lineTo(W / 2, H / 2 + a); k.lineTo(W / 2 - a, H / 2); k.closePath();
+    }, 'evenodd')],
+    ['estrella', 'Estrella', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      k.rect(0, 0, W, H); estrella(k, W / 2, H / 2, p * Math.hypot(W, H) * 1.25, p * 1.2);
+    }, 'evenodd')],
+    ['reloj', 'Reloj', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const R = Math.hypot(W, H);
+      k.moveTo(W / 2, H / 2); k.arc(W / 2, H / 2, R, -Math.PI / 2 + p * TAU, -Math.PI / 2 + TAU); k.closePath();
+    })],
+    ['abanico', 'Abanico', 'Formas', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const R = Math.hypot(W, H), a = p * Math.PI;   // se abre hacia los dos lados desde arriba
+      k.moveTo(W / 2, H / 2); k.arc(W / 2, H / 2, R, -Math.PI / 2 + a, -Math.PI / 2 + TAU - a); k.closePath();
+    })],
+    ['tunel', 'Túnel (iris por negro)', 'Formas', dosTiempos(
+      (c, q, W, H) => { c.fillStyle = '#000'; c.beginPath(); c.rect(0, 0, W, H); c.arc(W / 2, H / 2, (1 - q) * Math.hypot(W, H) / 2, 0, TAU); c.fill('evenodd'); },
+      (c, q, W, H) => { c.fillStyle = '#000'; c.beginPath(); c.rect(0, 0, W, H); c.arc(W / 2, H / 2, (1 - q) * Math.hypot(W, H) / 2, 0, TAU); c.fill('evenodd'); })],
+
+    /* ── Mosaicos ── */
+    ['persianas', 'Persianas', 'Mosaicos', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const n = 12, h = H / n;
+      for (let i = 0; i < n; i++) k.rect(0, i * h + h * p, W, h * (1 - p) + 0.5);
+    })],
+    ['persianas-v', 'Persianas verticales', 'Mosaicos', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const n = 16, w = W / n;
+      for (let i = 0; i < n; i++) k.rect(i * w + w * p, 0, w * (1 - p) + 0.5, H);
+    })],
+    ['tablero', 'Tablero', 'Mosaicos', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const cols = 8, w = W / cols, filas = Math.max(1, Math.round(H / w)), h = H / filas;
+      for (let j = 0; j < filas; j++) for (let i = 0; i < cols; i++) {
+        const q = lim((i + j) % 2 ? p * 2 - 1 : p * 2);   // primero unas casillas, luego las otras
+        if (q < 1) k.rect(i * w + w * q, j * h, w * (1 - q) + 0.5, h + 0.5);
+      }
+    })],
+    ['mosaico', 'Mosaico al azar', 'Mosaicos', (c, V, p, W, H, x) => recorte(c, V, W, H, k => {
+      const cols = 16, w = W / cols, filas = Math.max(1, Math.round(H / w)), h = H / filas;
+      for (let j = 0; j < filas; j++) for (let i = 0; i < cols; i++) if (x.r(j * cols + i) >= p) k.rect(i * w, j * h, w + 0.5, h + 0.5);
+    })],
+    ['escamas', 'Escamas (ola de cuadros)', 'Mosaicos', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      const cols = 16, w = W / cols, filas = Math.max(1, Math.round(H / w)), h = H / filas;
+      for (let j = 0; j < filas; j++) for (let i = 0; i < cols; i++) {
+        const s = 1 - lim(p * 2 - (i + j) / (cols + filas));   // cada cuadro se encoge cuando le llega la ola
+        if (s > 0) k.rect(i * w + w * (1 - s) / 2, j * h + h * (1 - s) / 2, w * s + 0.5, h * s + 0.5);
+      }
+    })],
+    ['puntos', 'Puntos', 'Mosaicos', (c, V, p, W, H) => recorte(c, V, W, H, k => {
+      /* trama de círculos que crecen hasta tapar todo */
+      const cols = 14, w = W / cols, filas = Math.ceil(H / w), R = w * 0.75 * p;
+      k.rect(0, 0, W, H);
+      for (let j = 0; j <= filas; j++) for (let i = 0; i <= cols; i++) { k.moveTo(i * w + R, j * w); k.arc(i * w, j * w, R, 0, TAU); }
+    }, 'evenodd')],
+    ['pixelar', 'Pixelar', 'Mosaicos', (c, V, p, W, H, x) => {
+      const src = p < 0.5 ? V : x.nuevo();
+      const paso = 1 + (p < 0.5 ? p : 1 - p) * 2 * 70 * W / 1280;
+      const w = Math.max(2, Math.round(W / paso)), h = Math.max(2, Math.round(H / paso));
+      const t = x.lienzo('p', w, h, false);
+      t.drawImage(src, 0, 0, w, h);
+      c.imageSmoothingEnabled = false; c.drawImage(t.canvas, 0, 0, w, h, 0, 0, W, H); c.imageSmoothingEnabled = true;
+    }],
+
+    /* ── Movimiento ── */
+    ['deslizar-izq', 'Empujar ←', 'Movimiento', deslizar(-1, 0)],
+    ['deslizar-der', 'Empujar →', 'Movimiento', deslizar(1, 0)],
+    ['deslizar-arriba', 'Empujar ↑', 'Movimiento', deslizar(0, -1)],
+    ['deslizar-abajo', 'Empujar ↓', 'Movimiento', deslizar(0, 1)],
+    ['cubrir-izq', 'Cubrir ←', 'Movimiento', cubrir(-1, 0)],
+    ['cubrir-arriba', 'Cubrir ↑', 'Movimiento', cubrir(0, -1)],
+    ['descubrir-izq', 'Descubrir ←', 'Movimiento', descubrir(-1, 0)],
+    ['descubrir-abajo', 'Descubrir ↓', 'Movimiento', descubrir(0, 1)],
+    ['zoom', 'Zoom (acercar)', 'Movimiento', (c, V, p, W, H) => {
+      const k = 1 + p * 0.8; c.globalAlpha = 1 - p; c.drawImage(V, (W - W * k) / 2, (H - H * k) / 2, W * k, H * k);
+    }],
+    ['zoom-salir', 'Zoom (alejar)', 'Movimiento', (c, V, p, W, H) => {
+      const k = 1 - p; c.globalAlpha = 1 - p * p * p; c.drawImage(V, (W - W * k) / 2, (H - H * k) / 2, W * k, H * k);
+    }],
+    ['girar', 'Girar y alejar', 'Movimiento', (c, V, p, W, H) => {
+      c.translate(W / 2, H / 2); c.rotate(p * Math.PI * 0.75); c.scale(1 - p, 1 - p); c.globalAlpha = 1 - p * p;
+      c.drawImage(V, -W / 2, -H / 2, W, H);
+    }],
+    ['remolino', 'Remolino', 'Movimiento', (c, V, p, W, H) => {
+      c.translate(W / 2, H / 2); c.rotate(p * Math.PI); c.scale(1 + p * 1.6, 1 + p * 1.6); c.globalAlpha = 1 - p;
+      c.drawImage(V, -W / 2, -H / 2, W, H);
+    }],
+    ['voltear', 'Voltear', 'Movimiento', (c, V, p, W, H, x) => {
+      /* como una tarjeta que gira: se estrecha lo viejo y se ensancha lo nuevo */
+      const src = p < 0.5 ? V : x.nuevo(), k = Math.max(0.001, Math.abs(Math.cos(p * Math.PI)));
+      c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+      c.drawImage(src, W / 2 * (1 - k), H * 0.06 * (1 - k), W * k, H * (1 - 0.12 * (1 - k)));
+    }],
+    ['cubo', 'Cubo', 'Movimiento', (c, V, p, W, H, x) => {
+      const N = x.nuevo();
+      c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+      c.drawImage(V, 0, 0, W * (1 - p), H);
+      c.drawImage(N, W * (1 - p), 0, W * p, H);
+      /* sombra de cada cara según cuánto se aleja */
+      negro(c, W * (1 - p), H, p * 0.6);
+      c.globalAlpha = (1 - p) * 0.6; c.fillStyle = '#000'; c.fillRect(W * (1 - p), 0, W * p, H);
+    }],
+
+    /* ── Combinadas ── */
+    ['franjas', 'Franjas cruzadas', 'Combinadas', (c, V, p, W, H) => {
+      const n = 10, h = H / n;
+      for (let i = 0; i < n; i++) c.drawImage(V, 0, i * h, W, h, (i % 2 ? 1 : -1) * p * W, i * h, W, h + 0.5);
+    }],
+    ['lluvia', 'Lluvia (columnas que caen)', 'Combinadas', (c, V, p, W, H, x) => {
+      const n = 24, w = W / n;
+      for (let i = 0; i < n; i++) {
+        const q = lim(p * 1.7 - x.r(i) * 0.7);
+        if (q < 1) c.drawImage(V, i * w, 0, w, H, i * w, q * q * H, w + 0.5, H);
+      }
+    }],
+    ['ondas', 'Ondas', 'Combinadas', (c, V, p, W, H) => {
+      const h = Math.max(4, Math.round(H / 90)), amp = p * W * 0.12;
+      c.globalAlpha = 1 - p;
+      for (let y = 0; y < H; y += h) c.drawImage(V, 0, y, W, h, Math.sin(y * 0.035 + p * 12) * amp, y, W, h);
+    }],
+    ['glitch', 'Glitch', 'Combinadas', (c, V, p, W, H, x) => {
+      /* bandas que saltan de lo viejo a lo nuevo, temblando en el medio */
+      const n = 28, h = H / n, amp = Math.sin(Math.PI * p) * W * 0.08;
+      for (let i = 0; i < n; i++) {
+        if (x.r(i) < p) continue;
+        c.drawImage(V, 0, i * h, W, h, (Math.random() - 0.5) * 2 * amp, i * h, W, h + 0.5);
+      }
+      if (amp > 1) { c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.25; c.fillStyle = Math.random() < 0.5 ? '#f05' : '#0cf'; c.fillRect(0, Math.random() * H, W, 2 + Math.random() * 6); }
+    }],
+    ['persianas-zoom', 'Persianas con zoom', 'Combinadas', (c, V, p, W, H) => {
+      const k = 1 + p * 0.25, n = 10, h = H / n;
+      c.beginPath();
+      for (let i = 0; i < n; i++) c.rect(0, i * h + h * p / 2, W, h * (1 - p) + 0.5);
+      c.clip();
+      c.globalAlpha = 1 - p * p; c.drawImage(V, (W - W * k) / 2, (H - H * k) / 2, W * k, H * k);
+    }],
+    ['iris-giro', 'Iris de estrella que gira', 'Combinadas', (c, V, p, W, H) => {
+      /* lo viejo se queda dentro de una estrella que se encoge girando */
+      c.beginPath(); estrella(c, W / 2, H / 2, (1 - p) * Math.hypot(W, H) * 1.25, -p * 2.4); c.clip();
+      c.globalAlpha = 1 - p * p * p; c.drawImage(V, 0, 0, W, H);
+    }],
+    ['flash-zoom', 'Destello con zoom', 'Combinadas', (c, V, p, W, H) => {
+      const k = 1 + p * 0.5;
+      c.globalAlpha = 1 - p; c.drawImage(V, (W - W * k) / 2, (H - H * k) / 2, W * k, H * k);
+      negro(c, W, H, Math.sin(Math.PI * p) * 0.85, '#fff');
+    }],
+    ['cortina-negro', 'Cortinas por negro', 'Combinadas', dosTiempos(
+      (c, q, W, H) => { c.fillStyle = '#000'; c.fillRect(0, 0, W / 2 * q, H); c.fillRect(W - W / 2 * q, 0, W / 2 * q, H); },
+      (c, q, W, H) => { c.fillStyle = '#000'; c.fillRect(0, 0, W, H / 2 * q); c.fillRect(0, H - H / 2 * q, W, H / 2 * q); })],
+    ['pixel-disolver', 'Pixelar y disolver', 'Combinadas', (c, V, p, W, H, x) => {
+      const paso = 1 + p * 90 * W / 1280;
+      const w = Math.max(2, Math.round(W / paso)), h = Math.max(2, Math.round(H / paso));
+      const t = x.lienzo('p', w, h, false);
+      t.drawImage(V, 0, 0, w, h);
+      c.globalAlpha = 1 - p; c.imageSmoothingEnabled = false; c.drawImage(t.canvas, 0, 0, w, h, 0, 0, W, H); c.imageSmoothingEnabled = true;
+    }],
+    ['empujar-desenfoque', 'Empujar con estela', 'Combinadas', (c, V, p, W, H, x) => {
+      const N = x.nuevo(), b = Math.sin(Math.PI * p) * 14 * W / 1280;
+      c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+      c.filter = 'blur(' + b.toFixed(1) + 'px)';
+      c.drawImage(V, -p * W, 0, W, H); c.drawImage(N, (1 - p) * W, 0, W, H);
+    }],
+  ];
+  const mapa = new Map(T.map(([id, nombre, grupo, dib]) => [id, { id, nombre, grupo, dib }]));
+  return {
+    lista: T.map(([id, nombre, grupo]) => ({ id, nombre, grupo })),
+    obtener: id => mapa.get(id) || null,
+    /* 'azar' = una distinta cada vez */
+    resolver(id) {
+      if (id === 'azar') return T[Math.floor(Math.random() * T.length)][0];
+      return mapa.has(id) ? id : 'disolver';
+    },
+  };
+})();
+
+function dibujarFundidoEscena(W, H) {
+  const f = VIS.fundido;
+  const lin = (performance.now() - f.t0) / f.ms;
+  const t = TRANS_ESCENA.obtener(f.tipo);
+  if (lin >= 1 || !VIS.tk || !t) { VIS.fundido = null; return; }
+  /* entra y sale despacio: sin tirones al empezar ni al terminar */
+  const p = lin < 0.5 ? 2 * lin * lin : 1 - Math.pow(-2 * lin + 2, 2) / 2;
+  const x = {
+    lienzo(nombre, w, h, alfa) {
+      const k = '_t' + nombre;
+      if (!VIS[k]) { const c = document.createElement('canvas'); VIS[k] = c.getContext('2d', { alpha: !!alfa }); }
+      const c = VIS[k].canvas;
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      return VIS[k];
+    },
+    nuevo() {
+      const n = this.lienzo('n', W, H, false);
+      n.drawImage(cvs, 0, 0);
+      return n.canvas;
+    },
+    r: i => { const v = Math.sin((i + 1) * 127.1 + f.semilla) * 43758.5453; return v - Math.floor(v); },
+  };
+  ctx.save();
+  try { t.dib(ctx, VIS.tk, p, W, H, x); }
+  catch (e) { VIS.fundido = null; }   // una transición que falla no deja la salida a medias
+  ctx.restore();
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none'; ctx.imageSmoothingEnabled = true;
+}
+
+/* ── Lienzos que sólo existen mientras hay un visor ── */
+function lienzosVisor() {
+  if (!VIS.pv) {
+    const c = document.createElement('canvas');
+    c.width = cvs.width; c.height = cvs.height;
+    VIS.pv = { cvs: c, ctx: c.getContext('2d', { alpha: false }), flujo: null };
+    const m = document.createElement('canvas');
+    m.width = MOSAICO.cols * MOSAICO.cw;
+    m.height = Math.ceil(N_TRACKS / MOSAICO.cols) * MOSAICO.ch;
+    VIS.mv = { cvs: m, ctx: m.getContext('2d', { alpha: false }), flujo: null };
+  }
+  if (!VIS.pv.flujo) VIS.pv.flujo = VIS.pv.cvs.captureStream(VISOR_FPS);
+  if (!VIS.mv.flujo) VIS.mv.flujo = VIS.mv.cvs.captureStream(30);   // el tope real lo pone el envío (15, o 30 con la cuadrícula)
+}
+function soltarLienzosVisor() {
+  [VIS.pv, VIS.mv].forEach(x => {
+    if (x && x.flujo) { x.flujo.getTracks().forEach(k => k.stop()); x.flujo = null; }
+  });
+}
+
+/* La previa usa las mismas funciones de dibujo de pista que la salida
+   (posición, rotación, corner-pin, corte, color, capas), sobre su lienzo.
+   No lleva los efectos globales ni las transiciones: muestra el arreglo.
+   Una pista de video enseña el cuadro que tiene ahora su fuente. */
+function dibujarPrevia() {
+  const pv = VIS.pv;
+  if (!pv) return;
+  const W = cvs.width, H = cvs.height;
+  if (pv.cvs.width !== W || pv.cvs.height !== H) { pv.cvs.width = W; pv.cvs.height = H; }
+  const esc = previaActual();
+  const real = ctx;
+  ctx = pv.ctx;
+  try {
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    for (let ti = 0; ti < N_TRACKS; ti++) {
+      const t = S.tracks[ti], p = esc.pistas[ti];
+      if (!p || !p.on) continue;
+      for (const layer of t.layers) {
+        if (!layer.on) continue;
+        if (layer.kind !== 'media') { drawLayer(t, ti, layer, 0, 0, W, H); continue; }
+        const src = fuentePista(t);
+        if (!src) continue;
+        /* Fuente en vivo con clips-interruptor: sólo se ve si el arreglo trae
+           uno, salvo que la pista tenga el seguro puesto (🔒) */
+        if (t.sourceType !== 'file' && !p.fijo && t.clips.some(c => c.srcLive)) {
+          const r = p.clip ? findClip(p.clip) : null;
+          if (!r || !r.clip.srcLive) continue;
+        }
+        const [x, y, w, h] = rectMedia(t, 0, 0, W, H);
+        const tr = trackXformRect(x, y, w, h, t.xform);
+        ctx.globalAlpha = p.opacidad;
+        drawTrackWarped(vprocApply(t, src), tr.dx, tr.dy, tr.dw, tr.dh, t.xform, false, false, false, { crop: t._cropRect, erase: t._eraseMask });
+        ctx.globalAlpha = 1;
+      }
+    }
+  } catch (e) {
+    /* un cuadro de la previa que falla no puede tumbar la salida */
+  } finally {
+    ctx.globalAlpha = 1;
+    ctx = real;
+  }
+}
+function dibujarMosaico(grande) {
+  const mv = VIS.mv;
+  if (!mv) return;
+  MOSAICO.cw = grande ? 640 : 320;
+  MOSAICO.ch = grande ? 360 : 180;
+  const mw = MOSAICO.cols * MOSAICO.cw, mh = Math.ceil(N_TRACKS / MOSAICO.cols) * MOSAICO.ch;
+  if (mv.cvs.width !== mw || mv.cvs.height !== mh) { mv.cvs.width = mw; mv.cvs.height = mh; }
+  const c = mv.ctx, { cols, cw, ch } = MOSAICO;
+  c.fillStyle = '#000';
+  c.fillRect(0, 0, mv.cvs.width, mv.cvs.height);
+  for (let i = 0; i < N_TRACKS; i++) {
+    const t = S.tracks[i], src = fuentePista(t);
+    if (src) dibujarEncajado(c, vprocApply(t, src), (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch);
+  }
+}
+
+/* ── Estado para los visores ── */
+function estadoVisor() {
+  const salida = escenaDeSalida();
+  if (VIS.previa && mismasPistas(VIS.previa, salida)) VIS.previa = null;   // sin cambios pendientes: vuelve a seguir a la salida
+  const previa = previaActual();
+  return {
+    type: 'visor-estado',
+    salida: { w: cvs.width, h: cvs.height },
+    mosaico: { cols: MOSAICO.cols, filas: Math.ceil(N_TRACKS / MOSAICO.cols), cw: MOSAICO.cw, ch: MOSAICO.ch },
+    pistas: S.tracks.map((t, i) => ({
+      nombre: t.name, color: t.acc, cargada: !!t.loaded,
+      tipo: t.loaded ? (t.sourceType === 'file' ? (t.mediaKind === 'image' ? 'imagen' : 'video') : t.sourceType) : '',
+      fuente: t.loaded ? String(t.loadedName || '').slice(0, 60) : '',
+      on: salida.pistas[i].on, opacidad: salida.pistas[i].opacidad, clip: salida.pistas[i].clip, fijo: salida.pistas[i].fijo,
+      capa: t.excl === 'capa',
+      color: { on: !!t.vproc.on, ...Object.fromEntries(VPROC_PARAMS.map(p => [p.key, t.vproc[p.key] ?? p.def])) },
+      forma: Object.fromEntries(efxParams({ type: 'xform' }).map(p => [p.key, t.xform[p.key] ?? p.def])),
+      vivo: !!t.loaded && t.sourceType !== 'file', interruptor: t.sourceType !== 'file' && t.clips.some(c => c.srcLive),
+    })),
+    previa: previa.pistas,
+    igual: mismasPistas(previa, salida),
+    clips: S.tracks.flatMap((t, i) => t.clips.filter(c => !c.layerId).map(c => ({
+      id: c.id, pista: i, nombre: String(c.name || '').slice(0, 60),
+      dur: c.srcLive ? 0 : Math.max(0, (c.out || 0) - (c.in || 0)), vivo: !!c.srcLive,
+      medio: c.playlistEntryId || null,
+    }))).slice(0, 400),
+    /* Medios de la pista que todavía no tienen clip: se pueden poner como fuente */
+    medios: S.tracks.flatMap((t, i) => t.playlist
+      .filter(e => !t.clips.some(c => c.playlistEntryId === e.id))
+      .map(e => ({ id: e.id, pista: i, nombre: String(e.name || '').slice(0, 60), dur: e.dur || 0 }))).slice(0, 400),
+    escenas: S.escenas.map(e => ({ id: e.id, nombre: e.nombre, pistas: e.pistas })),
+    transiciones: TRANS_ESCENA.lista,
+    /* Lo que se puede ajustar por pista desde la cuadrícula del visor */
+    ajustes: {
+      color: VPROC_PARAMS.map(p => ({ key: p.key, lbl: p.lbl, min: p.min, max: p.max, step: p.step, def: p.def })),
+      forma: efxParams({ type: 'xform' }).map(p => ({ key: p.key, lbl: p.lbl, min: p.min, max: p.max, step: p.step, def: p.def })),
+    },
+    grabando: grabacionActiva(),
+    mezcla: estadoMezclaVisor(),
+  };
+}
+function publicarEstadoVisor(forzar) {
+  if (!VIS.sesiones.size || !netWS || netWS.readyState !== 1) return;
+  const texto = JSON.stringify(estadoVisor());
+  if (!forzar && texto === VIS.firma) return;
+  VIS.firma = texto;
+  netWS.send(texto);
+}
+/* ── La mezcla de audio en el visor ──
+   El estado viaja con 'visor-estado'; los medidores, aparte y sólo mientras
+   algún visor tiene la pestaña AUDIO abierta ('visor-niveles', ~11 por s). */
+function estadoMezclaVisor() {
+  if (typeof mezclaDisponible !== 'function' || !mezclaDisponible()) return null;
+  if (!mezcla) return { activa: false, canales: [], master: { vol: 1, mute: false }, entrada: { label: '', activa: false } };
+  const st = mezcla.getStatus();
+  /* dormida: se pidió encender pero el navegador no deja arrancar el audio sin un clic en MIDIVJ */
+  return { activa: mezcla.activa(), dormida: !!mezcla.ctx && !mezcla.activa(), canales: st.canales, master: st.master, entrada: { label: st.entrada.label, activa: st.entrada.activa } };
+}
+function relojNivelesVisor() {
+  const hace = !!mezcla && [...VIS.sesiones.values()].some(s => s.ver && s.ver.audio);
+  if (hace && !VIS.tNiveles) {
+    VIS.tNiveles = setInterval(() => {
+      if (!mezcla || !netWS || netWS.readyState !== 1) return;
+      const n = mezcla.niveles(), o = {};
+      for (const k in n) o[k] = Math.round(n[k] * 1000) / 1000;
+      netWS.send(JSON.stringify({ type: 'visor-niveles', n: o }));
+    }, 90);
+  } else if (!hace && VIS.tNiveles) { clearInterval(VIS.tNiveles); VIS.tNiveles = 0; }
+}
+function relojVisor() {
+  if (VIS.sesiones.size && !VIS.timer) VIS.timer = setInterval(() => publicarEstadoVisor(false), 250);
+  else if (!VIS.sesiones.size && VIS.timer) { clearInterval(VIS.timer); VIS.timer = 0; }
+}
+
+/* ── Órdenes del visor ── */
+function visorOrden(msg) {
+  const previa = /^previa-(pista|solo|clip)$/.test(msg.cmd) ? previaEditable() : previaActual();
+  const i = parseInt(msg.pista, 10);
+  const enRango = i >= 0 && i < N_TRACKS;
+  const seg = msg.trans === 'corte' ? 0 : Math.max(0, Math.min(10, +msg.fundido || 0));
+  const comoEntra = () => (seg ? ' (' + ((TRANS_ESCENA.obtener(VIS.fundido && VIS.fundido.tipo) || {}).nombre || 'transición') + ', ' + seg + ' s)' : '');
+  const escena = id => S.escenas.find(e => e.id === id) || null;
+  const copia = e => ({ pistas: e.pistas.map(p => ({ ...p })) });
+  switch (msg.cmd) {
+    /* — sobre la previa (la salida no se toca) — */
+    case 'previa-pista':
+      if (!enRango) return;
+      if (typeof msg.on === 'boolean') previa.pistas[i].on = msg.on;
+      if (msg.opacidad !== undefined && Number.isFinite(+msg.opacidad)) previa.pistas[i].opacidad = Math.max(0, Math.min(1, +msg.opacidad));
+      if (typeof msg.fijo === 'boolean') previa.pistas[i].fijo = msg.fijo;
+      break;
+    case 'previa-solo':
+      if (!enRango) return;
+      /* Las pistas vacías no se tocan: al cargarles algo deben verse */
+      previa.pistas.forEach((p, k) => { p.on = k === i || !S.tracks[k].loaded; });
+      break;
+    case 'previa-clip': {
+      if (!enRango) return;
+      const r = msg.clip ? findClip(msg.clip) : null;
+      if (msg.clip && (!r || r.track !== S.tracks[i])) return;
+      previa.pistas[i].clip = r ? r.clip.id : null;
+      if (r) previa.pistas[i].on = true;
+      break;
+    }
+    case 'previa-copiar':
+      VIS.previa = null;
+      break;
+    case 'tomar':
+      aplicarEscena(previa, seg, msg.trans);
+      appendNetLog('🎚 visor ' + msg.id + ': la previa pasó a la salida' + comoEntra());
+      break;
+    /* — directo a la salida — */
+    case 'salida-pista': {
+      if (!enRango) return;
+      const t = S.tracks[i];
+      /* Tocar la pista en DIRECTO puede traer el clip a disparar */
+      const r = msg.clip ? findClip(msg.clip) : null;
+      const conClip = !!r && r.track === t && !r.clip.layerId;
+      if (seg && (typeof msg.on === 'boolean' || typeof msg.fijo === 'boolean' || conClip)) fotoTransicion(seg, msg.trans);
+      if (typeof msg.on === 'boolean') t.visible = msg.on;
+      if (msg.opacidad !== undefined && Number.isFinite(+msg.opacidad)) { t.opacity = Math.max(0, Math.min(1, +msg.opacidad)); refrescarSlidersDePista(i); }
+      if (typeof msg.fijo === 'boolean') { t.fijo = msg.fijo; renderTL(); }
+      if (conClip && t.activeClip !== r.clip) trigClip(t, r.clip);
+      renderTabs();
+      if (S.ati === i) renderTrackInfo();
+      break;
+    }
+    /* ⧉ ajuste de la pista (no es parte del arreglo): vale para previa y salida */
+    case 'pista-capa':
+      if (!enRango) return;
+      setTrackExcl(i, msg.capa === false ? 'auto' : 'capa');
+      break;
+    case 'salida-solo':
+      if (!enRango) return;
+      if (seg) fotoTransicion(seg, msg.trans);
+      S.tracks.forEach((t, k) => { t.visible = k === i || !t.loaded; });
+      renderTabs();
+      renderTrackInfo();
+      break;
+    case 'salida-clip': {
+      const r = msg.clip ? findClip(msg.clip) : null;
+      if (seg && ((r && !r.clip.layerId) || (!msg.clip && enRango && S.tracks[i].activeClip))) fotoTransicion(seg, msg.trans);
+      if (r && !r.clip.layerId) { mostrarPista(r.track); trigClip(r.track, r.clip); }
+      else if (!msg.clip && enRango && S.tracks[i].activeClip) deactivateClip(S.tracks[i]);
+      break;
+    }
+    case 'salida-medio':
+      if (!enRango || !S.tracks[i].playlist.some(e => e.id === msg.medio)) return;
+      if (seg) fotoTransicion(seg, msg.trans);
+      useMediaEntryAsSource(i, msg.medio);
+      break;
+    /* — escenas — */
+    case 'escena-guardar': {
+      const origen = msg.de === 'salida' ? escenaDeSalida() : previa;
+      const e = msg.escena ? escena(msg.escena) : null;
+      if (e) e.pistas = copia(origen).pistas;
+      else if (S.escenas.length < 64) {
+        S.escenas.push(escenaLimpia({ nombre: String(msg.nombre || '').trim() || 'Escena ' + (S.escenas.length + 1), pistas: origen.pistas }));
+      }
+      break;
+    }
+    case 'escena-previa': {
+      const e = escena(msg.escena);
+      if (e) VIS.previa = copia(e);
+      break;
+    }
+    case 'escena-salida': {
+      const e = escena(msg.escena);
+      if (!e) return;
+      VIS.previa = copia(e);
+      aplicarEscena(e, seg, msg.trans);
+      appendNetLog('🎚 visor ' + msg.id + ': escena "' + e.nombre + '" a la salida' + comoEntra());
+      break;
+    }
+    case 'escena-renombrar': {
+      const e = escena(msg.escena);
+      const nombre = String(msg.nombre || '').trim().slice(0, 40);
+      if (e && nombre) e.nombre = nombre;
+      break;
+    }
+    case 'escena-borrar':
+      S.escenas = S.escenas.filter(e => e.id !== msg.escena);
+      break;
+    case 'estado':
+      publicarEstadoVisor(true);
+      return;
+    case 'ver': {
+      const sesion = VIS.sesiones.get(msg.id);
+      if (!sesion) return;
+      sesion.ver = { salida: msg.salida !== false, previa: msg.previa !== false, pistas: msg.pistas === 'grande' ? 'grande' : msg.pistas !== false, audio: msg.audio === true };
+      _visAplicarVer(sesion);
+      relojNivelesVisor();
+      VIS.firma = '';
+      publicarEstadoVisor(false);   // el tamaño de las celdas del mosaico puede haber cambiado
+      return;
+    }
+    /* — ajustes de una pista desde la cuadrícula del visor: corrección de
+         color (PROCESADOR DE VIDEO) y TRANSFORM. Van por el mismo catálogo
+         de parámetros que los controles MIDI, así los sliders de MIDIVJ se
+         mueven solos. — */
+    case 'pista-ajuste': {
+      if (!enRango) return;
+      const def = paramDe(msg.grupo === 'color' ? 't' + i + '.vproc.' + msg.key : 't' + i + '.' + msg.key);
+      const v = +msg.valor;
+      if (!def || !Number.isFinite(v) || !/^[a-zA-Z]+$/.test(String(msg.key))) return;
+      const val = Math.max(def.min, Math.min(def.max, v));
+      def.set(val);
+      try { def.ui(val); } catch (e) {}
+      if (msg.grupo !== 'color' && S.ati === i && typeof syncXov === 'function') syncXov();
+      break;
+    }
+    /* — mezcla de audio — */
+    case 'mezcla-encender':
+      /* El navegador sólo deja arrancar el audio si ya hubo un clic en la página de MIDIVJ */
+      if (!mezclaInicializar()) return;
+      mezcla.start().then(() => {
+        mezclaSincronizar();
+        relojNivelesVisor();
+        VIS.firma = ''; publicarEstadoVisor(false);
+      }).catch(() => {});
+      return;
+    case 'mezcla-canal': {
+      if (!mezcla) return;
+      const canal = String(msg.canal || '');
+      if (canal !== 'master' && !mezcla.canales.has(canal)) return;
+      const k = {};
+      if (msg.vol !== undefined && Number.isFinite(+msg.vol)) k.vol = +msg.vol;
+      if (typeof msg.mute === 'boolean') k.mute = msg.mute;
+      if (typeof msg.rec === 'boolean' && canal !== 'master') k.rec = msg.rec;
+      mezcla.fijar(canal, k);
+      break;
+    }
+    case 'pista-color': {
+      if (!enRango) return;
+      const t = S.tracks[i];
+      if (typeof msg.on === 'boolean') t.vproc.on = msg.on;
+      if (msg.reset === true) t.vproc = { ...vprocDefault(), on: t.vproc.on };
+      if (S.ati === i) {
+        if (msg.reset === true) VPROC_PARAMS.forEach(p => setSliderRow('#vproc-params', p.key, p.def, p.fmt));
+        syncVprocBtn(t);
+      }
+      break;
+    }
+    case 'pista-forma': {
+      if (!enRango || msg.reset !== true) return;
+      const t = S.tracks[i];
+      t.xform = xformDefault({ scaleLink: !!t.xform.scaleLink, pinLink: [...(t.xform.pinLink || [])] });
+      if (S.ati === i) { renderTrackInfo(); if (typeof syncXov === 'function') syncXov(); }
+      break;
+    }
+    default:
+      return;
+  }
+  publicarEstadoVisor(false);
+}
+
+/* ── WebRTC: como la salida a OBS, con tres videos ── */
+function _visEnviar(payload) {
+  if (netWS && netWS.readyState === 1) netWS.send(JSON.stringify(payload));
+}
+function _visLog(msg) {
+  console.log('[visor] ' + msg);
+  appendNetLog('🎚 ' + msg);
+}
+/* El visor es un monitor: importa más que vaya al día y fluido que nítido.
+   Si la red o el equipo no dan, baja la resolución en vez de acumular
+   cuadros atrasados (antes: 'maintain-resolution'). */
+async function _visFijarCalidad(sender, bps, reducir, fps) {
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+    params.encodings[0].maxBitrate = bps;
+    params.encodings[0].scaleResolutionDownBy = reducir || 1;
+    if (fps) params.encodings[0].maxFramerate = fps;
+    params.degradationPreference = 'maintain-framerate';
+    await sender.setParameters(params);
+  } catch (e) { /* el navegador elige */ }
+}
+/* H.264 primero: lo codifica y decodifica el hardware en casi todos los
+   equipos (en iPad/iPhone es el único con decodificador por hardware), así
+   el visor no se atrasa decodificando. Los demás códecs quedan de respaldo. */
+function _visPreferirH264(pc) {
+  try {
+    const cap = RTCRtpSender.getCapabilities && RTCRtpSender.getCapabilities('video');
+    if (!cap || !cap.codecs || !cap.codecs.some(c => /h264/i.test(c.mimeType))) return;
+    const orden = [...cap.codecs.filter(c => /h264/i.test(c.mimeType)), ...cap.codecs.filter(c => !/h264/i.test(c.mimeType))];
+    pc.getTransceivers().forEach(tr => { if (tr.setCodecPreferences) tr.setCodecPreferences(orden); });
+  } catch (e) { /* queda el códec que elija el navegador */ }
+}
+async function _visIniciar(id) {
+  if (id === undefined || id === null || VIS.sesiones.has(id)) return;
+  const salida = typeof getOutputStream === 'function' ? getOutputStream() : null;
+  if (!salida) {
+    _visEnviar({ type: 'visor-error', id, motivo: 'esta instancia de MIDIVJ no puede capturar el lienzo' });
+    return;
+  }
+  lienzosVisor();
+  _visLog('visor ' + id + ' conectado — armando oferta');
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  const sesion = { pc, candidatosPendientes: [] };
+  VIS.sesiones.set(id, sesion);
+  relojVisor();
+
+  /* La salida ya va a tamaño completo a HDMI/OBS: al visor le basta menos */
+  const k = Math.max(1, Math.max(cvs.width, cvs.height) / 1280);
+  const videos = [
+    ['salida', salida, 4_000_000, k, 30],
+    ['previa', VIS.pv.flujo, 3_000_000, k, 30],
+    ['pistas', VIS.mv.flujo, 2_500_000, 1, 15],
+  ];
+  const porPista = new Map();
+  const ajustes = [];
+  sesion.senders = {};
+  for (const [nombre, flujo, bps, reducir, fps] of videos) {
+    const pista = flujo.getVideoTracks()[0];
+    if (!pista) continue;
+    try { pista.contentHint = 'motion'; } catch (e) {}
+    const sender = pc.addTrack(pista, flujo);
+    sesion.senders[nombre] = sender;
+    ajustes.push([sender, bps, reducir, fps]);
+    porPista.set(pista.id, nombre);
+  }
+  _visPreferirH264(pc);
+  /* El visor puede irse mientras esto espera: la sesión ya no es ésta */
+  const sigue = () => VIS.sesiones.get(id) === sesion;
+  for (const [sender, bps, reducir, fps] of ajustes) await _visFijarCalidad(sender, bps, reducir, fps);
+  if (!sigue()) return;
+  if (sesion.ver) await _visAplicarVer(sesion);   // el visor pudo avisar antes de terminar de armar la conexión
+
+  pc.onicecandidate = ev => { if (ev.candidate) _visEnviar({ type: 'visor-candidato', id, candidato: ev.candidate }); };
+  let timerDesconexion = 0;
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'connected') { clearTimeout(timerDesconexion); publicarEstadoVisor(true); return; }
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      _visCerrar(id, true, 'RTCPeerConnection en estado "' + pc.connectionState + '"');
+    } else if (pc.connectionState === 'disconnected') {
+      clearTimeout(timerDesconexion);
+      timerDesconexion = setTimeout(() => {
+        if (pc.connectionState === 'disconnected') _visCerrar(id, true, 'sin conexión por más de 8 s');
+      }, 8000);
+    }
+  };
+
+  try {
+    const oferta = await pc.createOffer();
+    await pc.setLocalDescription(oferta);
+    if (!sigue()) return;
+    /* Qué video es cada sección de la oferta: el visor los reparte por `mid` */
+    const mapa = {};
+    pc.getTransceivers().forEach(tr => {
+      const nombre = tr.sender && tr.sender.track ? porPista.get(tr.sender.track.id) : null;
+      if (nombre && tr.mid !== null) mapa[tr.mid] = nombre;
+    });
+    _visEnviar({ type: 'visor-oferta', id, sdp: pc.localDescription.sdp, videos: mapa });
+    VIS.firma = '';
+    publicarEstadoVisor(true);
+  } catch (e) {
+    if (!sigue()) return;   // se cerró a media negociación: no es un error
+    _visLog('⚠ error creando la oferta para el visor ' + id + ': ' + e.message);
+    _visCerrar(id, true, 'error creando la oferta: ' + e.message);
+  }
+}
+async function _visRecibirRespuesta(id, sdp) {
+  const sesion = VIS.sesiones.get(id);
+  if (!sesion || !sdp) return;
+  try {
+    await sesion.pc.setRemoteDescription({ type: 'answer', sdp });
+    for (const c of sesion.candidatosPendientes) await sesion.pc.addIceCandidate(c).catch(() => {});
+    sesion.candidatosPendientes = [];
+    _visLog('visor ' + id + ' negociado — transmitiendo');
+  } catch (e) {
+    _visCerrar(id, true, 'error negociando: ' + e.message);
+  }
+}
+async function _visRecibirCandidato(id, candidato) {
+  const sesion = VIS.sesiones.get(id);
+  if (!sesion || !candidato) return;
+  if (sesion.pc.remoteDescription) await sesion.pc.addIceCandidate(candidato).catch(() => {});
+  else sesion.candidatosPendientes.push(candidato);
+}
+function _visCerrar(id, avisar, motivo) {
+  const sesion = VIS.sesiones.get(id);
+  if (!sesion) return;
+  _visLog('cerrando el visor ' + id + ' — ' + (motivo || 'sin motivo'));
+  if (sesion.pc) { sesion.pc.onconnectionstatechange = null; sesion.pc.close(); }
+  VIS.sesiones.delete(id);
+  relojVisor();
+  relojNivelesVisor();
+  if (!VIS.sesiones.size) {
+    soltarLienzosVisor();
+    if (!SAL.sesiones.size && !outputWindowOpen()) resetOutputStream();
+  }
+  if (avisar) _visEnviar({ type: 'visor-cerrar', id, motivo });
+}
 
 /* ── INIT ── */
 restoreOutResFromStorage();

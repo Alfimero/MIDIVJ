@@ -558,7 +558,7 @@ const DISP = (() => {
 })();
 
 let slotPedido = parseInt(PARAMS.get('slot'), 10);
-if (!(slotPedido >= 1 && slotPedido <= 4)) {
+if (!(slotPedido >= 1 && slotPedido <= 9999)) {
   try { slotPedido = parseInt(localStorage.getItem('midivj-mando-slot'), 10) || 0; } catch (_) { slotPedido = 0; }
 }
 
@@ -682,25 +682,23 @@ function recibir(msg) {
 function pintarPresencia(msg) {
   const otros = (msg.mandos || []).length;
   const app = msg.app ? 'MIDIVJ ✔' : 'MIDIVJ ✘';
-  $('estado').textContent = `sala ${SALA} · ${app} · ${otros}/${msg.maxMandos || 4} mandos`;
+  $('estado').textContent = `sala ${SALA} · ${app} · ${otros} mando${otros === 1 ? '' : 's'}`;
   $('estado').style.color = msg.app ? '' : 'var(--warn)';
 }
 
 function mostrarBloqueo(slot, ocupados) {
   $('bloqueo').classList.add('vis');
+  /* Ya no hay un número fijo de mandos: se ofrecen los primeros libres */
   const libres = [];
-  for (let s = 1; s <= M.maxMandos; s++) if (!ocupados.includes(s)) libres.push(s);
+  for (let s = 1; s <= M.maxMandos && libres.length < 6; s++) if (!ocupados.includes(s)) libres.push(s);
   $('bloqueo-txt').textContent = libres.length
     ? `El mando ${slot || '?'} ya está en uso por otro dispositivo. Elige uno libre:`
     : `No quedan lugares libres (máximo ${M.maxMandos}). Espera a que alguien se desconecte y vuelve a intentar.`;
   const cont = $('bloqueo-slots');
   cont.innerHTML = '';
-  for (let s = 1; s <= M.maxMandos; s++) {
-    const ocupado = ocupados.includes(s);
+  for (const s of libres) {
     const b = document.createElement('button');
-    b.textContent = 'MANDO ' + s + (ocupado ? ' · ocupado' : '');
-    b.disabled = ocupado;
-    b.style.opacity = ocupado ? '.4' : '';
+    b.textContent = 'MANDO ' + s;
     b.onclick = () => {
       slotPedido = s;
       try { localStorage.setItem('midivj-mando-slot', String(s)); } catch (_) {}
@@ -1756,9 +1754,10 @@ $('btn-del-grupo').onclick = () => {
 
 $('btn-dispositivos').onclick = () => {
   const base = location.origin + '/mando?sala=' + encodeURIComponent(SALA);
-  let txt = 'Enlaces para los otros mandos:\n\n';
-  for (let s = 1; s <= M.maxMandos; s++) txt += `Mando ${s}: ${base}&slot=${s}\n`;
-  txt += '\nLa página /control muestra estos mismos enlaces con su QR.';
+  let txt = 'Enlace para sumar otro mando (toma el siguiente número libre):\n\n' + base + '\n\n';
+  txt += 'Para darle un número fijo agrega &slot=N, por ejemplo:\n';
+  for (let s = 1; s <= 4; s++) txt += `Mando ${s}: ${base}&slot=${s}\n`;
+  txt += `\nSe pueden conectar hasta ${M.maxMandos}. La página /control muestra los enlaces con su QR.`;
   alert(txt);
 };
 

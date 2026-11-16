@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0a0c10">
+<title>MIDIVJ · Visor de control</title>
+<style>
+:root{
+  --bg:#0a0c10;--bg2:#12151c;--bg3:#181c25;--border:#232936;--border2:#2f3644;
+  --text:#e8ecf2;--text2:#98a2b3;--text3:#5c6675;
+  --aire:#ff3355;--previa:#00e07a;--accent2:#00c2ff;--warn:#ffcc00;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;margin:0;}
+body{
+  background:var(--bg);color:var(--text);font-family:var(--mono);font-size:11px;
+  display:flex;flex-direction:column;overflow:hidden;user-select:none;-webkit-user-select:none;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+button{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--text2);
+  background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;cursor:pointer;touch-action:manipulation;}
+button:disabled{opacity:.35;cursor:default;}
+select{font-family:var(--mono);font-size:10px;color:var(--text);background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:7px 6px;max-width:100%;}
+#trans{max-width:210px;}
+#lat{font-size:10px;color:var(--text3);white-space:nowrap;}
+#lat.bien{color:var(--previa);}
+#lat.medio{color:#ffb020;}
+#lat.mal{color:var(--aire);}
+body[data-trans="corte"] #dur{display:none;}
+
+/* ── Barra superior ── */
+#barra{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);flex:none;min-height:42px;}
+#barra h1{font-size:11px;letter-spacing:.16em;margin:0;color:var(--text2);white-space:nowrap;}
+#dot{width:8px;height:8px;border-radius:50%;background:var(--aire);flex:none;}
+#dot.on{background:var(--previa);box-shadow:0 0 8px var(--previa);}
+#dot.wait{background:var(--warn);}
+#estado{color:var(--text3);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;}
+#rec{display:none;color:var(--aire);font-weight:700;white-space:nowrap;}
+#rec.on{display:inline;animation:blk 1s steps(1) infinite;}
+@keyframes blk{50%{opacity:.25}}
+.seg{display:flex;border:1px solid var(--border2);border-radius:6px;overflow:hidden;flex:none;}
+.seg button{border:none;border-radius:0;background:transparent;padding:8px 10px;}
+.seg button + button{border-left:1px solid var(--border2);}
+.seg button.on{background:var(--text);color:#000;}
+
+/* ── Monitores ── */
+#monitores{flex:1;min-height:0;display:flex;gap:8px;padding:8px 10px;}
+.mon{flex:1;min-width:0;position:relative;background:#000;border:2px solid var(--border2);border-radius:8px;overflow:hidden;display:flex;}
+.mon video{width:100%;height:100%;object-fit:contain;background:#000;display:block;}
+.mon .rot{position:absolute;top:8px;left:8px;font-size:10px;font-weight:700;letter-spacing:.12em;padding:4px 8px;border-radius:4px;color:#000;pointer-events:none;}
+.mon .sub{position:absolute;bottom:8px;left:8px;right:8px;font-size:9.5px;color:var(--text2);text-shadow:0 1px 3px #000;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mon .vacio{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--text3);line-height:1.8;}
+.mon.con .vacio{display:none;}
+#mon-salida{border-color:var(--aire);}
+#mon-salida .rot{background:var(--aire);color:#fff;}
+#mon-previa{border-color:var(--previa);}
+#mon-previa .rot{background:var(--previa);}
+#mon-previa.igual{border-color:var(--border2);}
+#mon-previa.igual .rot{background:var(--border2);color:var(--text2);}
+body[data-vista="salida"] #mon-previa,body[data-vista="previa"] #mon-salida{display:none;}
+
+/* ── Transporte ── */
+#transporte{flex:none;display:flex;align-items:center;gap:8px;padding:0 10px 8px;flex-wrap:wrap;}
+#transporte .sp{flex:1;}
+#tomar{font-size:13px;padding:11px 20px;background:var(--aire);border-color:var(--aire);color:#fff;letter-spacing:.14em;}
+#tomar:disabled{background:var(--bg3);border-color:var(--border2);color:var(--text3);}
+body[data-modo="directo"] #seg-modo button.on{background:var(--aire);color:#fff;}
+body[data-modo="directo"] #tomar,body[data-modo="directo"] #copiar{display:none;}
+#aviso-modo{color:var(--aire);font-weight:700;display:none;}
+body[data-modo="directo"] #aviso-modo{display:inline;}
+
+/* ── Barra inferior ── */
+#inferior{flex:none;border-top:1px solid var(--border);background:var(--bg2);}
+body[data-modo="directo"] #inferior{border-top-color:var(--aire);}
+#pestanas{display:flex;align-items:center;gap:6px;padding:6px 10px 0;}
+#pestanas .tab{border:none;border-bottom:2px solid transparent;border-radius:0;background:transparent;padding:8px 10px;color:var(--text3);}
+#pestanas .tab.on{color:var(--text);border-bottom-color:var(--accent2);}
+#pestanas .sp{flex:1;}
+#pestanas label{color:var(--text3);font-size:9.5px;display:flex;align-items:center;gap:5px;}
+#tira{display:flex;align-items:stretch;gap:8px;overflow-x:auto;overflow-y:hidden;padding:8px 10px 10px;min-height:150px;scrollbar-width:thin;-webkit-overflow-scrolling:touch;}
+#tira .hueco{color:var(--text3);align-self:center;padding:0 10px;line-height:1.8;}
+.tarj{flex:none;width:176px;background:var(--bg3);border:2px solid var(--border2);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;position:relative;cursor:pointer;}
+.tarj.previa{border-color:var(--previa);}
+.tarj.aire{border-color:var(--aire);}
+.tarj.aire.previa{border-color:var(--aire);box-shadow:inset 0 0 0 2px var(--previa);}
+.tarj.sin{opacity:.45;}
+.tarj .nom{flex:none;padding:5px 7px 4px;font-size:10px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tarj .det{padding:0 7px 5px;font-size:9px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tarj .marcas{position:absolute;top:5px;right:5px;display:flex;gap:3px;pointer-events:none;}
+.tarj .marca{font-size:8px;font-weight:700;padding:2px 5px;border-radius:3px;color:#000;}
+.marca.aire{background:var(--aire);color:#fff;}
+.marca.previa{background:var(--previa);}
+.tarj canvas{width:100%;aspect-ratio:16/9;background:#000;display:block;flex:none;}
+.tarj .pie{display:flex;align-items:center;gap:5px;padding:0 6px 6px;margin-top:auto;}
+.tarj .pie input[type=range]{flex:1;min-width:0;accent-color:var(--accent2);height:22px;}
+.tarj .pie button{padding:5px 7px;font-size:9px;}
+.tarj .pie button.peligro{border-color:var(--aire);color:var(--aire);}
+.tarj .pie button.seguro{padding:4px 6px;font-size:12px;}
+.tarj .pie button.capa{padding:4px 6px;font-size:12px;}
+.tarj .pie button.capa.on{border-color:var(--previa);background:rgba(0,220,130,.14);color:var(--previa);}
+.tarj .pie button.seguro.on{border-color:var(--previa);background:rgba(0,220,130,.14);}
+.tarj .clips{display:flex;align-items:center;gap:5px;padding:0 6px 5px;}
+.tarj .clips select{flex:1;min-width:0;font-size:9px;padding:4px 3px;}
+.tarj .clips button{flex:none;padding:4px 7px;font-size:11px;}
+.tarj.audio{cursor:default;width:150px;padding-bottom:6px;}
+.tarj.audio.sin{opacity:.45;}
+.tarj.audio.entrada{border-color:var(--accent2);}
+.tarj.audio.master{border-color:var(--previa);margin-left:8px;}
+.tarj.audio .vu{height:9px;margin:2px 7px 6px;background:#05070a;border:1px solid var(--border2);border-radius:3px;position:relative;overflow:hidden;}
+.tarj.audio .vu i{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(to right,#00d68f 0,#00d68f 70%,#ffcc00 88%,#ff3355 100%);background-size:134px 100%;}
+.tarj.audio .pie{margin-top:0;padding-bottom:4px;}
+.tarj.audio .pct{flex:1;font-size:9.5px;color:var(--text2);padding-left:1px;}
+.tarj.audio button.m.on{background:var(--warn);border-color:var(--warn);color:#000;}
+.tarj.audio button.r.on{background:var(--aire);border-color:var(--aire);color:#fff;}
+.tarj.encender{width:300px;cursor:pointer;padding:12px;justify-content:center;gap:8px;line-height:1.7;color:var(--text2);}
+.tarj.encender b{color:var(--text);font-size:12px;}
+.tarj .aviso{flex:none;padding:0 7px 3px;font-size:8px;color:#ffb020;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tarj .franja{height:4px;flex:none;}
+.tarj.clip{width:150px;justify-content:flex-start;}
+.tarj.clip .nom{white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;line-height:1.35;padding-top:8px;}
+.tarj.clip .det{margin-top:auto;padding-bottom:8px;}
+.tarj.esc .puntos{display:flex;gap:4px;padding:6px 7px;flex-wrap:wrap;}
+.tarj.esc .punto{width:15px;height:15px;border-radius:3px;border:1px solid var(--border2);font-size:8px;display:flex;align-items:center;justify-content:center;color:var(--text3);}
+.tarj.esc .punto.on{color:#000;border-color:transparent;font-weight:700;}
+.tarj.nueva{border-style:dashed;align-items:center;justify-content:center;text-align:center;color:var(--accent2);font-weight:700;line-height:1.7;padding:10px;width:140px;}
+.grupo{flex:none;align-self:stretch;display:flex;align-items:center;writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;font-weight:700;letter-spacing:.14em;padding:0 2px;border-radius:4px;color:#000;justify-content:center;}
+
+#toast{position:fixed;left:50%;bottom:200px;transform:translateX(-50%);background:var(--text);color:#000;padding:8px 14px;border-radius:6px;font-weight:700;opacity:0;transition:opacity .2s;pointer-events:none;max-width:86vw;text-align:center;}
+#toast.vis{opacity:1;}
+
+
+/* ── Cuadrícula de pistas (comparar cámaras y corregir color) ── */
+#cuadricula{display:none;flex:1;min-height:0;gap:8px;padding:8px 10px;}
+body[data-vista="cuadricula"] #cuadricula{display:flex;}
+body[data-vista="cuadricula"] #monitores,body[data-vista="cuadricula"] #transporte,body[data-vista="cuadricula"] #inferior{display:none;}
+#cq-rejilla{flex:1;min-width:0;min-height:0;display:grid;gap:6px;}
+.celda{position:relative;background:#000;border:2px solid var(--border2);border-radius:6px;overflow:hidden;min-width:0;min-height:0;cursor:pointer;}
+.celda canvas{width:100%;height:100%;object-fit:contain;display:block;}
+.celda.sel{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2);}
+.celda.vacia{cursor:default;opacity:.35;}
+.celda .eti{position:absolute;left:6px;bottom:5px;right:6px;font-size:9.5px;color:var(--text);text-shadow:0 1px 3px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
+.celda .marcas{position:absolute;top:5px;right:5px;display:flex;gap:3px;pointer-events:none;}
+.celda .marca{font-size:8px;font-weight:700;padding:2px 5px;border-radius:3px;}
+.celda .marca.color{background:var(--accent2);color:#000;}
+#cq-panel{flex:none;width:300px;display:flex;flex-direction:column;gap:8px;min-height:0;overflow-y:auto;scrollbar-width:thin;}
+#cq-panel .caja{background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:8px;}
+#cq-panel .fila{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+#cq-panel select{font-size:10px;padding:5px 4px;}
+#cq-panel h3{margin:0;font-size:10px;letter-spacing:.12em;color:var(--text2);flex:1;font-weight:700;}
+#cq-panel button{padding:5px 8px;font-size:9px;}
+#cq-panel button.on{border-color:var(--accent2);color:var(--accent2);background:rgba(0,194,255,.12);}
+#cq-mini{position:relative;background:#000;border:2px solid var(--aire);border-radius:6px;overflow:hidden;aspect-ratio:16/9;flex:none;}
+#cq-mini video{width:100%;height:100%;object-fit:contain;display:block;}
+#cq-mini span{position:absolute;top:5px;left:5px;font-size:8px;font-weight:700;padding:2px 5px;border-radius:3px;background:var(--aire);color:#fff;}
+#cq-titulo{font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.aj{display:grid;grid-template-columns:78px 1fr 44px;align-items:center;gap:6px;margin-top:5px;font-size:9.5px;color:var(--text2);}
+.aj input[type=range]{width:100%;min-width:0;accent-color:var(--accent2);height:24px;}
+.aj b{font-weight:400;color:var(--text);text-align:right;font-variant-numeric:tabular-nums;}
+.aj.mov span{color:var(--accent2);}
+#cq-vacio{color:var(--text3);line-height:1.8;padding:6px 2px;}
+@media (max-width:820px){ #cuadricula{flex-direction:column;} #cq-panel{width:auto;max-height:46%;} #cq-mini{display:none;} }
+@media (max-width:760px){
+  #barra h1{display:none;}
+  #monitores{flex-direction:column;padding:6px;}
+  .tarj{width:150px;}
+}
+@media (max-height:520px){ #tira{min-height:118px;} .tarj canvas{aspect-ratio:16/6;} }
+</style>
+</head>
+<body data-vista="dividida" data-modo="previa">
+
+<div id="barra">
+  <span id="dot"></span>
+  <h1>MIDIVJ · VISOR</h1>
+  <span id="estado">conectando…</span>
+  <span id="rec">● GRABANDO</span>
+  <span id="lat" title="Retardo estimado del video en este visor: cola de recepción + red + decodificación. No incluye la captura ni la codificación en la PC de MIDIVJ."></span>
+  <div class="seg" id="seg-vista" title="Qué se ve en la ventana principal">
+    <button data-vista="salida">SALIDA</button>
+    <button data-vista="dividida" class="on">DIVIDIDA</button>
+    <button data-vista="previa">NUEVA</button>
+    <button data-vista="cuadricula" title="Varias pistas a la vez, para comparar cámaras y corregir su color y su transformación">⊞ CUADRÍCULA</button>
+  </div>
+  <button id="pantalla" title="Pantalla completa">⛶</button>
+</div>
+
+<div id="monitores">
+  <div class="mon" id="mon-salida">
+    <video id="v-salida" autoplay muted playsinline></video>
+    <span class="rot">SALIDA · AL AIRE</span>
+    <span class="sub" id="sub-salida"></span>
+    <div class="vacio" id="vacio-salida">Esperando a MIDIVJ…</div>
+  </div>
+  <div class="mon" id="mon-previa">
+    <video id="v-previa" autoplay muted playsinline></video>
+    <span class="rot" id="rot-previa">SALIDA NUEVA · PREVIA</span>
+    <span class="sub" id="sub-previa"></span>
+    <div class="vacio">Aquí se arma el siguiente arreglo de pistas sin tocar la salida.</div>
+  </div>
+</div>
+<div id="cuadricula">
+  <div id="cq-rejilla"></div>
+  <div id="cq-panel">
+    <div class="caja fila" title="Cuántas pistas se ven a la vez y cuáles">
+      <select id="cq-cols" title="Columnas"></select><span>×</span><select id="cq-filas" title="Filas"></select>
+      <select id="cq-ver" title="Qué pistas entran en la cuadrícula">
+        <option value="cargadas">con fuente</option>
+        <option value="vivo">cámaras y en vivo</option>
+        <option value="todas">todas</option>
+      </select>
+    </div>
+    <div id="cq-mini"><video id="v-salida2" autoplay muted playsinline></video><span>SALIDA</span></div>
+    <div class="caja" id="cq-editor"></div>
+  </div>
+</div>
+<video id="v-pistas" autoplay muted playsinline style="position:absolute;width:2px;height:2px;opacity:0;pointer-events:none;"></video>
+
+<div id="transporte">
+  <div class="seg" id="seg-modo" title="Dónde actúa lo que tocas en la barra de abajo">
+    <button data-modo="previa" class="on">EDITAR PREVIA</button>
+    <button data-modo="directo">DIRECTO A SALIDA</button>
+  </div>
+  <span id="aviso-modo">⚠ cada toque cambia la salida</span>
+  <span class="sp"></span>
+  <button id="copiar" title="Deja la previa igual a lo que está en la salida">↺ IGUALAR A LA SALIDA</button>
+  <select id="trans" title="Transición con la que el arreglo nuevo entra a la salida">
+    <option value="corte">CORTE</option>
+    <option value="disolver" selected>Disolver</option>
+  </select>
+  <select id="dur" title="Duración de la transición">
+    <option value="0.3">0,3 s</option>
+    <option value="0.5">0,5 s</option>
+    <option value="1" selected>1 s</option>
+    <option value="1.5">1,5 s</option>
+    <option value="2">2 s</option>
+    <option value="3">3 s</option>
+    <option value="5">5 s</option>
+  </select>
+  <button id="tomar" disabled>▶ A SALIDA</button>
+</div>
+
+<div id="inferior">
+  <div id="pestanas">
+    <button class="tab" data-tab="materiales">MATERIALES</button>
+    <button class="tab" data-tab="escenas">ESCENAS</button>
+    <button class="tab on" data-tab="pistas">PISTAS</button>
+    <button class="tab" data-tab="audio" title="Mezcla de audio: volumen, silencio y REC de cada pista y de la entrada">AUDIO</button>
+    <span class="sp"></span>
+    <label id="lbl-todas"><input type="checkbox" id="todas"> todas las pistas</label>
+  </div>
+  <div id="tira"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   MIDIVJ — Visor de control
+
+   Una mesa de video para otro dispositivo de la red. Recibe de MIDIVJ, por
+   WebRTC, tres videos (salida, previa y un mosaico con la señal de cada
+   pista) y el estado ('visor-estado'); manda órdenes ('visor-cmd'). No
+   decide nada por su cuenta: pinta lo que la app dice y pide cambios.
+
+     SALIDA          lo que está al aire (HDMI, OBS, stream)
+     SALIDA NUEVA    la previa: un arreglo de pistas que se edita aquí sin
+                     tocar la salida, hasta ▶ A SALIDA
+     barra inferior  MATERIALES (clips y medios de las pistas del arreglo),
+                     ESCENAS (arreglos guardados) y PISTAS (cada fuente en
+                     vivo, esté o no en la salida)
+═══════════════════════════════════════════════════════ */
+const PARAMS = new URLSearchParams(location.search);
+const SALA   = (PARAMS.get('sala') || 'midivj').slice(0, 40);
+const URL_WS = PARAMS.get('ws') || ((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const V = {
+  ws: null, pc: null, candidatosPendientes: [], videos: {},
+  reintento: 0, timer: 0, lleno: false,
+  est: null,            // último 'visor-estado'
+  tab: 'pistas',
+  modo: 'previa',       // 'previa' | 'directo'
+  todas: false,         // MATERIALES: todas las pistas o sólo las del arreglo
+  arrastrando: false,   // un deslizador en uso: no se repinta la tira debajo del dedo
+  firmaTira: '',
+  ultimo: {},           // pista → último clip puesto desde el visor (para volver a él al tocar la pista)
+  cq: { cols: 2, filas: 2, ver: 'cargadas', sel: null },   // vista CUADRÍCULA: tamaño, qué pistas y la elegida
+  borrar: null,         // escena esperando el segundo toque de ✕
+  trans: 'disolver',    // transición elegida para ▶ A SALIDA ('corte', 'azar' o un id de la app)
+  firmaTrans: '',
+};
+try {
+  const g = JSON.parse(localStorage.getItem('midivj-visor') || '{}');
+  if (['salida', 'dividida', 'previa', 'cuadricula'].includes(g.vista)) document.body.dataset.vista = g.vista;
+  if (g.cq && typeof g.cq === 'object') {
+    if (g.cq.cols >= 1 && g.cq.cols <= 6) V.cq.cols = g.cq.cols | 0;
+    if (g.cq.filas >= 1 && g.cq.filas <= 4) V.cq.filas = g.cq.filas | 0;
+    if (['cargadas', 'vivo', 'todas'].includes(g.cq.ver)) V.cq.ver = g.cq.ver;
+  }
+  if (['materiales', 'escenas', 'pistas', 'audio'].includes(g.tab)) V.tab = g.tab;
+  /* la lista completa llega con el estado: hasta entonces se recuerda el id */
+  if (typeof g.trans === 'string') V.trans = g.trans;
+  else if (g.fundido !== undefined) { V.trans = +g.fundido ? 'disolver' : 'corte'; if (+g.fundido) $('dur').value = String(g.fundido); }
+  if (g.dur !== undefined) $('dur').value = String(g.dur);
+  V.todas = !!g.todas;
+} catch (_) {}
+function recordar() {
+  try {
+    localStorage.setItem('midivj-visor', JSON.stringify({
+      vista: document.body.dataset.vista, tab: V.tab, trans: V.trans, dur: $('dur').value, todas: V.todas,
+      cq: { cols: V.cq.cols, filas: V.cq.filas, ver: V.cq.ver }
+    }));
+  } catch (_) {}
+}
+
+function estado(texto, clase) {
+  $('estado').textContent = texto;
+  $('dot').className = clase || '';
+}
+let _toastT = 0;
+function toast(texto) {
+  $('toast').textContent = texto;
+  $('toast').classList.add('vis');
+  clearTimeout(_toastT);
+  _toastT = setTimeout(() => $('toast').classList.remove('vis'), 2200);
+}
+function enviar(payload) {
+  if (V.ws && V.ws.readyState === 1) { V.ws.send(JSON.stringify(payload)); return true; }
+  toast('Sin conexión con MIDIVJ');
+  return false;
+}
+const orden = (cmd, datos) => enviar({ type: 'visor-cmd', cmd, ...(datos || {}) });
+/* Cómo entra el arreglo nuevo: { trans, fundido (segundos) } */
+const entrada = () => ({ trans: V.trans, fundido: V.trans === 'corte' ? 0 : parseFloat($('dur').value) || 1 });
+
+/* El selector se arma con las transiciones que anuncia MIDIVJ, por grupos */
+function pintarTransiciones(lista) {
+  const firma = JSON.stringify(lista || []);
+  if (firma !== V.firmaTrans) {
+    V.firmaTrans = firma;
+    const grupos = new Map();
+    for (const t of lista || []) { if (!grupos.has(t.grupo)) grupos.set(t.grupo, []); grupos.get(t.grupo).push(t); }
+    let html = '<option value="corte">CORTE (sin transición)</option><option value="azar">🎲 Al azar (una distinta cada vez)</option>';
+    for (const [grupo, ts] of grupos) {
+      html += '<optgroup label="' + esc(grupo) + '">' + ts.map(t => '<option value="' + esc(t.id) + '">' + esc(t.nombre) + '</option>').join('') + '</optgroup>';
+    }
+    $('trans').innerHTML = html;
+  }
+  if (![...$('trans').options].some(o => o.value === V.trans)) V.trans = 'disolver';
+  if ($('trans').value !== V.trans) $('trans').value = V.trans;
+  document.body.dataset.trans = V.trans;
+}
+const tiempo = s => {
+  s = Math.round(s || 0);
+  return s >= 3600 ? Math.floor(s / 3600) + ':' + String(Math.floor(s / 60) % 60).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0')
+    : Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+};
+
+/* ── Conexión ─────────────────────────────────────────── */
+function conectar() {
+  clearTimeout(V.timer);
+  try { V.ws = new WebSocket(URL_WS); }
+  catch (_) { reintentar(); return; }
+  estado('conectando…', 'wait');
+  V.ws.onopen = () => {
+    V.reintento = 0;
+    V.ws.send(JSON.stringify({ type: 'join', room: SALA, rol: 'visor', nombre: 'Visor' }));
+  };
+  V.ws.onmessage = ev => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    recibir(msg);
+  };
+  V.ws.onclose = () => {
+    const vivo = V.pc && (V.pc.connectionState === 'connected' || V.pc.connectionState === 'connecting');
+    if (!vivo) cerrarVideo();
+    if (V.lleno) return;   // el relay no admite más visores: no insistir solo
+    estado('sin conexión — reintentando', '');
+    reintentar();
+  };
+  V.ws.onerror = () => {};
+}
+function reintentar() {
+  const espera = Math.min(6000, 500 * Math.pow(1.7, Math.min(V.reintento, 5)));
+  V.reintento++;
+  clearTimeout(V.timer);
+  V.timer = setTimeout(conectar, espera);
+}
+
+function recibir(msg) {
+  switch (msg.type) {
+    case 'joined':
+      V.lleno = false;
+      estado('sala ' + msg.room + ' · esperando a MIDIVJ…', 'wait');
+      break;
+    case 'presencia':
+      if (!msg.app) { estado('MIDIVJ no está abierto en la sala "' + SALA + '"', 'wait'); }
+      else if (!V.pc) estado('MIDIVJ conectado · pidiendo video…', 'wait');
+      break;
+    case 'visor-error':
+      V.lleno = true;
+      estado(msg.motivo || 'no se pudo conectar', '');
+      break;
+    case 'visor-oferta':
+      V.videos = msg.videos || {};
+      recibirOferta(msg.sdp);
+      break;
+    case 'visor-candidato':
+      recibirCandidato(msg.candidato);
+      break;
+    case 'visor-cerrar':
+      cerrarVideo();
+      estado('MIDIVJ cortó el video' + (msg.motivo ? ' (' + msg.motivo + ')' : ''), 'wait');
+      break;
+    case 'visor-estado':
+      V.est = msg;
+      pintar();
+      break;
+    case 'visor-niveles':
+      V.niveles = msg.n || {};
+      break;
+    case 'toast':
+      toast(msg.texto);
+      break;
+  }
+}
+
+/* ── WebRTC: MIDIVJ ofrece, aquí se responde ── */
+async function recibirOferta(sdp) {
+  if (!sdp) return;
+  cerrarVideo();
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  V.pc = pc;
+  V.candidatosPendientes = [];
+  pc.ontrack = ev => {
+    const nombre = V.videos[ev.transceiver.mid];
+    const el = { salida: $('v-salida'), previa: $('v-previa'), pistas: $('v-pistas') }[nombre];
+    if (!el) return;
+    /* Sin colchón: el navegador muestra cada cuadro en cuanto llega */
+    try { ev.receiver.jitterBufferTarget = 0; } catch (e) {}
+    try { ev.receiver.playoutDelayHint = 0; } catch (e) {}
+    el.srcObject = new MediaStream([ev.track]);
+    el.play().catch(() => {});
+    if (nombre === 'salida') { $('v-salida2').srcObject = el.srcObject; $('v-salida2').play().catch(() => {}); }
+    if (nombre !== 'pistas') el.parentElement.classList.add('con');
+  };
+  pc.onicecandidate = ev => { if (ev.candidate) enviar({ type: 'visor-candidato', candidato: ev.candidate }); };
+  let timerDesconexion = 0;
+  pc.onconnectionstatechange = () => {
+    if (pc !== V.pc) return;
+    if (pc.connectionState === 'connected') { clearTimeout(timerDesconexion); estado('sala ' + SALA + ' · en vivo', 'on'); V.verFirma = ''; avisarVer(); return; }
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      cerrarVideo();
+      estado('se cortó el video — reconectando', 'wait');
+      if (V.ws && V.ws.readyState === 1) V.ws.close();   // al volver a entrar, MIDIVJ ofrece de nuevo
+    } else if (pc.connectionState === 'disconnected') {
+      clearTimeout(timerDesconexion);
+      timerDesconexion = setTimeout(() => {
+        if (pc === V.pc && pc.connectionState === 'disconnected' && V.ws && V.ws.readyState === 1) V.ws.close();
+      }, 8000);
+    }
+  };
+  try {
+    await pc.setRemoteDescription({ type: 'offer', sdp });
+    for (const c of V.candidatosPendientes) await pc.addIceCandidate(c).catch(() => {});
+    V.candidatosPendientes = [];
+    const respuesta = await pc.createAnswer();
+    await pc.setLocalDescription(respuesta);
+    enviar({ type: 'visor-respuesta', sdp: respuesta.sdp });
+  } catch (e) {
+    cerrarVideo();
+    estado('error negociando el video: ' + e.message, '');
+  }
+}
+async function recibirCandidato(candidato) {
+  if (!candidato) return;
+  if (V.pc && V.pc.remoteDescription) await V.pc.addIceCandidate(candidato).catch(() => {});
+  else V.candidatosPendientes.push(candidato);
+}
+/* ── Sólo se pide lo que está a la vista ──
+   MIDIVJ deja de dibujar y de codificar los videos que este visor no
+   muestra (el monitor oculto por la vista, las miniaturas fuera de la
+   pestaña PISTAS, todo si la página está en segundo plano). */
+function avisarVer() {
+  if (!V.pc || V.pc.connectionState !== 'connected' || !V.ws || V.ws.readyState !== 1) return;
+  const vista = document.body.dataset.vista, oculto = document.hidden;
+  const ver = vista === 'cuadricula'
+    ? { salida: !oculto, previa: false, pistas: oculto ? false : 'grande' }   // mini salida + mosaico grande
+    : { salida: !oculto && vista !== 'previa', previa: !oculto && vista !== 'salida', pistas: !oculto && V.tab === 'pistas', audio: !oculto && V.tab === 'audio' };
+  const firma = JSON.stringify(ver);
+  if (firma === V.verFirma) return;
+  V.verFirma = firma;
+  orden('ver', ver);
+}
+
+/* ── Medidor de retardo y vigilante ──
+   Cada 2 s: cola de recepción (jitter buffer) + decodificación + mitad del
+   ida y vuelta de la red, del video más atrasado. Si el retardo pasa de
+   1 s durante 6 s seguidos, se reconecta para empezar al día. */
+const LAT = { prev: new Map(), malas: 0, ultimaReconexion: 0 };
+async function medirRetardo() {
+  const el = $('lat');
+  const pc = V.pc;
+  if (!pc || pc.connectionState !== 'connected') { el.textContent = ''; el.className = ''; LAT.prev.clear(); LAT.malas = 0; return; }
+  let peor = null, rtt = 0;
+  try {
+    (await pc.getStats()).forEach(r => {
+      if (r.type === 'candidate-pair' && r.nominated && r.currentRoundTripTime) rtt = r.currentRoundTripTime * 1000;
+      if (r.type !== 'inbound-rtp' || r.kind !== 'video') return;
+      const a = LAT.prev.get(r.id);
+      LAT.prev.set(r.id, { jb: r.jitterBufferDelay || 0, n: r.jitterBufferEmittedCount || 0, dec: r.totalDecodeTime || 0, fd: r.framesDecoded || 0 });
+      if (!a) return;
+      const dn = (r.jitterBufferEmittedCount || 0) - a.n, df = (r.framesDecoded || 0) - a.fd;
+      if (dn <= 0) return;   // ese video no está llegando (no está a la vista)
+      const ms = 1000 * ((r.jitterBufferDelay || 0) - a.jb) / dn + (df > 0 ? 1000 * ((r.totalDecodeTime || 0) - a.dec) / df : 0);
+      if (peor === null || ms > peor) peor = ms;
+    });
+  } catch (e) { return; }
+  if (pc !== V.pc) return;
+  if (peor === null) { el.textContent = ''; el.className = ''; LAT.malas = 0; return; }
+  const total = Math.round(peor + rtt / 2);
+  V.retardo = total;
+  el.textContent = '≈ ' + (total >= 1000 ? (total / 1000).toFixed(1) + ' s' : total + ' ms');
+  el.className = total < 150 ? 'bien' : total < 400 ? 'medio' : 'mal';
+  LAT.malas = total > 1000 ? LAT.malas + 1 : 0;
+  if (LAT.malas >= 3 && Date.now() - LAT.ultimaReconexion > 30000 && V.ws && V.ws.readyState === 1) {
+    LAT.ultimaReconexion = Date.now(); LAT.malas = 0;
+    toast('El video venía atrasado ' + (total / 1000).toFixed(1) + ' s: reconectando para ponerlo al día');
+    cerrarVideo();
+    V.ws.close();   // al volver a entrar, MIDIVJ ofrece de nuevo
+  }
+}
+setInterval(medirRetardo, 2000);
+
+function cerrarVideo() {
+  LAT.prev.clear();
+  if (V.pc) { V.pc.onconnectionstatechange = null; V.pc.close(); V.pc = null; }
+  ['v-salida', 'v-previa', 'v-pistas', 'v-salida2'].forEach(id => { $(id).srcObject = null; });
+  $('mon-salida').classList.remove('con');
+  $('mon-previa').classList.remove('con');
+}
+
+/* ── Pintado ──────────────────────────────────────────── */
+const nPista = i => 'T' + (i + 1);
+const ICONO = { video: '🎬', imagen: '🖼', phone: '📱', display: '🖥', capture: '🎥', browser: '🌐' };
+
+function resumen(pistas, e) {
+  const on = pistas.map((p, i) => ({ p, i })).filter(x => x.p.on && e.pistas[x.i].cargada);
+  if (!on.length) return 'ninguna pista encendida';
+  return on.map(x => nPista(x.i) + (x.p.opacidad < 0.995 ? ' ' + Math.round(x.p.opacidad * 100) + '%' : '')).join(' + ');
+}
+
+function pintar() {
+  const e = V.est;
+  if (!e) return;
+  $('rec').classList.toggle('on', !!e.grabando);
+  pintarTransiciones(e.transiciones);
+  $('sub-salida').textContent = resumen(e.pistas, e) + ' · ' + e.salida.w + '×' + e.salida.h;
+  $('sub-previa').textContent = resumen(e.previa, e);
+  $('mon-previa').classList.toggle('igual', !!e.igual);
+  $('rot-previa').textContent = e.igual ? 'SALIDA NUEVA · IGUAL A LA SALIDA' : 'SALIDA NUEVA · PREVIA';
+  $('tomar').disabled = !!e.igual;
+  $('copiar').disabled = !!e.igual;
+  pintarTira();
+  pintarCuadricula();
+}
+
+/* El arreglo sobre el que actúa la barra: la previa o la salida */
+function arreglo() {
+  const e = V.est;
+  return V.modo === 'directo' ? e.pistas.map(p => ({ on: p.on, opacidad: p.opacidad, clip: p.clip, fijo: !!p.fijo })) : e.previa;
+}
+
+function pintarTira() {
+  const e = V.est;
+  if (!e || V.arrastrando) return;
+  const html = V.tab === 'pistas' ? tiraPistas(e) : V.tab === 'escenas' ? tiraEscenas(e) : V.tab === 'audio' ? tiraAudio(e) : tiraMateriales(e);
+  const firma = V.tab + '|' + html;
+  if (firma === V.firmaTira) return;
+  V.firmaTira = firma;
+  const tira = $('tira');
+  const x = tira.scrollLeft;
+  tira.innerHTML = html;
+  tira.scrollLeft = x;
+  V.lienzos = [...tira.querySelectorAll('canvas[data-i]')];
+}
+
+function marcas(aire, previa) {
+  return '<span class="marcas">' + (aire ? '<span class="marca aire">AIRE</span>' : '') + (previa ? '<span class="marca previa">PREVIA</span>' : '') + '</span>';
+}
+
+function tiraPistas(e) {
+  const arr = arreglo();
+  return e.pistas.map((p, i) => {
+    const aire = p.on && p.cargada, previa = e.previa[i].on && p.cargada && !e.igual;
+    const a = arr[i];
+    /* Fuente en vivo con clip-interruptor: encendida pero con el clip apagado no se ve, salvo con el seguro */
+    const clipVivo = !!a.clip && e.clips.some(c => c.id === a.clip && c.vivo);
+    const tapada = p.interruptor && a.on && !a.fijo && !clipVivo;
+    const seguro = p.vivo ? '<button data-acc="fijo" data-i="' + i + '" class="seguro' + (a.fijo ? ' on' : '') + '" title="Seguro: 🔒 la fuente se ve siempre que la pista esté encendida, aunque su clip esté apagado. 🔓 el clip decide si se ve.">' + (a.fijo ? '🔒' : '🔓') + '</button>' : '';
+    /* Clips de la pista: con varios, se elige uno o se avanza en secuencia (⏭) */
+    const cl = e.clips.filter(c => c.pista === i);
+    const fila = p.cargada && cl.length > 1
+      ? '<div class="clips"><select data-acc="elige" data-i="' + i + '" title="Clip de esta pista">' +
+          '<option value="">— sin clip —</option>' +
+          cl.map(c => '<option value="' + esc(c.id) + '"' + (a.clip === c.id ? ' selected' : '') + '>' + esc(c.nombre) + '</option>').join('') +
+        '</select><button data-acc="sigue" data-i="' + i + '" title="Siguiente clip de la pista (en secuencia)">⏭</button></div>'
+      : '';
+    return '<div class="tarj pista' + (aire ? ' aire' : '') + (previa ? ' previa' : '') + (p.cargada ? '' : ' sin') + '" data-acc="pista" data-i="' + i + '">' +
+      '<div class="franja" style="background:' + esc(p.color) + '"></div>' +
+      '<canvas data-i="' + i + '" width="320" height="180"></canvas>' + marcas(aire, previa) +
+      '<div class="nom">' + nPista(i) + ' · ' + (p.cargada ? (ICONO[p.tipo] || '') + ' ' + esc(p.fuente) : 'sin fuente') + '</div>' +
+      (tapada ? '<div class="aviso">clip apagado · 🔓 para verla</div>' : '') +
+      fila +
+      '<div class="pie">' +
+        '<input type="range" min="0" max="100" value="' + Math.round(a.opacidad * 100) + '" data-acc="opacidad" data-i="' + i + '" title="Opacidad"' + (p.cargada ? '' : ' disabled') + '>' +
+        seguro +
+        (p.cargada ? '<button data-acc="capa" data-i="' + i + '" class="capa' + (p.capa ? ' on' : '') + '" title="⧉ Mantener encendida: los clips de esta pista siguen aunque se disparen clips en otras pistas (dos videos a la vez). Apagado: un clip de otra pista del mismo tipo la reemplaza.">⧉</button>' : '') +
+        '<button data-acc="solo" data-i="' + i + '" title="Deja sólo esta pista encendida"' + (p.cargada ? '' : ' disabled') + '>SOLO</button>' +
+      '</div></div>';
+  }).join('');
+}
+
+function tiraMateriales(e) {
+  const arr = arreglo();
+  const pistas = e.pistas.map((p, i) => i).filter(i => e.pistas[i].cargada && (V.todas || arr[i].on));
+  if (!pistas.length) {
+    return '<div class="hueco">No hay pistas encendidas en ' + (V.modo === 'directo' ? 'la salida' : 'la previa') +
+      '.<br>Enciende una en PISTAS o marca «todas las pistas».</div>';
+  }
+  let html = '';
+  for (const i of pistas) {
+    const p = e.pistas[i];
+    const clips = e.clips.filter(c => c.pista === i);
+    const medios = e.medios.filter(m => m.pista === i);
+    html += '<div class="grupo" style="background:' + esc(p.color) + '">' + nPista(i) + '</div>';
+    if (!clips.length && !medios.length) {
+      html += '<div class="tarj clip sin" style="cursor:default"><div class="nom">' + (ICONO[p.tipo] || '') + ' ' + esc(p.fuente) + '</div>' +
+        '<div class="det">sin clips: en MIDIVJ, ⚡ GENERAR CLIPS</div></div>';
+    }
+    for (const c of clips) {
+      const aire = p.clip === c.id && p.on, previa = e.previa[i].clip === c.id && e.previa[i].on && !e.igual;
+      html += '<div class="tarj clip' + (aire ? ' aire' : '') + (previa ? ' previa' : '') + '" data-acc="clip" data-i="' + i + '" data-id="' + esc(c.id) + '">' +
+        '<div class="franja" style="background:' + esc(p.color) + '"></div>' + marcas(aire, previa) +
+        '<div class="nom">' + esc(c.nombre) + '</div>' +
+        '<div class="det">' + (c.vivo ? '● en vivo' : tiempo(c.dur)) + '</div></div>';
+    }
+    for (const m of medios) {
+      html += '<div class="tarj clip" data-acc="medio" data-i="' + i + '" data-id="' + esc(m.id) + '">' +
+        '<div class="franja" style="background:' + esc(p.color) + '"></div>' +
+        '<div class="nom">' + esc(m.nombre) + '</div>' +
+        '<div class="det">medio' + (m.dur ? ' · ' + tiempo(m.dur) : '') + ' · poner como fuente</div></div>';
+    }
+  }
+  return html;
+}
+
+function tiraEscenas(e) {
+  const igualA = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const salida = e.pistas.map(p => ({ on: p.on, opacidad: p.opacidad, clip: p.clip, fijo: !!p.fijo }));
+  let html = '<div class="tarj nueva" data-acc="escena-nueva">＋ GUARDAR<br>' + (V.modo === 'directo' ? 'LA SALIDA' : 'LA PREVIA') + '<br>COMO ESCENA</div>';
+  if (!e.escenas.length) html += '<div class="hueco">Todavía no hay escenas.<br>Arma un arreglo de pistas y guárdalo: queda en la sesión de MIDIVJ.</div>';
+  for (const s of e.escenas) {
+    const aire = igualA(s.pistas, salida), previa = !e.igual && igualA(s.pistas, e.previa);
+    const puntos = s.pistas.map((p, i) => '<span class="punto' + (p.on && e.pistas[i].cargada ? ' on' : '') + '"' +
+      (p.on && e.pistas[i].cargada ? ' style="background:' + esc(e.pistas[i].color) + '"' : '') + '>' + (i + 1) + '</span>').join('');
+    const clips = s.pistas.map((p, i) => p.on && p.clip ? (e.clips.find(c => c.id === p.clip) || {}).nombre : null).filter(Boolean);
+    html += '<div class="tarj esc' + (aire ? ' aire' : '') + (previa ? ' previa' : '') + '" data-acc="escena" data-id="' + esc(s.id) + '">' + marcas(aire, previa) +
+      '<div class="nom" style="padding-top:8px">' + esc(s.nombre) + '</div>' +
+      '<div class="puntos">' + puntos + '</div>' +
+      '<div class="det">' + (clips.length ? esc(clips.join(' · ')) : '&nbsp;') + '</div>' +
+      '<div class="pie">' +
+        '<button data-acc="escena-aire" data-id="' + esc(s.id) + '" class="peligro" title="Directo a la salida">▶</button>' +
+        '<button data-acc="escena-sobre" data-id="' + esc(s.id) + '" title="Guardar aquí el arreglo actual">💾</button>' +
+        '<button data-acc="escena-nombre" data-id="' + esc(s.id) + '" title="Cambiar el nombre">✎</button>' +
+        '<button data-acc="escena-borrar" data-id="' + esc(s.id) + '" title="Borrar">' + (V.borrar === s.id ? '¿SEGURO?' : '✕') + '</button>' +
+      '</div></div>';
+  }
+  return html;
+}
+
+/* ── Miniaturas de las pistas: recortes del mosaico ── */
+function dibujarMiniaturas() {
+  requestAnimationFrame(dibujarMiniaturas);
+  const e = V.est, v = $('v-pistas');
+  if (!e || V.tab !== 'pistas' || !V.lienzos || !V.lienzos.length || v.readyState < 2 || !v.videoWidth) return;
+  if ((dibujarMiniaturas.n = (dibujarMiniaturas.n || 0) + 1) % 3) return;   // ~20 por segundo
+  const m = e.mosaico;
+  const kx = v.videoWidth / (m.cols * m.cw), ky = v.videoHeight / (m.filas * m.ch);
+  for (const c of V.lienzos) {
+    const i = +c.dataset.i;
+    const cx = c.getContext('2d');
+    if (!e.pistas[i] || !e.pistas[i].cargada) { cx.fillStyle = '#000'; cx.fillRect(0, 0, c.width, c.height); continue; }
+    cx.drawImage(v, (i % m.cols) * m.cw * kx, Math.floor(i / m.cols) * m.ch * ky, m.cw * kx, m.ch * ky, 0, 0, c.width, c.height);
+  }
+}
+
+/* ── Acciones ─────────────────────────────────────────── */
+const P = () => (V.modo === 'directo' ? 'salida' : 'previa');
+/* En DIRECTO A SALIDA los cambios entran con la transición elegida */
+const conTrans = () => (V.modo === 'directo' ? entrada() : {});
+/* Pone un clip de la pista: en directo lo dispara (y enciende la pista); en previa lo deja preparado */
+function ponerClip(i, id) {
+  if (V.modo === 'directo') {
+    if (id) orden('salida-pista', { pista: i, on: true, clip: id, ...entrada() });
+    else orden('salida-clip', { pista: i, clip: null, ...entrada() });
+  } else orden('previa-clip', { pista: i, clip: id || null });
+}
+
+$('tira').addEventListener('click', ev => {
+  const e = V.est;
+  if (!e) return;
+  const el = ev.target.closest('[data-acc]');
+  if (!el || el.disabled) return;
+  const acc = el.dataset.acc, i = parseInt(el.dataset.i, 10), id = el.dataset.id;
+  const arr = arreglo();
+  if (acc !== 'escena-borrar' && V.borrar) { V.borrar = null; V.firmaTira = ''; }
+  switch (acc) {
+    case 'opacidad': case 'vol': return;   // lo maneja 'input'
+    case 'mezcla-on':
+      orden('mezcla-encender');
+      toast('Encendiendo la mezcla de audio…');
+      break;
+    case 'mute': case 'rec': {
+      const c = canalDe(el.dataset.canal);
+      if (c) orden('mezcla-canal', { canal: el.dataset.canal, [acc]: !c[acc] });
+      break;
+    }
+    case 'pista':
+      if (!e.pistas[i].cargada) { toast(nPista(i) + ' no tiene fuente'); return; }
+      if (V.modo === 'directo' && !arr[i].on) {
+        /* Tocar la pista en directo la enciende y, si no tiene un clip corriendo, dispara el suyo */
+        const cl = e.clips.filter(c => c.pista === i);
+        const cual = arr[i].clip ? null : (cl.find(c => c.id === V.ultimo[i]) || cl[0] || null);
+        if (cual) V.ultimo[i] = cual.id;
+        orden('salida-pista', { pista: i, on: true, ...(cual ? { clip: cual.id } : {}), ...entrada() });
+      } else orden(P() + '-pista', { pista: i, on: !arr[i].on, ...conTrans() });
+      break;
+    case 'elige': return;   // lo maneja 'change'
+    case 'sigue': {
+      const cl = e.clips.filter(c => c.pista === i);
+      if (!cl.length) return;
+      const base = arr[i].clip || V.ultimo[i];   // si otra pista lo detuvo, la secuencia sigue donde iba
+      const sig = cl[(cl.findIndex(c => c.id === base) + 1) % cl.length];
+      V.ultimo[i] = sig.id;
+      ponerClip(i, sig.id);
+      toast(nPista(i) + ' ▶ ' + sig.nombre);
+      break;
+    }
+    case 'solo':
+      orden(P() + '-solo', { pista: i, ...conTrans() });
+      break;
+    case 'fijo':
+      orden(P() + '-pista', { pista: i, fijo: !arr[i].fijo, ...conTrans() });
+      break;
+    case 'capa':
+      orden('pista-capa', { pista: i, capa: !e.pistas[i].capa });
+      toast(nPista(i) + (e.pistas[i].capa ? ': se reemplaza con otras pistas' : ': se mantiene encendida ⧉'));
+      break;
+    case 'clip': {
+      const puesto = arr[i].clip === id && arr[i].on;
+      if (!puesto) V.ultimo[i] = id;
+      if (V.modo === 'directo') orden('salida-clip', puesto ? { pista: i, clip: null, ...entrada() } : { clip: id, ...entrada() });
+      else orden('previa-clip', { pista: i, clip: puesto ? null : id });
+      break;
+    }
+    case 'medio':
+      if (V.modo !== 'directo') { toast('Un medio sin clip sólo se puede poner en DIRECTO A SALIDA (cambia la fuente de la pista)'); return; }
+      orden('salida-medio', { pista: i, medio: id, ...entrada() });
+      break;
+    case 'escena':
+      if (V.modo === 'directo') orden('escena-salida', { escena: id, ...entrada() });
+      else orden('escena-previa', { escena: id });
+      break;
+    case 'escena-aire':
+      orden('escena-salida', { escena: id, ...entrada() });
+      break;
+    case 'escena-nueva': {
+      const nombre = prompt('Nombre de la escena:', 'Escena ' + (e.escenas.length + 1));
+      if (nombre === null) return;
+      orden('escena-guardar', { nombre, de: P() });
+      break;
+    }
+    case 'escena-sobre':
+      orden('escena-guardar', { escena: id, de: P() });
+      toast('Escena actualizada con ' + (V.modo === 'directo' ? 'la salida' : 'la previa'));
+      break;
+    case 'escena-nombre': {
+      const s = e.escenas.find(x => x.id === id);
+      const nombre = prompt('Nombre de la escena:', s ? s.nombre : '');
+      if (nombre) orden('escena-renombrar', { escena: id, nombre });
+      break;
+    }
+    case 'escena-borrar':
+      if (V.borrar === id) { V.borrar = null; orden('escena-borrar', { escena: id }); }
+      else { V.borrar = id; V.firmaTira = ''; pintarTira(); }
+      break;
+  }
+});
+/* Los botones y deslizadores de una tarjeta no cuentan como toque de la tarjeta */
+$('tira').addEventListener('click', ev => {
+  if (ev.target.matches('input[type=range]')) ev.stopPropagation();
+}, true);
+
+$('tira').addEventListener('change', ev => {
+  const el = ev.target;
+  if (el.dataset.acc !== 'elige') return;
+  const i = parseInt(el.dataset.i, 10);
+  if (el.value) V.ultimo[i] = el.value;
+  ponerClip(i, el.value);
+});
+$('tira').addEventListener('input', ev => {
+  const el = ev.target;
+  if (el.dataset.acc === 'vol') { moverVolumen(el); return; }
+  if (el.dataset.acc !== 'opacidad') return;
+  orden(P() + '-pista', { pista: parseInt(el.dataset.i, 10), opacidad: (+el.value) / 100 });
+});
+$('tira').addEventListener('pointerdown', ev => { if (ev.target.matches('input[type=range]')) V.arrastrando = true; });
+const soltar = () => { if (V.arrastrando) { V.arrastrando = false; pintarTira(); } };
+window.addEventListener('pointerup', soltar);
+window.addEventListener('pointercancel', soltar);
+
+$('tomar').onclick = () => orden('tomar', entrada());
+$('copiar').onclick = () => orden('previa-copiar');
+$('trans').onchange = ev => { V.trans = ev.target.value; document.body.dataset.trans = V.trans; recordar(); };
+$('dur').onchange = recordar;
+document.body.dataset.trans = V.trans;
+
+$('seg-vista').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-vista]');
+  if (!b) return;
+  document.body.dataset.vista = b.dataset.vista;
+  pintarControles();
+  recordar();
+  avisarVer();
+  CQ.firma = ''; CQ.firmaEd = '';
+  pintarCuadricula();
+});
+$('seg-modo').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-modo]');
+  if (!b) return;
+  V.modo = b.dataset.modo;
+  document.body.dataset.modo = V.modo;
+  pintarControles();
+  V.firmaTira = '';
+  pintarTira();
+});
+$('pestanas').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-tab]');
+  if (!b) return;
+  V.tab = b.dataset.tab;
+  pintarControles();
+  pintarTira();
+  recordar();
+  avisarVer();
+});
+$('todas').onchange = ev => { V.todas = ev.target.checked; pintarTira(); recordar(); };
+$('pantalla').onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+};
+
+function pintarControles() {
+  document.querySelectorAll('#seg-vista button').forEach(b => b.classList.toggle('on', b.dataset.vista === document.body.dataset.vista));
+  document.querySelectorAll('#seg-modo button').forEach(b => b.classList.toggle('on', b.dataset.modo === V.modo));
+  document.querySelectorAll('#pestanas .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === V.tab));
+  $('lbl-todas').style.visibility = V.tab === 'materiales' ? '' : 'hidden';
+  $('todas').checked = V.todas;
+}
+
+/* El navegador puede pausar los videos al volver de segundo plano */
+document.addEventListener('visibilitychange', () => {
+  avisarVer();
+  if (document.visibilityState !== 'visible') return;
+  ['v-salida', 'v-previa', 'v-pistas', 'v-salida2'].forEach(id => { const v = $(id); if (v.srcObject) v.play().catch(() => {}); });
+  if (V.ws && V.ws.readyState === 1) orden('estado');
+});
+
+pintarControles();
+conectar();
+requestAnimationFrame(dibujarMiniaturas);
+
+/* ── Mezcla de audio (pestaña AUDIO) ──────────────────────────────────
+   Las mismas tiras que 🎚 MEZCLA en MIDIVJ: fader, M (silenciar en la PC),
+   REC (entra en la grabación) y medidor, que llega aparte ('visor-niveles'). */
+function tiraAudio(e) {
+  const mz = e.mezcla;
+  if (!mz) return '<div class="hueco">Esta versión de MIDIVJ no tiene mezcla de audio.<br>Actualiza y reinicia el relay.</div>';
+  if (!mz.activa) {
+    return '<div class="tarj encender" data-acc="mezcla-on"><b>🔊 ENCENDER LA MEZCLA</b>' +
+      '<span>' + (mz.dormida ? '⚠ El navegador de la PC no dejó arrancar el audio: haz un clic en la ventana de MIDIVJ (o abre 🎚 MEZCLA ahí) y vuelve a tocar aquí.'
+        : 'El audio de MIDIVJ todavía no pasa por la mezcla. Toca aquí para encenderla (o abre 🎚 MEZCLA en la PC).') + '</span></div>';
+  }
+  const visibles = mz.canales.filter(c => {
+    if (c.tipo === 'entrada') return true;
+    const i = parseInt(String(c.id).replace('pista-', ''), 10) - 1;
+    return !!(e.pistas[i] && e.pistas[i].cargada);
+  }).sort((a, b) => (a.tipo === 'entrada') - (b.tipo === 'entrada'));
+  const tarj = (c, clase) =>
+    '<div class="tarj audio ' + clase + (c.conSenal === false ? ' sin' : '') + '" data-canal="' + esc(c.id) + '">' +
+      '<div class="nom">' + esc(c.nombre) + '</div>' +
+      '<div class="det" title="' + esc(c.detalle || '') + '">' + esc(c.detalle || (c.conSenal === false ? 'sin sonido' : '\u00a0')) + '</div>' +
+      '<div class="vu"><i data-vu="' + esc(c.id) + '"></i></div>' +
+      '<div class="pie"><input type="range" min="0" max="150" step="1" value="' + Math.round(c.vol * 100) + '" data-acc="vol" data-canal="' + esc(c.id) + '" title="Volumen (doble toque: 100 %)"></div>' +
+      '<div class="pie"><span class="pct">' + Math.round(c.vol * 100) + ' %</span>' +
+        '<button data-acc="mute" data-canal="' + esc(c.id) + '" class="m' + (c.mute ? ' on' : '') + '" title="Silenciar en la PC de MIDIVJ (no cambia lo que se graba)">M</button>' +
+        (c.rec === undefined ? '' : '<button data-acc="rec" data-canal="' + esc(c.id) + '" class="r' + (c.rec ? ' on' : '') + '" title="Este canal entra en la grabación">REC</button>') +
+      '</div></div>';
+  return (visibles.length ? '' : '<div class="hueco">Ninguna pista tiene fuente.</div>') +
+    visibles.map(c => tarj(c, c.tipo === 'entrada' ? 'entrada' : '')).join('') +
+    tarj({ id: 'master', nombre: 'MASTER', detalle: 'lo que suena en la PC', vol: mz.master.vol, mute: mz.master.mute }, 'master');
+}
+const canalDe = id => { const mz = V.est && V.est.mezcla; return !mz ? null : id === 'master' ? mz.master : mz.canales.find(c => c.id === id) || null; };
+/* Medidores: escala en dB (-54 abajo) y caída suave entre un aviso y el siguiente */
+const VU = { picos: {}, cola: new Map(), raf: 0 };
+function dibujarVU() {
+  requestAnimationFrame(dibujarVU);
+  if (V.tab !== 'audio' || !V.est || !V.est.mezcla || !V.est.mezcla.activa) return;
+  const n = V.niveles || {}, mz = V.est.mezcla;
+  let master = 0;
+  for (const c of mz.canales) if (!c.mute) master = Math.max(master, (n[c.id] || 0) * c.vol);
+  document.querySelectorAll('#tira [data-vu]').forEach(el => {
+    const id = el.dataset.vu;
+    const v = id === 'master' ? (mz.master.mute ? 0 : master * mz.master.vol) : (n[id] || 0);
+    const alto = v > 0 ? Math.max(0, Math.min(1, 1 + 20 * Math.log10(v) / 54)) : 0;
+    VU.picos[id] = Math.max(alto, (VU.picos[id] || 0) - 0.025);
+    el.style.width = (VU.picos[id] * 100).toFixed(1) + '%';
+  });
+}
+requestAnimationFrame(dibujarVU);
+function enviarVolumenes() {
+  VU.raf = 0;
+  for (const [canal, vol] of VU.cola) orden('mezcla-canal', { canal, vol });
+  VU.cola.clear();
+}
+function moverVolumen(el) {
+  el.closest('.tarj').querySelector('.pct').textContent = el.value + ' %';
+  VU.cola.set(el.dataset.canal, (+el.value) / 100);
+  if (!VU.raf) VU.raf = requestAnimationFrame(enviarVolumenes);
+}
+$('tira').addEventListener('dblclick', ev => {
+  if (ev.target.dataset.acc !== 'vol') return;
+  ev.target.value = '100';
+  moverVolumen(ev.target);
+});
+
+/* ── Cuadrícula: varias pistas a la vez y sus ajustes ─────────────────
+   Cada celda es el recorte de una pista en el mosaico (su señal limpia,
+   con la corrección de color aplicada), que en esta vista llega más grande
+   y a todos los cuadros. Tocar una celda la elige; el panel edita su color
+   (PROCESADOR DE VIDEO) y su TRANSFORM en MIDIVJ. La mini SALIDA muestra el
+   resultado en la mezcla (posición, escala y giro sólo se ven ahí). */
+const CQ = { firma: '', firmaEd: '', lienzos: [], moviendo: false, cola: new Map(), raf: 0 };
+(function () {
+  const op = (sel, n) => { sel.innerHTML = Array.from({ length: n }, (_, i) => '<option value="' + (i + 1) + '">' + (i + 1) + '</option>').join(''); };
+  op($('cq-cols'), 6); op($('cq-filas'), 4);
+  $('cq-cols').value = String(V.cq.cols); $('cq-filas').value = String(V.cq.filas); $('cq-ver').value = V.cq.ver;
+  $('cq-cols').onchange = e => { V.cq.cols = +e.target.value; recordar(); pintarCuadricula(); };
+  $('cq-filas').onchange = e => { V.cq.filas = +e.target.value; recordar(); pintarCuadricula(); };
+  $('cq-ver').onchange = e => { V.cq.ver = e.target.value; recordar(); pintarCuadricula(); };
+})();
+const enCuadricula = () => document.body.dataset.vista === 'cuadricula';
+function pistasDeCuadricula(e) {
+  return e.pistas.map((p, i) => i).filter(i => V.cq.ver === 'todas' || (e.pistas[i].cargada && (V.cq.ver !== 'vivo' || e.pistas[i].vivo)));
+}
+function pintarCuadricula() {
+  const e = V.est;
+  if (!e || !enCuadricula()) return;
+  const lista = pistasDeCuadricula(e), n = V.cq.cols * V.cq.filas;
+  if (V.cq.sel === null || !lista.includes(V.cq.sel)) V.cq.sel = lista.length ? lista[0] : null;
+  const celdas = Array.from({ length: n }, (_, k) => (k < lista.length ? lista[k] : -1));
+  const firma = JSON.stringify([V.cq.cols, V.cq.filas, V.cq.sel, celdas.map(i => i < 0 ? 0 : [i, e.pistas[i].fuente, e.pistas[i].tipo, e.pistas[i].on, e.pistas[i].cargada, e.pistas[i].color.on]), e.mosaico.cw]);
+  if (firma !== CQ.firma) {
+    CQ.firma = firma;
+    const r = $('cq-rejilla');
+    r.style.gridTemplateColumns = 'repeat(' + V.cq.cols + ',minmax(0,1fr))';
+    r.style.gridTemplateRows = 'repeat(' + V.cq.filas + ',minmax(0,1fr))';
+    r.innerHTML = celdas.map(i => {
+      if (i < 0) return '<div class="celda vacia"></div>';
+      const p = e.pistas[i];
+      return '<div class="celda' + (i === V.cq.sel ? ' sel' : '') + '" data-i="' + i + '">' +
+        '<canvas data-i="' + i + '" width="' + e.mosaico.cw + '" height="' + e.mosaico.ch + '"></canvas>' +
+        '<span class="marcas">' + (p.on && p.cargada ? '<span class="marca aire">AIRE</span>' : '') + (p.color.on ? '<span class="marca color">COLOR</span>' : '') + '</span>' +
+        '<span class="eti">' + nPista(i) + ' · ' + (p.cargada ? (ICONO[p.tipo] || '') + ' ' + esc(p.fuente) : 'sin fuente') + '</span></div>';
+    }).join('');
+    CQ.lienzos = [...r.querySelectorAll('canvas')];
+  }
+  pintarEditor();
+}
+$('cq-rejilla').addEventListener('click', ev => {
+  const c = ev.target.closest('.celda[data-i]');
+  if (!c) return;
+  V.cq.sel = +c.dataset.i;
+  CQ.firmaEd = '';
+  pintarCuadricula();
+});
+function dibujarCuadricula() {
+  requestAnimationFrame(dibujarCuadricula);
+  const e = V.est, v = $('v-pistas');
+  if (!e || !enCuadricula() || !CQ.lienzos.length || v.readyState < 2 || !v.videoWidth) return;
+  const m = e.mosaico;
+  const kx = v.videoWidth / (m.cols * m.cw), ky = v.videoHeight / (m.filas * m.ch);
+  for (const c of CQ.lienzos) {
+    const i = +c.dataset.i;
+    c.getContext('2d').drawImage(v, (i % m.cols) * m.cw * kx, Math.floor(i / m.cols) * m.ch * ky, m.cw * kx, m.ch * ky, 0, 0, c.width, c.height);
+  }
+}
+requestAnimationFrame(dibujarCuadricula);
+
+const cifra = (a, v) => (a.step >= 1 ? String(Math.round(v)) : (+v).toFixed(2));
+function pintarEditor() {
+  const e = V.est, ed = $('cq-editor');
+  if (!e || CQ.moviendo) return;
+  const i = V.cq.sel;
+  if (i === null || !e.pistas[i] || !e.ajustes) {
+    if (CQ.firmaEd !== 'vacio') { CQ.firmaEd = 'vacio'; ed.innerHTML = '<div id="cq-vacio">No hay pistas en la cuadrícula. Carga una fuente en MIDIVJ o elige «todas».</div>'; }
+    return;
+  }
+  const p = e.pistas[i];
+  const firma = JSON.stringify([i, p.fuente, p.color, p.forma, p.on]);
+  if (firma === CQ.firmaEd) return;
+  CQ.firmaEd = firma;
+  const fila = (grupo, a, v) => '<div class="aj' + (Math.abs(v - a.def) > 1e-6 ? ' mov' : '') + '" title="Doble toque: vuelve a ' + cifra(a, a.def) + '"><span>' + esc(a.lbl) + '</span>' +
+    '<input type="range" data-grupo="' + grupo + '" data-key="' + esc(a.key) + '" min="' + a.min + '" max="' + a.max + '" step="' + a.step + '" value="' + v + '" data-def="' + a.def + '">' +
+    '<b>' + cifra(a, v) + '</b></div>';
+  ed.innerHTML =
+    '<div id="cq-titulo">' + nPista(i) + ' · ' + (p.cargada ? (ICONO[p.tipo] || '') + ' ' + esc(p.fuente) : 'sin fuente') + '</div>' +
+    '<div class="fila" style="margin-top:8px"><h3>COLOR</h3>' +
+      '<button data-acc="color-on" class="' + (p.color.on ? 'on' : '') + '" title="Enciende o apaga la corrección: sirve para comparar antes y después">' + (p.color.on ? 'ON' : 'OFF') + '</button>' +
+      '<button data-acc="color-reset" title="Vuelve todos los valores de color a neutro">↺</button></div>' +
+    e.ajustes.color.map(a => fila('color', a, p.color[a.key])).join('') +
+    '<div class="fila" style="margin-top:12px"><h3>TRANSFORMACIÓN</h3><button data-acc="forma-reset" title="Vuelve posición, escala y giro a su lugar">↺</button></div>' +
+    e.ajustes.forma.map(a => fila('forma', a, p.forma[a.key])).join('');
+}
+/* Los cambios de un slider salen a lo sumo una vez por cuadro */
+function enviarAjustes() {
+  CQ.raf = 0;
+  for (const [, a] of CQ.cola) orden('pista-ajuste', a);
+  CQ.cola.clear();
+}
+function ajustar(el) {
+  const fila = el.closest('.aj');
+  const v = +el.value;
+  fila.querySelector('b').textContent = (+el.step >= 1 ? String(Math.round(v)) : v.toFixed(2));
+  fila.classList.toggle('mov', Math.abs(v - (+el.dataset.def)) > 1e-6);
+  CQ.cola.set(el.dataset.grupo + '.' + el.dataset.key, { pista: V.cq.sel, grupo: el.dataset.grupo, key: el.dataset.key, valor: v });
+  if (!CQ.raf) CQ.raf = requestAnimationFrame(enviarAjustes);
+}
+$('cq-editor').addEventListener('input', ev => { if (ev.target.matches('input[type=range]')) ajustar(ev.target); });
+$('cq-editor').addEventListener('pointerdown', ev => { if (ev.target.matches('input[type=range]')) CQ.moviendo = true; });
+const cqSoltar = () => { if (CQ.moviendo) { CQ.moviendo = false; setTimeout(() => { CQ.firmaEd = ''; pintarEditor(); }, 400); } };
+window.addEventListener('pointerup', cqSoltar);
+window.addEventListener('pointercancel', cqSoltar);
+$('cq-editor').addEventListener('dblclick', ev => {
+  const el = ev.target.closest('.aj') && ev.target.closest('.aj').querySelector('input');
+  if (!el) return;
+  el.value = el.dataset.def;
+  ajustar(el);
+});
+$('cq-editor').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-acc]');
+  const e = V.est, i = V.cq.sel;
+  if (!b || !e || i === null) return;
+  if (b.dataset.acc === 'color-on') orden('pista-color', { pista: i, on: !e.pistas[i].color.on });
+  if (b.dataset.acc === 'color-reset') orden('pista-color', { pista: i, reset: true });
+  if (b.dataset.acc === 'forma-reset') orden('pista-forma', { pista: i, reset: true });
+});
+
+</script>
+</body>
+</html>
