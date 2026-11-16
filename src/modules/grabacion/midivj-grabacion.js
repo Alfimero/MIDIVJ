@@ -363,6 +363,12 @@
         if (a && tam.ancho && tam.alto && (tam.ancho !== a.ancho || tam.alto !== a.alto)) {
           cortarCanal(canal, null, canal.cap.nombre + ' cambió a ' + tam.ancho + '×' + tam.alto);
         }
+        /* Un lienzo que no se dibuja (ninguna fuente cargada) no entrega
+           cuadros y el archivo queda vacío: mejor saberlo a los 4 s que al editar */
+        if (a && a.archivo && !a.sinDatosAvisado && !a.enviados && !a.cola.length && msDeToma() - a.desdeMs > 4000) {
+          a.sinDatosAvisado = true;
+          aviso(canal.cap.nombre + ' no está entregando imagen: ' + a.archivo + ' va a quedar vacío (¿hay alguna fuente cargada y a la vista?).');
+        }
       }
       if (global.document && document.visibilityState === 'hidden') {
         if (!ocultaDesde) {

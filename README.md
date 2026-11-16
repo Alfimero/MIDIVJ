@@ -297,6 +297,7 @@ Está en **📡 RELAY → 7 · OTROS MIDIVJ EN LA RED**:
 - Para ir en los dos sentidos, cada equipo recibe del otro; las señales no rebotan.
 - **COMPARTIR TAMBIÉN EL MIDI FÍSICO DE ESTE EQUIPO**: además de los mandos, los otros equipos reciben lo que entra por los controladores MIDI (USB) de esta PC.
 - **⏸ PAUSAR** deja de recibir sin borrar el enlace y **✕ QUITAR** lo borra. El relay recuerda los enlaces y los reconecta solo si el otro equipo se apaga y vuelve.
+- Ejemplo de dos sesiones: en la PC de grabación, mapea un botón de la pedalera de la PC de visuales a **GRABAR / DETENER** (⏺ GRABAR → GRABAR DESDE UN BOTÓN).
 - Las señales llegan con los mismos números de nota y CC que en el equipo de origen: si en los dos equipos hay algo mapeado al mismo botón, el botón dispara las dos cosas.
 - Dos sesiones en la misma PC (dos relays, en los puertos 9191 y 9192) también se ven entre sí.
 - Red: usa el mismo puerto que los teléfonos (TCP 9191), así que funciona donde funciona el mando. Los avisos automáticos van por UDP 9189; si el firewall los bloquea, BUSCAR hace lo mismo. Hay que actualizar y reiniciar el relay en los equipos; un equipo con la versión anterior sirve de origen si se escribe su IP a mano.
@@ -308,6 +309,8 @@ Está en **📡 RELAY → 7 · OTROS MIDIVJ EN LA RED**:
 1. Elige **formato** (MP4 · H.264, recomendado: lo abre cualquier editor), **calidad** (Normal / Alta / Máxima ≈ 5 / 9 / 19 Mbps a 1080p30) y **FPS**. **NOMBRE DE LA CARPETA** (opcional) y la casilla **FECHA Y HORA** deciden cómo se llama la carpeta de la toma: `Jupiter - 2026-11-15 20-30-05`, sólo `Jupiter`, sólo la fecha, o `Toma` si no hay ni nombre ni fecha. El panel muestra el nombre antes de grabar; una carpeta que ya existe no se pisa (`Jupiter (2)`).
 2. **⏺ GRABAR** empieza; el botón del encabezado se pone rojo con el tiempo. **⏹ DETENER** termina de guardar.
 3. **📂 ABRIR CARPETA** abre `Grabaciones/` (o una toma) en el explorador.
+
+**Grabar desde un botón.** En el mismo panel, **GRABAR DESDE UN BOTÓN** tiene tres funciones: **GRABAR / DETENER** (un toque empieza y otro detiene), **GRABAR** y **DETENER** por separado. Pulsa **MAPEAR** y toca el botón que quieras usar: un botón de un mando (teléfono), una tecla o pad de un controlador MIDI, o el mando de otro equipo de la red (📡 RELAY → 7). Desde entonces ese botón graba con lo que esté marcado en el panel, sin abrirlo; el botón ⏺ del encabezado se pone rojo y los mandos de esta sala muestran «Grabando» y «Grabación guardada». Sólo cuenta cuando el botón se aprieta, así que un botón «mantener» también sirve. **✕** le quita el botón a la función. Lo mapeado se guarda en la sesión y en este navegador.
 
 Cada toma es una carpeta (`nombre - 2026-10-30 21-15-03/`) con todos sus archivos juntos (`salida.mp4`, `pista-1.mp4`, `pista-3.mp4`, `audio-entrada.m4a`…) y `toma.json`, que dice el formato, el tamaño y cuándo empezó y terminó cada archivo, con un mismo reloj para alinearlos al editar.
 

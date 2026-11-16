@@ -56,6 +56,12 @@
   .gr-fuente.grabando small{color:#ff3366;}
   .gr-fila input.gr-ruta{flex:1;min-width:200px;width:auto;}
   .gr-fila input[type=checkbox]{accent-color:#ff3366;margin:0;}
+  .gr-ctl{display:flex;align-items:center;gap:8px;font-family:var(--mono,monospace);font-size:9px;color:var(--text2,#9a9ac0);}
+  .gr-ctl b{color:var(--text,#e6e6ff);font-weight:400;width:120px;flex:none;letter-spacing:1px;}
+  .gr-ctl .gr-pill{min-width:74px;text-align:center;padding:4px 8px;border:1px solid var(--border2,#2a2a4a);color:var(--text3,#5a5a7a);}
+  .gr-ctl .gr-pill.on{border-color:var(--accent,#00ff88);color:var(--accent,#00ff88);}
+  .gr-ctl .gr-pill.oye{border-color:#ffcc00;color:#ffcc00;animation:gr-blk 1s steps(1) infinite;}
+  .gr-ctl span.gr-sp{flex:1;color:var(--text3,#5a5a7a);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .gr-nivel{width:120px;height:8px;background:#05050d;border:1px solid var(--border2,#2a2a4a);position:relative;overflow:hidden;}
   .gr-nivel i{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(to right,#00d68f 0,#00d68f 70%,#ffcc00 88%,#ff3366 100%);background-size:120px 100%;}
   `;
@@ -115,6 +121,12 @@
               'Mientras grabas, la salida no cambia sola de tamaño con el video de la pista 1, y cada pista conserva el tamaño con el que empezó (otra fuente entra encajada). ' +
               'Cada archivo es un codificador más: en equipos modestos, graba sólo las pistas que necesites.<br>' +
               'Deja la ventana de MIDIVJ a la vista: minimizada, el navegador frena el dibujo.</p>' +
+          '</div>' +
+          '<div class="gr-sec" id="gr-sec-control"><h3>GRABAR DESDE UN BOTÓN</h3>' +
+            '<div class="gr-lista" id="gr-control"></div>' +
+            '<p class="gr-ayuda">Pulsa <b>MAPEAR</b> y toca el botón que quieras usar: un botón de un mando (teléfono), una tecla o pad de un controlador MIDI, ' +
+              'o el mando de otro equipo de la red (📡 RELAY → 7). Graba con lo que esté marcado arriba, sin abrir este panel. ' +
+              'Un botón «mantener» del mando también sirve: sólo cuenta cuando se aprieta.</p>' +
           '</div>' +
           '<div class="gr-sec" id="gr-sec-audio"><h3>AUDIO<span class="gr-sp"></span>' +
               '<button class="gr-btn" id="gr-mezcla" title="Volumen, silencio y REC de cada pista y de la entrada">🎚 MEZCLA…</button></h3>' +
@@ -193,6 +205,32 @@
       $('gr-carpeta-toma').innerHTML = 'La toma se guardará en la carpeta <b>' + esc(nombre) + '</b>' +
         (cfg.conFecha !== false ? '' : ' (si ya existe una con ese nombre, se le agrega «(2)», «(3)»…)');
     }
+
+    /* ── Botones que graban y detienen ── */
+    const ctl = op.control || null;
+    if (!ctl) $('gr-sec-control').hidden = true;
+    let firmaCtl = '';
+    function pintarControl() {
+      if (!ctl) return;
+      const lista = ctl.lista();
+      const firma = JSON.stringify(lista);
+      if (firma === firmaCtl) return;
+      firmaCtl = firma;
+      $('gr-control').innerHTML = lista.map(a =>
+        '<div class="gr-ctl"><b>' + esc(a.nombre) + '</b>' +
+          '<span class="gr-pill' + (a.aprendiendo ? ' oye' : a.asignado ? ' on' : '') + '" title="' + esc(a.titulo || '') + '">' +
+            (a.aprendiendo ? '● toca el botón…' : a.asignado ? esc(a.etiqueta) : 'sin botón') + '</span>' +
+          '<button class="gr-btn" data-ctl="aprender" data-id="' + esc(a.id) + '">' + (a.aprendiendo ? 'CANCELAR' : 'MAPEAR') + '</button>' +
+          (a.asignado ? '<button class="gr-btn" data-ctl="olvidar" data-id="' + esc(a.id) + '" title="Quitar el botón">✕</button>' : '') +
+          '<span class="gr-sp">' + esc(a.ayuda || '') + '</span></div>').join('');
+    }
+    $('gr-control').addEventListener('click', e => {
+      const b = e.target.closest('button[data-ctl]');
+      if (!b || !ctl) return;
+      if (b.dataset.ctl === 'aprender') ctl.aprender(b.dataset.id); else ctl.olvidar(b.dataset.id);
+      firmaCtl = '';
+      pintarControl();
+    });
 
     /* ── Audio ── */
     const au = op.audio || null;
@@ -365,6 +403,7 @@
       const bloqueado = grabando || ocupado;
       ['gr-formato', 'gr-calidad', 'gr-fps', 'gr-titulo', 'gr-fecha', 'gr-todas', 'gr-solo-salida', 'gr-ruta', 'gr-ruta-ok', 'gr-elegir'].forEach(id => { $(id).disabled = bloqueado; });
       pintarAudio(bloqueado);
+      pintarControl();
       pintarCarpetaDeToma();
       if (grabando || st.fase === 'cerrando') $('gr-carpeta-toma').innerHTML = 'Grabando en la carpeta <b>' + esc(st.toma || '…') + '</b>';
       $('gr-ruta-def').disabled = bloqueado || !carpeta || !!carpeta.porDefecto;
