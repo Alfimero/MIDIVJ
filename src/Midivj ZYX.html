@@ -1440,7 +1440,7 @@ function resetOutputStream() {
 function getOutputStream() {
   if (outStream || !cvs.captureStream) return outStream;
   try {
-    outStream = cvs.captureStream(HDMI_STREAM_FPS);
+    outStream = capturarLienzo(cvs, HDMI_STREAM_FPS);   // al ritmo de la fuente (ver CAPTURA AL RITMO DE LA FUENTE)
     const vTrack = outStream.getVideoTracks?.()[0];
     if (vTrack && 'contentHint' in vTrack) vTrack.contentHint = 'motion';
   } catch(e) {
@@ -2393,6 +2393,7 @@ function _applyStream(track, stream, type, label) {
   track._replaceOffer = null;
 
   track._stream    = stream;
+  track._retT      = 0;      // el cuadro retenido era de la fuente anterior
   track.visible    = true;   // una fuente nueva siempre entra a la salida
   track.sourceType = type;
   track.mediaRef   = null;
@@ -6463,13 +6464,140 @@ function vprocVigilar(src) {
   src._vfc = typeof src.requestVideoFrameCallback === 'function';
   if (!src._vfc) return false;
   src._nf = 0;
-  const paso = () => { src._nf++; src.requestVideoFrameCallback(paso); };
+  /* `_alCuadro`: quien necesite el cuadro exacto lo toma aquí mismo (ver CUADRO RETENIDO) */
+  const paso = () => { src._nf++; if (src._alCuadro) { try { src._alCuadro(); } catch (e) {} } src.requestVideoFrameCallback(paso); };
   src.requestVideoFrameCallback(paso);
   src.addEventListener('seeked', () => { src._nf++; });
   src.addEventListener('loadeddata', () => { src._nf++; });
   src.addEventListener('emptied', () => { src._nf++; });
   return true;
 }
+
+/* ═══════════════════════════════════════════════════════
+   CAPTURA AL RITMO DE LA FUENTE
+
+   Antes, cada lienzo que se graba o se transmite (la salida, la señal de
+   una pista) se capturaba con `captureStream(30)`: el navegador tomaba un
+   cuadro cada 33 ms con su propio reloj. La cámara también entrega 30
+   cuadros por segundo, pero con OTRO reloj: los dos ritmos se van corriendo
+   y, cada tanto, la captura agarra dos veces el mismo cuadro de la cámara y
+   se saltea el siguiente. En el archivo eso es un tirón por segundo, aunque
+   la cámara llegue perfecta.
+
+   Ahora la captura es manual (`captureStream(0)` + `requestFrame()`): se
+   pide un cuadro justo cuando la fuente entregó uno nuevo
+   (requestVideoFrameCallback, ver vprocVigilar), así cada cuadro de la
+   cámara o del video entra una sola vez al archivo. Sin fuente de video
+   que marque el ritmo (imágenes, efectos, la página oculta) se cae a un
+   reloj propio a los FPS pedidos.
+═══════════════════════════════════════════════════════ */
+function capturarLienzo(lienzo, fps) {
+  let flujo = null;
+  try { flujo = lienzo.captureStream(0); } catch (e) { flujo = null; }
+  const pista = flujo && flujo.getVideoTracks()[0];
+  if (!pista || typeof pista.requestFrame !== 'function') {
+    if (flujo) flujo.getTracks().forEach(t => t.stop());
+    return lienzo.captureStream(fps);          // navegador sin captura manual: como antes
+  }
+  (lienzo._capturas || (lienzo._capturas = [])).push({ pista, paso: 1000 / (fps || 30), ultimo: 0, prox: 0 });
+  return flujo;
+}
+/* `nuevo`: true = la fuente trajo un cuadro nuevo · false = no · null = nadie marca el ritmo (reloj) */
+function pedirCuadros(lienzo, nuevo, ahora) {
+  const lista = lienzo && lienzo._capturas;
+  if (!lista || !lista.length) return;
+  for (let i = lista.length - 1; i >= 0; i--) {
+    const c = lista[i];
+    if (c.pista.readyState !== 'live') { lista.splice(i, 1); continue; }
+    let toca;
+    if (nuevo === null) {
+      /* Reloj: en promedio exactamente los FPS pedidos, aunque la pantalla vaya a otro ritmo */
+      /* Con margen: si el propio bucle va a ~30 por segundo (página oculta), dos relojes de 30 que
+         no van a la par harían perder cuadros cada tanto */
+      toca = ahora >= c.prox - c.paso * 0.35;
+      if (toca) c.prox = Math.max(c.prox + c.paso, ahora - c.paso);
+    } else {
+      /* Cada cuadro nuevo entra, salvo que la fuente vaya claramente más rápido que lo pedido:
+         ahí se toma 1 de cada N, con N entero (una cámara a 60 en una grabación a 30: uno sí, uno
+         no). N sale del ritmo medio de la fuente, no del reloj: dos cuadros que llegan algo juntos
+         entran los dos, y una cámara a 29,97 o 30,02 no pierde un cuadro cada tanto contra un
+         reloj de 30. Sin cuadro nuevo por un rato (la fuente se detuvo), uno de relleno. */
+      if (nuevo) {
+        const d = ahora - (c.tNuevo || 0);
+        c.tNuevo = ahora;
+        /* El ritmo de la fuente: media de los intervalos creíbles (dos avisos pegados o un hueco
+           largo no cuentan). Hasta juntar unos cuantos no se descarta nada. */
+        if (d >= 5 && d < 500) { c.media = c.media ? c.media + (d - c.media) * 0.1 : d; c.muestras = (c.muestras || 0) + 1; }
+        const razon = c.muestras >= 8 ? c.paso / c.media : 1;  // FPS de la fuente / FPS pedidos
+        if (!c.cada || Math.abs(razon - c.cada) > 0.65) c.cada = Math.max(1, Math.round(razon));
+        c.cuenta = (c.cuenta || 0) + 1;
+        toca = c.cuenta >= c.cada;
+        if (toca) c.cuenta = 0;
+      } else toca = ahora - c.ultimo >= Math.max(250, c.paso * 4);
+      if (toca) c.prox = ahora + c.paso;
+    }
+    if (toca) { c.ultimo = ahora; try { c.pista.requestFrame(); } catch (e) {} }
+  }
+}
+/* ── CUADRO RETENIDO de las fuentes en vivo ──
+   Dibujar un <video> en vivo «más tarde» (en el cuadro de pantalla) no
+   garantiza el cuadro que el navegador acaba de anunciar: con el equipo
+   ocupado a veces ya es el siguiente, y el archivo queda con uno repetido
+   y uno salteado. Por eso cada cuadro de una cámara, capturadora o
+   pantalla se copia a un lienzo propio de la pista en el mismo aviso
+   (requestVideoFrameCallback): la salida, la señal de la pista, la previa
+   y el mosaico dibujan ESE cuadro, y la señal que se graba se captura ahí
+   mismo. Si los avisos dejan de llegar (página oculta, navegador sin el
+   aviso), se vuelve a dibujar directo del <video>. */
+function retenerCuadro(t) {
+  const lv = t.liveVid, w = lv.videoWidth, h = lv.videoHeight;
+  if (!w || !h) return;
+  if (!t._ret) { t._ret = document.createElement('canvas'); t._retCtx = t._ret.getContext('2d', { alpha: false }); }
+  if (t._ret.width !== w || t._ret.height !== h) { t._ret.width = w; t._ret.height = h; }
+  t._retCtx.drawImage(lv, 0, 0, w, h);
+  t._ret._nf = lv._nf;
+  t._retT = performance.now();
+  /* La señal de la pista (lo que se graba) sale con este mismo cuadro, sin esperar a la pantalla */
+  const s = SEN[t.i];
+  if (s.cvs && s.flujos.length && !document.hidden) {   // oculta, la captura va por reloj (dibujarSenales)
+    dibujarSenal(t.i);
+    s.nf = t._ret._nf; s.dibujado = t._retT;
+    pedirCuadros(s.cvs, true, t._retT);
+  }
+}
+/* La fuente en vivo de la pista para dibujar: su cuadro retenido si está al día; si no, el <video> */
+function fuenteViva(t) {
+  const lv = t.liveVid;
+  if (!lv || lv.readyState < 2) return null;
+  if (!lv._alCuadro) lv._alCuadro = () => retenerCuadro(t);
+  if (!vprocVigilar(lv) || document.hidden) return lv;
+  const r = t._ret;
+  return r && performance.now() - (t._retT || 0) < 250 && r.width === lv.videoWidth && r.height === lv.videoHeight ? r : lv;
+}
+
+/* ¿Algún video de las pistas entregó un cuadro nuevo desde la última vez? null si ninguno lo puede decir */
+const SALIDA_RITMO = { firma: '' };
+function cuadroNuevoEnPistas() {
+  if (document.hidden) return null;            // oculta, requestVideoFrameCallback no avisa
+  let firma = '', hay = false;
+  for (const t of S.tracks) {
+    if (!t.loaded || t.visible === false) continue;
+    const src = fuentePista(t);
+    if (src && src._nf !== undefined ? true : (src instanceof HTMLVideoElement && vprocVigilar(src))) { hay = true; firma += t.i + ':' + src._nf + ','; }
+  }
+  if (!hay) return null;
+  const nuevo = firma !== SALIDA_RITMO.firma;
+  SALIDA_RITMO.firma = firma;
+  return nuevo;
+}
+function pedirCuadrosSalida() {
+  if (!cvs._capturas || !cvs._capturas.length) return;
+  /* Sin nada cargado el lienzo no se vuelve a dibujar, y un lienzo que no cambia no entrega
+     cuadros (la grabación quedaba en 0 bytes y OBS sin imagen): se «toca» un píxel del negro. */
+  if (_outBlanked) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 1, 1); }
+  pedirCuadros(cvs, cuadroNuevoEnPistas(), performance.now());
+}
+
 /* Tamaño al que se procesa: el de la fuente, pero no más grande de lo que
    la salida puede mostrar (un video 4K en una salida 1080p se procesa a
    1080p). Si la pista está agrandada (TRANSFORM) se respeta ese aumento, y
@@ -6497,7 +6625,8 @@ function vprocApply(t, src) {
   const [w, h] = vprocTamano(t, sw, sh);
   const ahora = performance.now();
   const esVideo = src instanceof HTMLVideoElement && vprocVigilar(src);
-  const firma = (esVideo ? 'v' + src._nf : 'c' + S.frame) + '|' + w + 'x' + h + '|' +
+  const retenido = !esVideo && src._nf !== undefined;      // el cuadro retenido de una fuente en vivo
+  const firma = (esVideo ? 'v' + src._nf : retenido ? 'r' + src._nf : 'c' + S.frame) + '|' + w + 'x' + h + '|' +
     v.gain + ',' + v.brightness + ',' + v.contrast + ',' + v.gamma + ',' + v.wb + ',' + v.backlight + ',' + v.hue + ',' + v.saturation + ',' + v.sharpness;
   /* Con la página oculta requestVideoFrameCallback no avisa: ahí se procesa siempre.
      Tope de 250 ms por si algún cuadro nuevo no se anuncia. */
@@ -6900,8 +7029,8 @@ function drawTrackMedia(t, ti, zdx0, zdy0, zdw0, zdh0, mH, mV, rgb) {
 
     /* ── LIVE TRACK (display/capture) — draw from liveVid, bypass all clip logic ── */
     if (isLive) {
-      const lv = t.liveVid;
-      if (lv.readyState < 2) { ctx.globalAlpha=1; return; }
+      const lv = fuenteViva(t);   // el cuadro retenido de la cámara (ver CUADRO RETENIDO)
+      if (!lv) { ctx.globalAlpha=1; return; }
       if (!vivoVisible(t)) { ctx.globalAlpha=1; return; }
 
       ctx.globalAlpha = opa;
@@ -7048,7 +7177,7 @@ const FONDO = { w: null, t: 0, raf: 0, ms: 33, cambio: -1e9, n: 0 };
 function fondoPaso() {
   const ahora = performance.now();
   if (ahora - FONDO.raf < 150) return;
-  try { masterPaso(ahora); cuadro(); } catch (e) { /* un cuadro que falla no detiene el paso */ }
+  try { masterPaso(ahora); cuadro(); pedirCuadrosSalida(); } catch (e) { /* un cuadro que falla no detiene el paso */ }
   if (++FONDO.n % 30 === 0) reanudarPausadosPorNavegador();
 }
 
@@ -7120,6 +7249,7 @@ function loop() {
   requestAnimationFrame(loop);
   FONDO.raf = performance.now();
   cuadro();
+  pedirCuadrosSalida();
 }
 function cuadro() {
   S.frame++;
@@ -8326,6 +8456,7 @@ async function _camRecibirOferta(slot, sdp) {
        siempre, cada vez. Ver ADR-004, complemento (6). */
     const v = CAM.volver.get(trackIdx);
     if (v) { _camOlvidar(trackIdx); _camLog('cámara '+slot+' (pista '+trackIdx+'): volvió sola'); }
+    camAplicarColchon(sesion);
     sesion.aplicando = true;
     try { _applyStream(S.tracks[trackIdx], ev.streams[0] || new MediaStream([ev.track]), 'phone', 'Cámara — Mando '+slot); }
     finally { sesion.aplicando = false; }
@@ -8412,7 +8543,25 @@ const TEL_OPC = {
   calidad: [['auto','auto'], ['2','2 Mbps'], ['4','4 Mbps'], ['8','8 Mbps'], ['15','15 Mbps']],
   lente:   [['environment','trasera'], ['user','frontal (selfie)']],
   audio:   [['si','micrófono'], ['no','sin audio']],
+  prioridad: [['nitidez','nitidez'], ['fluidez','fluidez']],
 };
+/* Colchón de recepción por cámara: unos milisegundos de espera antes de
+   mostrar cada cuadro absorben los altibajos de la Wi-Fi (menos tirones, más
+   retardo). 'auto' = lo que decida el navegador. Es de esta PC, por cámara. */
+const COLCHON_OPC = [['auto','auto'], ['100','100 ms'], ['200','200 ms'], ['400','400 ms']];
+let CAM_COLCHON = {};
+try { CAM_COLCHON = JSON.parse(localStorage.getItem('midivj-cam-colchon') || '{}') || {}; } catch (_) {}
+function camColchonDe(slot) { const v = String(CAM_COLCHON[slot] || 'auto'); return COLCHON_OPC.some(o => o[0] === v) ? v : 'auto'; }
+function camAplicarColchon(ses) {
+  if (!ses || !ses.pc) return;
+  const v = camColchonDe(ses.slot);
+  ses.pc.getReceivers().forEach(r => { try { r.jitterBufferTarget = v === 'auto' ? null : +v; } catch (_) {} });
+}
+function camFijarColchon(slot, valor) {
+  CAM_COLCHON[slot] = COLCHON_OPC.some(o => o[0] === valor) ? valor : 'auto';
+  try { localStorage.setItem('midivj-cam-colchon', JSON.stringify(CAM_COLCHON)); } catch (_) {}
+  for (const ses of CAM.sesiones.values()) if (ses.slot === slot) camAplicarColchon(ses);
+}
 const TEL_RES_PX = { '480':480, '720':720, '1080':1080, '2160':2160 };
 
 function _camEstadoRecibido(slot, msg) {
@@ -8424,7 +8573,8 @@ function _camEstadoRecibido(slot, msg) {
   const r = msg.real || {};
   ses.tel = {
     config: msg.config && typeof msg.config === 'object' ? msg.config : {},
-    real: { w: +r.w || 0, h: +r.h || 0, fps: +r.fps || 0, audio: !!r.audio, errorAudio: r.errorAudio ? String(r.errorAudio).slice(0, 80) : null },
+    real: { w: +r.w || 0, h: +r.h || 0, fps: +r.fps || 0, fpsEnvio: Number.isFinite(+r.fpsEnvio) && r.fpsEnvio !== null ? +r.fpsEnvio : null,
+      limite: ['cpu', 'bandwidth', 'other'].includes(r.limite) ? r.limite : null, audio: !!r.audio, errorAudio: r.errorAudio ? String(r.errorAudio).slice(0, 80) : null },
     caps: msg.caps && typeof msg.caps === 'object' ? msg.caps : null,
     error: msg.error ? String(msg.error).slice(0, 200) : null,
   };
@@ -8466,6 +8616,7 @@ function camTelCuerpoHTML(idx, ses) {
     sel('calidad', 'Calidad', 'Tope de Mbps del envío: más = más nitidez, pero necesita buena Wi-Fi'),
     sel('lente', 'Lente', 'Cámara trasera o frontal del teléfono'),
     sel('audio', 'Audio', 'El micrófono del teléfono viaja con el video: se oye y se graba desde 🎚 MEZCLA (entra silenciado para que no acople)'),
+    sel('prioridad', 'Prioridad', 'Qué cuidar si la red o el teléfono no dan abasto. Nitidez: mantiene la resolución y bajan los FPS (tirones). Fluidez: mantiene los FPS y baja la resolución.'),
     `<div class="ep-row"><span class="ep-note" id="camtel-st"${tel.error ? ' style="color:var(--hot);"' : ''}>${tel.error ? '⚠ ' + escHtml(tel.error) : envia}</span></div>`,
     `<div class="ep-row"><span class="ep-note" id="camtel-llega">Llega: —</span></div>`,
     `<div class="ep-row"><span class="ep-note">También se cambia desde el teléfono (⚙ en /camara). Con un formato vertical, el AJUSTE de abajo decide si se encaja o llena la salida.</span></div>`,
@@ -8526,7 +8677,7 @@ function _camCerrar(trackIdx, avisarPhone, motivo) {
   CAM.porSlot.delete(sesion.slot);
   if (avisarPhone) _camEnviar({ type: 'camara-colgar', slot: sesion.slot, motivo });
   if (S.ati === trackIdx) renderTrackInfo();
-  HUBCAM.llega.delete(trackIdx);
+  HUBCAM.llega.delete(trackIdx); HUBCAM.fluidez.delete(trackIdx); HUBCAM.hist.delete(trackIdx);
   hubCamRefrescar();
 }
 
@@ -8540,8 +8691,8 @@ function _camCerrar(trackIdx, avisarPhone, motivo) {
    teléfonos conectados que todavía no están en una pista también reciben
    el cambio y lo aplican al empezar a transmitir.
 ═══════════════════════════════════════════════════════ */
-const HUB_CAMPOS = [['res', 'RESOLUCIÓN'], ['fps', 'FPS'], ['formato', 'FORMATO'], ['calidad', 'CALIDAD'], ['lente', 'LENTE'], ['audio', 'AUDIO']];
-const HUBCAM = { el: null, firma: '', llega: new Map() };
+const HUB_CAMPOS = [['res', 'RESOLUCIÓN'], ['fps', 'FPS'], ['formato', 'FORMATO'], ['calidad', 'CALIDAD'], ['lente', 'LENTE'], ['audio', 'AUDIO'], ['prioridad', 'PRIORIDAD']];
+const HUBCAM = { el: null, firma: '', llega: new Map(), fluidez: new Map(), hist: new Map() };
 function hubCamCrear() {
   if (HUBCAM.el) return;
   const st = document.createElement('style');
@@ -8567,12 +8718,19 @@ function hubCamCrear() {
   o.innerHTML = '<div id="hubcam"><header><h2>CÁMARAS · FORMATO DE TODAS</h2><button class="hbtn" onclick="cerrarHubCamaras()">✕ CERRAR</button></header><div id="hubcam-cuerpo"></div>' +
     '<p>La fila <b>TODAS</b> cambia ese ajuste en todas las cámaras a la vez (también en los teléfonos conectados que aún no están en una pista). ' +
     '«Envía» es lo que el teléfono dice que manda y «Llega» lo que mide MIDIVJ: si no coinciden con lo pedido, la cámara o la Wi-Fi no dan para más. ' +
+    '<b>FLUIDEZ</b> dice si hay tirones y de dónde vienen: «cortes» y «falta red» son de la Wi-Fi (prueba <b>SUAVIZAR</b> con 100–200 ms, bajar la CALIDAD o acercar el teléfono al router); ' +
+    '«el teléfono no da abasto» se arregla bajando RESOLUCIÓN o FPS. <b>PRIORIDAD fluidez</b> mantiene los FPS y cede resolución cuando falta red. ' +
     'En amarillo, lo que es distinto entre cámaras. El teléfono recuerda su configuración.</p></div>';
   o.addEventListener('click', e => { if (e.target === o) cerrarHubCamaras(); });
   o.addEventListener('change', e => {
     const s = e.target.closest('select[data-campo]');
     if (!s || !s.value) return;
-    if (s.dataset.idx === 'todas') hubCamAplicarTodas(s.dataset.campo, s.value);
+    if (s.dataset.campo === 'colchon') {
+      /* El colchón es de esta PC (no del teléfono): por cámara, o para todas */
+      if (s.dataset.idx === 'todas') hubCamFilas().forEach(f => camFijarColchon(f.ses.slot, s.value));
+      else { const ses = CAM.sesiones.get(+s.dataset.idx); if (ses) camFijarColchon(ses.slot, s.value); }
+    }
+    else if (s.dataset.idx === 'todas') hubCamAplicarTodas(s.dataset.campo, s.value);
     else camTelSet(+s.dataset.idx, s.dataset.campo, s.value);
     HUBCAM.firma = '';
     setTimeout(hubCamRefrescar, 50);
@@ -8617,7 +8775,7 @@ function hubCamRefrescar() {
   if (cuerpo.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;   // no cerrar un selector abierto
   const filas = hubCamFilas();
   const libres = (CAM.disponibles || []).filter(c => CAM.porSlot.get(c.slot) === undefined);
-  const firma = JSON.stringify([filas.map(f => [f.idx, f.ses.slot, f.ses.estado, f.ses.tel]), libres.map(c => c.slot), [...CAM.volver.keys()]]);
+  const firma = JSON.stringify([filas.map(f => [f.idx, f.ses.slot, f.ses.estado, f.ses.tel, camColchonDe(f.ses.slot)]), libres.map(c => c.slot), [...CAM.volver.keys()]]);
   if (firma === HUBCAM.firma) return;
   HUBCAM.firma = firma;
   if (!filas.length && !libres.length) {
@@ -8634,28 +8792,61 @@ function hubCamRefrescar() {
       '<option value=""' + (c === null ? ' selected' : '') + '>' + (filas.length > 1 && c === null ? '— distintos —' : '— elegir —') + '</option>' +
       TEL_OPC[campo].map(([v, l]) => '<option value="' + v + '"' + (c === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
   };
-  let h = '<table><tr><th>PISTA</th><th>📱</th><th>ENVÍA</th><th>LLEGA</th>' + HUB_CAMPOS.map(([, l]) => '<th>' + l + '</th>').join('') + '</tr>';
-  h += '<tr class="todas"><td colspan="4"><b>TODAS</b> · ' + filas.length + ' en pista' + (libres.length ? ' · ' + libres.length + ' en espera' : '') + '</td>' +
-    HUB_CAMPOS.map(([c]) => '<td>' + (c === 'lente' ? '' : selTodas(c)) + '</td>').join('') + '</tr>';
+  const colchones = new Set(filas.map(f => camColchonDe(f.ses.slot)));
+  const selColchon = (idx, valor) => '<select data-idx="' + idx + '" data-campo="colchon" title="Colchón de recepción: unos milisegundos de espera que absorben los altibajos de la Wi-Fi. Más colchón = menos tirones y más retardo.">' +
+    (valor === null ? '<option value="" selected>— distintos —</option>' : '') +
+    COLCHON_OPC.map(([v, l]) => '<option value="' + v + '"' + (valor === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
+  let h = '<table><tr><th>PISTA</th><th>📱</th><th>ENVÍA</th><th>LLEGA</th><th>FLUIDEZ</th>' + HUB_CAMPOS.map(([, l]) => '<th>' + l + '</th>').join('') + '<th>SUAVIZAR</th></tr>';
+  h += '<tr class="todas"><td colspan="5"><b>TODAS</b> · ' + filas.length + ' en pista' + (libres.length ? ' · ' + libres.length + ' en espera' : '') + '</td>' +
+    HUB_CAMPOS.map(([c]) => '<td>' + (c === 'lente' ? '' : selTodas(c)) + '</td>').join('') +
+    '<td>' + (filas.length ? selColchon('todas', colchones.size === 1 ? [...colchones][0] : null) : '') + '</td></tr>';
   for (const { idx, ses } of filas) {
     const tel = ses.tel;
     const r = tel ? tel.real : null;
     const envia = !tel ? '⏳ esperando al teléfono…'
       : tel.error ? '<span class="mal">⚠ ' + escHtml(tel.error) + '</span>'
       : r.w ? '<b>' + r.w + '×' + r.h + '</b> · ' + r.fps + ' fps · ' + (r.h > r.w ? 'vertical' : r.h === r.w ? 'cuadrada' : 'horizontal') + (r.audio ? ' · 🎤' : '') : '—';
+    const flu = HUBCAM.fluidez.get(idx);
     h += '<tr><td><b>T' + (idx + 1) + '</b></td><td>' + ses.slot + '</td><td>' + envia + '</td><td id="hubcam-llega-' + idx + '">' + (HUBCAM.llega.get(idx) || '—') + '</td>' +
+      '<td id="hubcam-flu-' + idx + '"' + (flu && flu.mal ? ' class="mal"' : '') + '>' + (flu ? flu.txt : '—') + '</td>' +
       HUB_CAMPOS.map(([c]) => {
         if (!tel) return '<td>—</td>';
         const distinto = comun(c) === null && filas.length > 1 && c !== 'lente';
         return '<td><select data-idx="' + idx + '" data-campo="' + c + '"' + (distinto ? ' class="dif"' : '') + '>' +
-          hubCamOpciones(ses, c).map(([v, l]) => '<option value="' + v + '"' + (String(tel.config[c]) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></td>';
-      }).join('') + '</tr>';
+          hubCamOpciones(ses, c).map(([v, l]) => '<option value="' + v + '"' + (String(tel.config[c] === undefined && c === 'prioridad' ? 'nitidez' : tel.config[c]) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></td>';
+      }).join('') + '<td>' + selColchon(idx, camColchonDe(ses.slot)) + '</td></tr>';
   }
   for (const c of libres) {
-    h += '<tr><td>—</td><td>' + c.slot + '</td><td colspan="' + (2 + HUB_CAMPOS.length) + '">conectado, sin pista' + (c.nombre ? ' · ' + escHtml(c.nombre) : '') +
+    h += '<tr><td>—</td><td>' + c.slot + '</td><td colspan="' + (4 + HUB_CAMPOS.length) + '">conectado, sin pista' + (c.nombre ? ' · ' + escHtml(c.nombre) : '') +
       ' — recibe lo que cambies en TODAS y lo usa al empezar a transmitir</td></tr>';
   }
   cuerpo.innerHTML = h + '</table>';
+}
+/* FLUIDEZ de una cámara: cuadros por segundo que llegan, cortes (el video se
+   quedó congelado un instante) en los últimos 10 s, el colchón de recepción
+   y, si el teléfono lo informa, qué lo está frenando. Dice de dónde viene un
+   tirón: de la red, del teléfono, o de ninguno de los dos. */
+function hubCamFluidez(idx, ses, r) {
+  const ahora = performance.now();
+  const hist = HUBCAM.hist.get(idx) || [];
+  hist.push({ t: ahora, cortes: r.freezeCount || 0, jb: r.jitterBufferDelay || 0, n: r.jitterBufferEmittedCount || 0 });
+  while (hist.length > 1 && ahora - hist[0].t > 10500) hist.shift();
+  HUBCAM.hist.set(idx, hist);
+  const a = hist[0], b = hist[hist.length - 1], previo = hist[hist.length - 2] || a;
+  const cortes = Math.max(0, b.cortes - a.cortes);
+  const colchon = b.n > previo.n ? Math.round(1000 * (b.jb - previo.jb) / (b.n - previo.n)) : null;
+  const fps = Math.round(r.framesPerSecond || 0);
+  const pedido = ses.tel ? +ses.tel.config.fps || 0 : 0;
+  const lim = ses.tel && ses.tel.real ? ses.tel.real.limite : null;
+  const lento = pedido && fps && fps < pedido * 0.8;
+  const txt = fps + ' fps' + (colchon !== null ? ' · colchón ' + colchon + ' ms' : '') +
+    (cortes ? ' · ⚠ ' + cortes + (cortes === 1 ? ' corte' : ' cortes') + ' en 10 s' : '') +
+    (lim === 'cpu' ? ' · 📱 el teléfono no da abasto' : lim === 'bandwidth' ? ' · 📶 falta red' : '') +
+    (lento && !lim && !cortes ? ' · menos de lo pedido (' + pedido + ')' : '');
+  const mal = !!(cortes || lento || lim === 'cpu' || lim === 'bandwidth');
+  HUBCAM.fluidez.set(idx, { txt, mal, fps, cortes, colchon, limite: lim });
+  const el = document.getElementById('hubcam-flu-' + idx);
+  if (el) { el.textContent = txt; el.className = mal ? 'mal' : ''; }
 }
 /* Lo que llega de verdad de cada cámara (estadísticas del receptor) */
 async function hubCamMedir() {
@@ -8669,6 +8860,7 @@ async function hubCamMedir() {
           HUBCAM.llega.set(idx, txt);
           const el = document.getElementById('hubcam-llega-' + idx);
           if (el) el.textContent = txt;
+          hubCamFluidez(idx, ses, r);
         }
       });
     } catch (_) {}
@@ -9692,7 +9884,7 @@ function grabacionInicializar() {
   mezclaInicializar();
   MIDIVJ.capturas.registrar({
     id: 'salida', nombre: 'Salida',
-    capturar: fps => cvs.captureStream ? cvs.captureStream(fps) : null,
+    capturar: fps => cvs.captureStream ? capturarLienzo(cvs, fps) : null,
     tamano: () => ({ ancho: cvs.width, alto: cvs.height }),
     /* la mezcla de los canales con REC */
     audio: () => (mezcla ? mezcla.pistaDeMezcla() : null),
@@ -9965,7 +10157,7 @@ const SEN_LADO_MAX = 1920;
 /* Lo que la pista tiene para dibujar ahora, o null */
 function fuentePista(t) {
   if (!t || !t.loaded) return null;
-  if (t.sourceType !== 'file') { const lv = t.liveVid; return lv && lv.readyState >= 2 ? lv : null; }
+  if (t.sourceType !== 'file') return fuenteViva(t);
   if (t._useRev && t._revReady && t.revVid && t.revVid.readyState >= 2) return t.revVid;
   const v = t.vid;
   return v && v.readyState >= 2 ? v : null;
@@ -10015,17 +10207,27 @@ function capturarPista(i, fps) {
     s.cvs.width = tam.ancho; s.cvs.height = tam.alto;
   }
   dibujarSenal(i);
-  const flujo = s.cvs.captureStream(fps);
+  const flujo = capturarLienzo(s.cvs, fps);
   s.flujos.push(flujo);
   return flujo;
 }
 /* Una vez por cuadro, desde loop(): sólo lo que alguien está mirando o grabando */
 function dibujarSenales() {
+  const ahora = performance.now();
   for (let i = 0; i < N_TRACKS; i++) {
     const s = SEN[i];
     if (!s.flujos.length) continue;
     if (S.frame % 30 === 0 && !senalEnUso(s)) continue;
-    dibujarSenal(i);
+    /* Se dibuja y se captura cuando la fuente trae un cuadro nuevo: cada
+       cuadro de la cámara entra una vez al archivo (ver CAPTURA AL RITMO DE
+       LA FUENTE). Sin cuadros nuevos se redibuja cada tanto, por si cambió
+       la corrección de color. */
+    const src = fuentePista(S.tracks[i]);
+    const marca = !document.hidden && !!src && (src._nf !== undefined || (src instanceof HTMLVideoElement && vprocVigilar(src)));
+    const nuevo = marca ? src._nf !== s.nf : null;
+    if (marca) s.nf = src._nf;
+    if (nuevo !== false || ahora - (s.dibujado || 0) > 200) { dibujarSenal(i); s.dibujado = ahora; }
+    pedirCuadros(s.cvs, nuevo, ahora);
   }
   if (VIS.sesiones.size) {
     if (visNecesita('previa')) dibujarPrevia();

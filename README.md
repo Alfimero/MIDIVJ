@@ -234,6 +234,7 @@ Desde la computadora (sección **⚙ CONFIG. DE CÁMARA · 📱** de la pista) o
 - **Formato**: *original* envía la toma tal cual (vertical u horizontal según cómo se sostenga el teléfono); 16:9, 9:16, 4:3, 3:4 y 1:1 recortan el centro **en el teléfono**, así lo que se ve allá es exactamente lo que llega (un teléfono en vertical puede mandar 16:9 y llenar la salida).
 - **Calidad**: tope de Mbps del envío (auto, 2, 4, 8 o 15). Más Mbps = más nitidez, pero pide buena Wi-Fi.
 - **Lente**: trasera o frontal.
+- **Prioridad**: qué cuidar cuando la red o el teléfono no dan abasto. *Nitidez* mantiene la resolución y bajan los FPS (se ve nítido pero a tirones); *fluidez* mantiene los FPS y baja la resolución.
 - **Audio**: el micrófono del teléfono viaja con el video (o *sin audio*). Se oye y se graba desde **🎚 MEZCLA**, donde entra silenciado para que no acople con los parlantes.
 
 El teléfono guarda su configuración y la muestra de los dos lados: la sección de la pista indica lo que el teléfono **envía** y lo que **llega** a MIDIVJ. WebRTC mantiene la resolución elegida y, si falta ancho de banda, baja los FPS. Si la sección se queda "esperando que el teléfono informe su configuración", recarga `/camara` en el teléfono y reinicia el relay (ambos tienen que estar actualizados).
@@ -246,6 +247,12 @@ El teléfono guarda su configuración y la muestra de los dos lados: la sección
 ### Hub de cámaras: el formato de todas a la vez
 
 **📷 CÁMARAS** (en el encabezado) abre una tabla con todas las cámaras de teléfono: la pista, lo que cada una **envía**, lo que **llega** y sus ajustes (resolución, FPS, formato, calidad, lente, audio). La fila **TODAS** cambia un ajuste en todas a la vez — por ejemplo, dejarlas en 1080p · 30 fps · 16:9 con un solo cambio — y marca en amarillo lo que es distinto entre cámaras. Los teléfonos conectados que todavía no están en una pista también reciben el cambio y lo usan al empezar a transmitir.
+
+La columna **FLUIDEZ** dice, por cámara, cuántos cuadros por segundo llegan, el colchón de recepción y si hay tirones y de dónde vienen:
+
+- **«N cortes en 10 s»** o **«falta red»**: es la Wi-Fi. Prueba **SUAVIZAR** con 100–200 ms (un colchón que absorbe los altibajos de la red a cambio de ese retardo), baja la CALIDAD o acerca el teléfono al router.
+- **«el teléfono no da abasto»**: baja la RESOLUCIÓN o los FPS de esa cámara.
+- **PRIORIDAD fluidez** mantiene los FPS y cede resolución cuando falta red.
 - Cada cámara ocupa un slot propio (independiente de los slots del mando): un mismo teléfono puede abrir `/mando` y `/camara` a la vez si hace falta.
 - Sin STUN ni TURN: la conexión sólo usa candidatos de la propia red local, consistente con que el resto del proyecto no depende de internet. Esto puede fallar en una red con "aislamiento de cliente" (poco común en routers domésticos o en el hotspot de esta misma PC, que es el escenario principal — ver `docs/decisions/ADR-004-camara-movil-por-webrtc.md`).
 - Si el teléfono cierra la pestaña a media transmisión, el relay detecta la desconexión y avisa a MIDIVJ solo — no depende de que el teléfono alcance a despedirse.
@@ -314,6 +321,7 @@ Está en **📡 RELAY → 7 · OTROS MIDIVJ EN LA RED**:
 
 Cada toma es una carpeta (`nombre - 2026-10-30 21-15-03/`) con todos sus archivos juntos (`salida.mp4`, `pista-1.mp4`, `pista-3.mp4`, `audio-entrada.m4a`…) y `toma.json`, que dice el formato, el tamaño y cuándo empezó y terminó cada archivo, con un mismo reloj para alinearlos al editar.
 
+- **Fluidez**: cada cuadro de la cámara o del video entra una sola vez al archivo. La captura sigue el ritmo de la fuente (no un reloj aparte de 30 por segundo, que cada tanto repetía un cuadro y saltaba otro), así lo grabado queda tan fluido como lo que llega. Si la cámara va más rápido que los FPS elegidos se toma 1 de cada N (una cámara a 60 en una grabación a 30).
 - Cada segundo grabado va directo a disco a través del relay: si la pestaña se cierra o algo se cae a media función, lo grabado hasta ese segundo ya está guardado. Si el relay se reinicia, la grabación sigue en el mismo archivo.
 - Mientras grabas, la salida no cambia sola de tamaño con el video de la pista 1. Si cambias la resolución tú (⛶ SALIDA), la grabación sigue en `salida (2).mp4` de la misma toma.
 - Cada pista conserva el tamaño con el que empezó la toma; si cambia de fuente, la nueva entra encajada. Cada archivo es un codificador más: en equipos modestos graba sólo las pistas que necesites.
