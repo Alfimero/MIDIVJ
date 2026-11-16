@@ -521,6 +521,45 @@ input[type=range].tr-sl{width:50px;height:3px;accent-color:var(--yellow);cursor:
         </div>
       </div>
 
+      <div class="rp-paso" id="rp-paso-enlace">
+        <h3>7 · OTROS MIDIVJ EN LA RED (COMPARTIR CONTROLES)</h3>
+        <div>
+          <div class="rp-linea">
+            <label>ESTE EQUIPO</label>
+            <input class="rp-inp" id="rp-enl-nombre" spellcheck="false" maxlength="30" style="width:170px" placeholder="nombre en la red">
+            <button class="rp-btn" onclick="enlaceGuardarNombre()">GUARDAR</button>
+            <span class="rp-mandos" id="rp-enl-yo"></span>
+          </div>
+          <div class="rp-linea">
+            <button class="rp-btn pri" id="rp-enl-buscar" onclick="enlaceBuscar()">🔍 BUSCAR EN LA RED</button>
+            <span class="rp-mandos" id="rp-enl-estado"></span>
+          </div>
+          <div id="rp-enl-vistos"></div>
+          <div class="rp-linea" style="margin-top:8px">
+            <label>A MANO</label>
+            <input class="rp-inp" id="rp-enl-host" spellcheck="false" style="width:140px" placeholder="IP del otro equipo">
+            <input class="rp-inp" id="rp-enl-puerto" spellcheck="false" style="width:60px" placeholder="9191">
+            <input class="rp-inp" id="rp-enl-sala" spellcheck="false" style="width:80px" placeholder="midivj" title="Sala del otro equipo">
+            <button class="rp-btn" onclick="enlaceConectarAMano()">↙ RECIBIR</button>
+          </div>
+          <div class="rp-linea"><span class="rp-mandos" id="rp-enl-error" style="color:var(--hot)"></span></div>
+          <div id="rp-enl-enlaces"></div>
+          <div class="rp-linea" style="margin-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Además de los mandos, los otros equipos reciben lo que llegue a esta PC por sus controladores MIDI (USB)">
+              <input type="checkbox" id="rp-enl-fisico" onchange="enlaceCompartirFisico(this.checked)"> COMPARTIR TAMBIÉN EL MIDI FÍSICO DE ESTE EQUIPO
+            </label>
+          </div>
+          <div class="rp-linea"><span class="rp-mandos" id="rp-enl-reciben"></span></div>
+          <p class="rp-ayuda">
+            Los MIDIVJ de la misma red se reconocen solos (y con <b>BUSCAR</b>, si el firewall tapa los avisos).
+            <b>↙ RECIBIR</b> trae a esta sesión las señales de los mandos del otro equipo —sus botones, sliders, palancas y pads—
+            como si estuvieran conectados aquí: se mapean igual que cualquier control, con <b>🎯 MAPEO</b>
+            o con el MIDI de un clip, moviendo el control en el otro equipo. El otro equipo no cambia nada: sólo se le escucha.
+            Para ir en los dos sentidos, cada equipo recibe del otro. El relay recuerda los enlaces y los reconecta solo.
+          </p>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -912,6 +951,7 @@ const S = {
   outRes: { locked:false, w:1280, h:720 },  // resolución fija del lienzo de salida (null=auto según video)
   ccMaps: [],   // CC → parámetro continuo (ver CONTROLES CONTINUOS)
   escenas: [],  // arreglos de pistas guardados (ver VISOR DE CONTROL)
+  accionesMidi: {},  // botón → acción (grabar/detener…), ver ACCIONES MAPEABLES
   negro: 0,     // fundido a negro de toda la salida (0..1), sólo por CC
 };
 let clipSeq = 1;
@@ -1875,6 +1915,8 @@ async function applyProjectData(d) {
   if (d.banks) d.banks.forEach((db,i)=>{ if(i<S.banks.length) Object.assign(S.banks[i],db); });
   /* Escenas del visor de control; las pistas vuelven todas a la salida */
   S.escenas = Array.isArray(d.escenas) ? d.escenas.map(escenaLimpia).filter(Boolean) : [];
+  /* Los botones de las acciones: los de la sesión, si los trae; si no, quedan los de este navegador */
+  if (d.acciones && typeof d.acciones === 'object') { S.accionesMidi = accionesSanear(d.acciones); accionesCambio(); }
   S.tracks.forEach(t => { t.visible = true; });
   VIS.previa = null;
   if (d.outRes && d.outRes.locked && d.outRes.w && d.outRes.h) applyOutRes(d.outRes.w, d.outRes.h, true);
@@ -2623,7 +2665,7 @@ function rebuildMIDIListeners() {
     const dot = document.getElementById('md'+i);
     if (id) {
       const inp = S.midiAcc.inputs.get(id);
-      if (inp) { inp.onmidimessage = onMIDIMsg; dot.classList.add('on'); connected++; }
+      if (inp) { inp.onmidimessage = onMIDIFisico; dot.classList.add('on'); connected++; }
       else dot.classList.remove('on');
     } else dot.classList.remove('on');
   }
@@ -2674,6 +2716,10 @@ function triggerOn(midiId, vel) {
   /* Bank learn intercept */
   if (S.bankLearning !== null) { bankDoAssign(midiId); return; }
 
+  /* Acciones (grabar / detener…) */
+  const accion = accionPorMidi(midiId);
+  if (accion) { accion.ejecutar(); return; }
+
   /* Bank recall */
   const bi = S.banks.findIndex(b => b.midi === midiId);
   if (bi >= 0) { bankSelect(bi); return; }
@@ -2718,9 +2764,17 @@ function doAssign(target, midiId) {
     S.ccMaps.forEach(m => { if (m.midi === midiId) { m.midi = null; m.origen = null; } });
     refrescarMapeosUI();
   }
+  accionesSoltarMidi(midiId);
   /* midiOrigen recuerda si el mapeo se aprendió de un botón del celular */
   const origen = _origenMando ? {..._origenMando} : null;
-  if (target.t==='clip') { const r=findClip(target.id); if(r) { r.clip.midi=midiId; r.clip.midiOrigen=origen; } }
+  if (target.t==='accion') {
+    /* un botón que dispara una acción no puede ser también el de un banco */
+    S.banks.forEach(b => { if (b.midi === midiId) { b.midi = null; b.midiOrigen = null; } });
+    S.accionesMidi[target.id] = { midi: midiId, midiOrigen: origen };
+    accionesCambio();
+    renderBanks();
+  }
+  else if (target.t==='clip') { const r=findClip(target.id); if(r) { r.clip.midi=midiId; r.clip.midiOrigen=origen; } }
   else { const e=S.efxs.find(x=>x.id===target.id); if(e) { e.midi=midiId; e.midiOrigen=origen; } }
   renderClips(); renderEfxs();
 }
@@ -2741,7 +2795,9 @@ function startLearn(t, id, ev) {
   renderClips(); renderEfxs(); refrescarMapeosUI();
 }
 function endLearn() {
+  const eraAccion = !!(S.learning && S.learning.t === 'accion');
   S.learning = null;
+  if (eraAccion && typeof grabadorUI !== 'undefined' && grabadorUI) setTimeout(() => grabadorUI.refrescar(), 0);
   limpiarMapeosVacios(null);
   document.getElementById('learn-banner').classList.remove('vis');
   renderClips(); renderEfxs(); refrescarMapeosUI();
@@ -4679,6 +4735,7 @@ function nuevoMapeoCC(p, midi, origen) {
 }
 /* Un CC que pasa a mover un parámetro deja de disparar clips y efectos */
 function liberarCCDeDisparos(midi) {
+  accionesSoltarMidi(midi);
   S.tracks.forEach(t => t.clips.forEach(c => { if (c.midi === midi) { c.midi = null; c.midiOrigen = null; } }));
   S.efxs.forEach(e => { if (e.midi === midi) { e.midi = null; e.midiOrigen = null; } });
 }
@@ -7857,6 +7914,7 @@ async function saveProject() {
     efxs:   S.efxs.map(e=>({...e,on:false})),
     ccMaps: S.ccMaps.filter(m=>!(m._nuevo && m.midi===null)).map(m=>({ id:m.id, midi:m.midi, destino:m.destino, min:m.min, max:m.max, inv:!!m.inv, auto:m.auto!==false, origen:m.origen||null })),
     banks:  S.banks.map(b=>({...b})),
+    acciones: accionesSanear(S.accionesMidi),
     escenas: S.escenas.map(e => ({ id:e.id, nombre:e.nombre, pistas:e.pistas.map(p => ({...p})) })),
     outRes: {...S.outRes},
     mando:  await obtenerMandoLayoutActual(),
@@ -8073,7 +8131,8 @@ function netConnect() {
     try {
       const msg = JSON.parse(ev.data);
       if (msg.type === 'midi' && Array.isArray(msg.data)) {
-        appendNetLog('↙ '+msg.data.map(b=>'0x'+b.toString(16).toUpperCase().padStart(2,'0')).join(' '));
+        /* `remoto`: la señal viene de otro equipo de la red (📡 RELAY → 7) */
+        appendNetLog('↙ '+(msg.remoto ? '['+String(msg.remoto.nombre || 'otro equipo').slice(0, 30)+'] ' : '')+msg.data.map(b=>'0x'+b.toString(16).toUpperCase().padStart(2,'0')).join(' '));
         /* Si el mensaje viene de un mando, recordamos de cuál y de qué botón:
            doAssign() lo guarda junto al mapeo para que la pastilla diga
            "M1·INTRO" en vez de un nombre de nota suelto. */
@@ -8865,9 +8924,11 @@ function abrirPanelRelay() {
   document.getElementById('rp-salida-url').value = salidaURL();
   document.getElementById('relay-fondo').classList.add('vis');
   refrescarPanelRelay();
+  enlaceAbrirPanel();
 }
 
 function cerrarPanelRelay() {
+  enlaceCerrarPanel();
   document.getElementById('relay-fondo').classList.remove('vis');
 }
 
@@ -8900,6 +8961,151 @@ function refrescarPanelRelay() {
   const visUrl = document.getElementById('rp-visor-url');
   if (visUrl) visUrl.value = visorURL();
 }
+
+
+/* ═══════════════════════════════════════════════════════
+   ENLACE ENTRE EQUIPOS — otros MIDIVJ de la red
+   El relay hace el trabajo (src/midivj-enlace.js): se anuncia, busca a los
+   demás y, si se le pide, entra a la sala de otro equipo a escuchar sus
+   señales de control. Aquí sólo está el panel (📡 RELAY → 7), que le habla
+   por /api/enlace. Lo que llega de otro equipo entra como un `midi` más
+   (con `remoto`), por el mismo camino que un mando local: se mapea igual.
+═══════════════════════════════════════════════════════ */
+const ENL = { est: null, timer: 0, firma: '', error: '', reciben: [], buscadoAlAbrir: false };
+let COMPARTIR_MIDI = false;
+try { COMPARTIR_MIDI = localStorage.getItem('midivj-compartir-midi') === '1'; } catch (_) {}
+
+function enlaceUrl(ruta) {
+  const base = (location.protocol === 'http:' || location.protocol === 'https:') ? location.origin : 'http://127.0.0.1:9191';
+  return base + '/api/enlace' + (ruta || '');
+}
+async function enlacePedir(metodo, ruta, cuerpo) {
+  let r;
+  try {
+    r = await fetch(enlaceUrl(ruta), {
+      method: metodo, cache: 'no-store',
+      headers: cuerpo === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
+    });
+  } catch (e) { throw new Error('No hay conexión con el relay.'); }
+  const datos = await r.json().catch(() => ({}));
+  if (r.status === 404 && datos.error === 'Ruta no encontrada.') throw new Error('El relay abierto es de una versión anterior: ciérralo y vuelve a abrirlo (INICIAR_RELAY).');
+  if (!r.ok) throw new Error(datos.error || ('El relay respondió ' + r.status));
+  return datos;
+}
+/* Una acción del panel: pide, guarda el estado nuevo y lo pinta */
+async function enlaceHacer(metodo, ruta, cuerpo) {
+  try {
+    const est = await enlacePedir(metodo, ruta, cuerpo);
+    ENL.est = est;
+    ENL.error = est.aviso || '';
+  } catch (e) { ENL.error = e.message; }
+  enlacePintar();
+  return ENL.est;
+}
+function enlaceRefrescar() { return enlaceHacerSilencioso(); }
+async function enlaceHacerSilencioso() {
+  try { ENL.est = await enlacePedir('GET', ''); }
+  catch (e) { if (!ENL.est) ENL.error = e.message; }
+  enlacePintar();
+}
+function enlaceAbrirPanel() {
+  const c = document.getElementById('rp-enl-fisico');
+  if (c) c.checked = COMPARTIR_MIDI;
+  clearInterval(ENL.timer);
+  ENL.timer = setInterval(enlaceRefrescar, 2000);
+  enlaceRefrescar().then(() => {
+    /* La primera vez que se abre el panel, una búsqueda sola: así aparecen
+       los demás aunque el firewall no deje pasar los avisos */
+    if (ENL.est && !ENL.buscadoAlAbrir && !ENL.est.vistos.length) { ENL.buscadoAlAbrir = true; enlaceBuscar(); }
+  });
+}
+function enlaceCerrarPanel() { clearInterval(ENL.timer); ENL.timer = 0; }
+async function enlaceBuscar() {
+  const b = document.getElementById('rp-enl-buscar');
+  if (b) { b.disabled = true; b.textContent = '🔍 BUSCANDO…'; }
+  await enlaceHacer('POST', '/buscar', {});
+  if (b) { b.disabled = false; b.textContent = '🔍 BUSCAR EN LA RED'; }
+}
+function enlaceSalaLocal() { return document.getElementById('n-room').value.trim() || 'midivj'; }
+function enlaceConectar(host, puerto, sala, nombre) {
+  return enlaceHacer('POST', '/conectar', { host, puerto, sala: sala || 'midivj', salaLocal: enlaceSalaLocal(), nombre: nombre || '' });
+}
+function enlaceConectarAMano() {
+  const crudo = document.getElementById('rp-enl-host').value.trim().replace(/^[a-z]+:\/\//i, '').replace(/\/.*$/, '');
+  /* se acepta "192.168.1.50:9192" en el primer campo */
+  const m = /^(.*):(\d+)$/.exec(crudo);
+  const host = m ? m[1] : crudo;
+  const puerto = parseInt(m ? m[2] : document.getElementById('rp-enl-puerto').value, 10) || 9191;
+  if (!host) { ENL.error = 'Escribe la IP del otro equipo (la muestra su panel 📡 RELAY → 7).'; enlacePintar(); return; }
+  enlaceConectar(host, puerto, document.getElementById('rp-enl-sala').value.trim() || 'midivj', '');
+}
+function enlaceGuardarNombre() {
+  enlaceHacer('POST', '/nombre', { nombre: document.getElementById('rp-enl-nombre').value.trim() });
+}
+function enlaceCompartirFisico(si) {
+  COMPARTIR_MIDI = !!si;
+  try { localStorage.setItem('midivj-compartir-midi', si ? '1' : '0'); } catch (_) {}
+}
+/* MIDI de un controlador conectado a esta PC: si se comparte, también va a los otros equipos */
+function onMIDIFisico(ev) {
+  if (COMPARTIR_MIDI && netWS && netWS.readyState === 1 && ev.data && ev.data.length >= 2 && ev.data.length <= 3) {
+    const tipo = ev.data[0] & 0xF0;
+    if (tipo === 0x90 || tipo === 0x80 || tipo === 0xB0) netWS.send(JSON.stringify({ type: 'midi-local', data: [...ev.data] }));
+  }
+  onMIDIMsg(ev);
+}
+function enlacePintar() {
+  const caja = document.getElementById('rp-enl-vistos');
+  if (!caja) return;
+  const est = ENL.est;
+  document.getElementById('rp-enl-error').textContent = ENL.error ? '⚠ ' + ENL.error : '';
+  const reciben = document.getElementById('rp-enl-reciben');
+  reciben.textContent = ENL.reciben.length ? '↗ Reciben los controles de este equipo: ' + ENL.reciben.join(', ') : '';
+  if (!est) return;
+  const nombre = document.getElementById('rp-enl-nombre');
+  if (document.activeElement !== nombre) nombre.value = est.yo.nombre;
+  document.getElementById('rp-enl-yo').textContent = (est.yo.direcciones[0] || 'sin red') + ':' + est.yo.puerto;
+  document.getElementById('rp-enl-estado').textContent =
+    (est.avisos ? 'avisos automáticos activos' : 'sin avisos automáticos (usa BUSCAR)') +
+    (est.ultimaBusqueda ? ' · última búsqueda hace ' + Math.max(0, Math.round((Date.now() - est.ultimaBusqueda) / 1000)) + ' s' : '');
+  const hace = ms => ms === null ? '' : ms < 1500 ? 'ahora' : ms < 60000 ? 'hace ' + Math.round(ms / 1000) + ' s' : 'hace ' + Math.round(ms / 60000) + ' min';
+  const firma = JSON.stringify([est.vistos.map(v => [v.id, v.nombre, v.host, v.puerto, v.salas]),
+    est.enlaces.map(e => [e.id, e.nombre, e.host, e.puerto, e.sala, e.salaLocal, e.activo, e.estado, e.error, e.mandos, e.recibidos, Math.round((e.haceMs || 0) / 2000)])]);
+  if (firma === ENL.firma) return;
+  ENL.firma = firma;
+  const enlazado = (v, sala) => est.enlaces.some(e => (e.equipo === v.id || (e.host === v.host && e.puerto === v.puerto)) && e.sala === sala);
+  const mandosTxt = ms => ms && ms.length ? ms.length + (ms.length === 1 ? ' mando' : ' mandos') + ' (' + ms.map(m => escHtml(m.nombre)).join(', ') + ')' : 'sin mandos ahora';
+  caja.innerHTML = est.vistos.length
+    ? est.vistos.map(v => (v.salas.length ? v.salas : [{ sala: 'midivj', app: false, mandos: [] }]).map(s =>
+        `<div class="cc-fila"><b style="font-family:var(--mono);font-size:10px;color:var(--text)">${escHtml(v.nombre)}</b>
+          <span class="rp-mandos" style="flex:1">${escHtml(v.host)}:${v.puerto} · sala ${escHtml(s.sala)} · ${mandosTxt(s.mandos)}${s.app ? '' : ' · MIDIVJ cerrado'}</span>
+          ${enlazado(v, s.sala) ? '<span class="rp-mandos" style="color:var(--accent)">✓ enlazado</span>'
+            : `<button class="rp-btn pri" data-enl-host="${escHtml(v.host)}" data-enl-puerto="${v.puerto}" data-enl-sala="${escHtml(s.sala)}" data-enl-nombre="${escHtml(v.nombre)}">↙ RECIBIR SUS CONTROLES</button>`}
+        </div>`).join('')).join('')
+    : '<div class="cc-vacio">Todavía no se ve ningún otro MIDIVJ en esta red. Ábrelo en el otro equipo (con su relay) y pulsa BUSCAR, o escribe su IP abajo.</div>';
+  const cajaE = document.getElementById('rp-enl-enlaces');
+  cajaE.innerHTML = est.enlaces.length
+    ? '<div class="rp-linea" style="margin-top:10px"><label>RECIBIENDO DE</label></div>' + est.enlaces.map(e => {
+        const color = !e.activo ? 'var(--text3)' : e.estado === 'conectado' ? 'var(--accent)' : 'var(--hot)';
+        const detalle = !e.activo ? 'en pausa'
+          : e.estado === 'conectado' ? mandosTxt(e.mandos) + ' · ' + e.recibidos + ' señales' + (e.haceMs !== null ? ' · última ' + hace(e.haceMs) : '')
+          : e.estado + (e.error ? ' — ' + escHtml(e.error) : '');
+        return `<div class="cc-fila"><span style="color:${color};font-size:11px">●</span>
+          <b style="font-family:var(--mono);font-size:10px;color:var(--text)">${escHtml(e.nombre)}</b>
+          <span class="rp-mandos" style="flex:1">${escHtml(e.host)}:${e.puerto} · sala ${escHtml(e.sala)}${e.salaLocal !== enlaceSalaLocal() ? ' → sala ' + escHtml(e.salaLocal) + ' de aquí' : ''} · ${detalle}</span>
+          <button class="rp-btn" data-enl-activar="${e.id}" data-enl-valor="${e.activo ? '0' : '1'}">${e.activo ? '⏸ PAUSAR' : '▶ REANUDAR'}</button>
+          <button class="rp-btn" data-enl-quitar="${e.id}">✕ QUITAR</button></div>`;
+      }).join('')
+    : '';
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('#rp-paso-enlace button');
+  if (!b) return;
+  if (b.dataset.enlHost) enlaceConectar(b.dataset.enlHost, +b.dataset.enlPuerto, b.dataset.enlSala, b.dataset.enlNombre);
+  else if (b.dataset.enlActivar) enlaceHacer('POST', '/activar', { id: b.dataset.enlActivar, activo: b.dataset.enlValor === '1' });
+  else if (b.dataset.enlQuitar) enlaceHacer('POST', '/quitar', { id: b.dataset.enlQuitar });
+});
 
 function conectarDesdePanel() {
   const url = document.getElementById('rp-url').value.trim();
@@ -8987,6 +9193,8 @@ function abrirControlRemoto() {
 }
 
 function pintarPresenciaMandos(msg) {
+  ENL.reciben = Array.isArray(msg.enlaces) ? msg.enlaces.map(n => String(n).slice(0, 30)) : [];
+  enlacePintar();
   const el  = document.getElementById('mando-count');
   const btn = document.getElementById('mando-btn');
   if (!el) return;
@@ -9247,6 +9455,7 @@ function bankStartLearn(idx, ev) {
 function bankDoAssign(midiId) {
   /* Clear same ID from other banks */
   S.banks.forEach(b => { if(b.midi === midiId) { b.midi = null; b.midiOrigen = null; } });
+  accionesSoltarMidi(midiId);
   S.banks[S.bankLearning].midi = midiId;
   S.banks[S.bankLearning].midiOrigen = _origenMando ? {..._origenMando} : null;
   S.bankLearning = null;
@@ -9519,6 +9728,8 @@ function grabacionInicializar() {
       await mezcla.start();
       mezclaSincronizar();
     },
+    /* Botones que graban y detienen (ver ACCIONES MAPEABLES) */
+    control: { lista: accionesParaPanel, aprender: aprenderAccion, olvidar: olvidarAccion },
     audio: mezcla ? {
       idCaptura: 'audio-entrada',
       dispositivos: pedirPermiso => mezcla.listarDispositivos(pedirPermiso),
@@ -9530,6 +9741,92 @@ function grabacionInicializar() {
     } : null,
   });
   return grabador;
+}
+
+
+/* ═══════════════════════════════════════════════════════
+   ACCIONES MAPEABLES — funciones de MIDIVJ que no son un clip ni un efecto
+   y que un botón (nota o CC de un mando, de un controlador MIDI o de otro
+   equipo de la red) puede disparar. Hoy: la grabación.
+   S.accionesMidi = { <id de la acción>: { midi, midiOrigen } }; se guarda en
+   la sesión y, además, en este navegador (una sesión de grabación no
+   siempre se guarda como .vjp).
+═══════════════════════════════════════════════════════ */
+const ACCIONES_MIDI = [
+  { id: 'grabar', nombre: 'GRABAR / DETENER', ayuda: 'un toque empieza a grabar y otro detiene', ejecutar: () => grabacionPorControl('alternar') },
+  { id: 'grabar-iniciar', nombre: 'GRABAR', ayuda: 'sólo empieza (si ya graba, no hace nada)', ejecutar: () => grabacionPorControl('iniciar') },
+  { id: 'grabar-detener', nombre: 'DETENER', ayuda: 'sólo detiene y guarda', ejecutar: () => grabacionPorControl('detener') },
+];
+const CLAVE_ACCIONES = 'midivj-acciones';
+function accionesSanear(d) {
+  const o = {};
+  if (d && typeof d === 'object') {
+    for (const a of ACCIONES_MIDI) {
+      const m = d[a.id];
+      if (m && Number.isInteger(m.midi) && m.midi >= 0 && m.midi <= 255) o[a.id] = { midi: m.midi, midiOrigen: m.midiOrigen && typeof m.midiOrigen === 'object' ? { ...m.midiOrigen } : null };
+    }
+  }
+  return o;
+}
+try { S.accionesMidi = accionesSanear(JSON.parse(localStorage.getItem(CLAVE_ACCIONES) || 'null')); } catch (_) {}
+function accionesCambio() {
+  try { localStorage.setItem(CLAVE_ACCIONES, JSON.stringify(S.accionesMidi)); } catch (_) {}
+  if (grabadorUI) grabadorUI.refrescar();
+}
+function accionPorMidi(midiId) {
+  return ACCIONES_MIDI.find(a => S.accionesMidi[a.id] && S.accionesMidi[a.id].midi === midiId) || null;
+}
+/* Ese botón deja de disparar acciones (pasó a un clip, un efecto, un banco o un parámetro) */
+function accionesSoltarMidi(midiId) {
+  let cambio = false;
+  for (const id of Object.keys(S.accionesMidi)) if (S.accionesMidi[id].midi === midiId) { delete S.accionesMidi[id]; cambio = true; }
+  if (cambio) accionesCambio();
+}
+function aprenderAccion(id) {
+  if (S.learning && S.learning.t === 'accion' && S.learning.id === id) { endLearn(); return; }   // segundo clic = cancelar
+  startLearn('accion', id, { stopPropagation() {} });
+  if (grabadorUI) grabadorUI.refrescar();
+}
+function olvidarAccion(id) {
+  if (S.learning && S.learning.t === 'accion' && S.learning.id === id) endLearn();
+  delete S.accionesMidi[id];
+  accionesCambio();
+}
+/* Lo que muestra el panel de GRABACIÓN */
+function accionesParaPanel() {
+  return ACCIONES_MIDI.map(a => {
+    const m = S.accionesMidi[a.id] || null;
+    return {
+      id: a.id, nombre: a.nombre, ayuda: a.ayuda, asignado: !!m,
+      etiqueta: m ? midiEtiqueta(m) : '', titulo: m ? midiTitulo(m).split('\n')[0] : '',
+      aprendiendo: !!(S.learning && S.learning.t === 'accion' && S.learning.id === a.id),
+    };
+  });
+}
+/* Grabar / detener desde un botón. El aviso va al registro de NET y a los
+   mandos de esta sala (un toast en el teléfono). */
+let _grabCtlOcupado = false;
+async function grabacionPorControl(modo) {
+  if (!grabacionDisponible() || _grabCtlOcupado) return;
+  grabacionInicializar();
+  const avisar = texto => {
+    appendNetLog('⏺ ' + texto);
+    if (netWS && netWS.readyState === 1) netWS.send(JSON.stringify({ type: 'toast', texto: texto.slice(0, 118) }));
+  };
+  const fase = grabador.fase;
+  _grabCtlOcupado = true;
+  try {
+    if (fase === 'grabando' && modo !== 'iniciar') {
+      await grabador.stop();
+      avisar('⏹ Grabación guardada' + (grabador.toma ? ': ' + grabador.toma.nombre : ''));
+    } else if (fase === 'lista' && modo !== 'detener') {
+      if (mezcla && grabador.config.audio !== false) { try { await mezcla.start(); mezclaSincronizar(); } catch (e) {} }
+      await grabador.start();
+      avisar('Grabando' + (grabador.toma ? ': ' + grabador.toma.nombre : ''));
+    }
+  } catch (e) {
+    avisar('No se pudo grabar: ' + (e.message || e));
+  } finally { _grabCtlOcupado = false; }
 }
 
 /* ═══════════════════════════════════════════════════════
