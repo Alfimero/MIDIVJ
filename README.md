@@ -244,6 +244,20 @@ El teléfono guarda su configuración y la muestra de los dos lados: la sección
 - **La primera vez, el teléfono muestra "conexión no privada".** `/camara` necesita HTTPS — es la única forma de que el navegador del teléfono dé acceso a la cámara en una IP de red, `getUserMedia` no funciona por HTTP salvo en `localhost`. El relay genera un certificado autofirmado en esta misma computadora (nada de internet ni de una CA real), así que el teléfono avisa que no reconoce el certificado: toca **Avanzado → continuar de todos modos**. Es esperado, una sola vez por teléfono (mientras la red no cambie), y no significa que algo esté mal.
 - El teléfono manda video y, si AUDIO está en *micrófono*, también su sonido (el navegador pedirá permiso de micrófono; si se niega, sigue sólo el video). `PANTALLA` y `CAPTURA` siguen siendo sólo video.
 
+### Exposición, foco, balance y zoom
+
+Con las luces de un show, la exposición y el foco automáticos de un teléfono «buscan» todo el tiempo. Desde MIDIVJ se ajustan los de cada cámara:
+
+- **En la pista**: CONFIG. DE CÁMARA · 📱 → **IMAGEN**.
+- **En 📷 CÁMARAS → IMAGEN**: todas las cámaras juntas, con **🔒 FIJAR EN TODAS**, **↺ AUTO EN TODAS** y **◎ ENFOCAR TODAS**.
+- **En el visor**: vista **⊞ CUADRÍCULA**, sección **CÁMARA** de la pista elegida.
+- **Con un fader o una perilla**: aparecen en **🎯 MAPEO** y en 🎛 CONTROLES como «P1 · Cámara: exposición / tiempo de exposición / foco / temperatura / zoom».
+- **En el teléfono**: ⚙ → 🔒 FIJAR EXPOSICIÓN Y FOCO.
+
+**🔒 FIJAR** deja exposición, foco y balance de blancos en manual con los valores de ese momento, para que no cambien solos; **↺ AUTO** los devuelve a automático; **◎ ENFOCAR** enfoca una vez y se queda ahí. Mover un control manual (tiempo de exposición, distancia de foco, temperatura) pone ese modo en manual. El teléfono recuerda lo elegido y lo vuelve a aplicar si la cámara se reabre, y se puede ajustar mientras graba.
+
+Sólo aparece lo que la cámara de cada teléfono le declara al navegador, y eso cambia mucho: Chrome en Android suele dar exposición y foco (y a veces ISO, balance, zoom y linterna); **Safari en iPhone casi nada**. Cuando una cámara no da ningún control, MIDIVJ lo dice y queda el PROCESADOR DE VIDEO (brillo, contraste, color) como alternativa. Las cámaras USB de la PC ofrecen estos mismos controles en el hub, el visor y los faders.
+
 ### Hub de cámaras: el formato de todas a la vez
 
 **📷 CÁMARAS** (en el encabezado) abre una tabla con todas las cámaras de teléfono: la pista, lo que cada una **envía**, lo que **llega** y sus ajustes (resolución, FPS, formato, calidad, lente, audio). La fila **TODAS** cambia un ajuste en todas a la vez — por ejemplo, dejarlas en 1080p · 30 fps · 16:9 con un solo cambio — y marca en amarillo lo que es distinto entre cámaras. Los teléfonos conectados que todavía no están en una pista también reciben el cambio y lo usan al empezar a transmitir.
@@ -330,6 +344,24 @@ Cada toma es una carpeta (`nombre - 2026-10-30 21-15-03/`) con todos sus archivo
 - Sólo se graba desde la PC donde corre el relay, como el guardado de sesiones. Después de actualizar, cierra y vuelve a abrir `INICIAR_RELAY` para que el relay conozca la grabación.
 
 Detalles en `docs/decisions/ADR-008-grabacion-de-la-salida.md`.
+
+## Grabar el original en los teléfonos
+
+El video que llega por Wi-Fi sirve para el show en vivo, pero para grabar es frágil: con muchas cámaras la PC se satura, el audio y el video se desfasan, y si se cae la red o la computadora se pierde la toma. Por eso cada teléfono-cámara puede grabar en su propia memoria el **original**: el video de su cámara y el audio de su micrófono en un mismo archivo, sin pasar por la red. El video por Wi-Fi queda como referencia.
+
+1. En **⏺ GRABAR**, sección **ORIGINAL EN LOS TELÉFONOS**, marca **GRABAR EL ORIGINAL EN LOS TELÉFONOS** y elige la calidad (Normal / Alta / Máxima ≈ 6 / 12 / 22 Mbps a 1080p30). Se puede grabar sólo con los teléfonos (sin marcar la salida ni las pistas) o junto con lo que grabe la PC.
+2. **⏺ GRABAR** (o el botón mapeado a GRABAR / DETENER) empieza la toma: todos los teléfonos marcados arrancan **a la misma hora** de un reloj común (el del relay; en las pruebas, con menos de 10 ms de diferencia entre teléfonos). Los que tenían la cámara cerrada la abren solos.
+3. **⏹ DETENER** los detiene a todos. Cada teléfono guarda su archivo en la memoria del navegador.
+4. **📷 CÁMARAS → ⬇ TRAER TODO** pasa los archivos a la carpeta de la toma (`camara-1.mp4`, `camara-2.mp4`…, junto a `salida.mp4` si la PC también grabó) y **🗑 BORRAR LO YA TRAÍDO** los quita de los teléfonos (sólo los que llegaron completos).
+
+- **Si se cae la Wi-Fi o la PC**, los teléfonos siguen grabando. Al volver la conexión, MIDIVJ los ve otra vez y la cámara vuelve sola a su pista.
+- **Sincronizar al editar**: `telefonos.json` (en la carpeta de la toma) dice de qué teléfono es cada archivo y a qué hora empezó en el reloj común, y `toma.json` la hora de inicio de la toma en ese mismo reloj. **🔔 CLAQUETA** hace sonar un pitido por los parlantes de la PC que queda en el audio de todos los teléfonos, para alinearlos por la forma de onda.
+- **REFERENCIA LIVIANA POR WI-FI**: mientras graban el original, a MIDIVJ va una versión de 480p a 15 cuadros/s; menos red, menos calor en el teléfono y menos trabajo para la PC.
+- **Pantalla**: 🌙 (en el teléfono o desde 📷 CÁMARAS) la pone en negro para ahorrar batería; la cámara sigue grabando y dos toques la encienden. El teléfono no se bloquea solo mientras la página está abierta. **Bloquear el teléfono o cambiar de app sí corta la cámara** (ningún navegador deja grabar así); el hub avisa si pasa.
+- **En el teléfono**: **⏺ GRABAR AQUÍ** graba sin MIDIVJ; **🎞** lista lo grabado y **💾 GUARDAR EN EL TELÉFONO** copia una grabación a Fotos o Archivos, un respaldo fuera del navegador. Si la página se cierra a media toma, lo grabado hasta ahí queda.
+- **📷 CÁMARAS** muestra, por teléfono: si graba y cuánto lleva, memoria libre, batería (sólo Android la informa), pantalla, y archivos sin traer o subiendo. **GRABA** desmarca un teléfono para que no grabe su original.
+- Mientras graba no se puede cambiar la resolución, los FPS, el formato, la lente ni el audio del teléfono (cortaría el archivo). Si el teléfono gira, la grabación sigue en otra parte del mismo archivo (`camara-1 parte 2.mp4`).
+- Hay que actualizar, reiniciar el relay y recargar `/camara` en cada teléfono. Las grabaciones viven en la memoria del navegador del teléfono: borrar sus datos las borra, así que conviene traerlas al terminar.
 
 ## Mezcla de audio
 

@@ -122,6 +122,20 @@
               'Cada archivo es un codificador más: en equipos modestos, graba sólo las pistas que necesites.<br>' +
               'Deja la ventana de MIDIVJ a la vista: minimizada, el navegador frena el dibujo.</p>' +
           '</div>' +
+          '<div class="gr-sec" id="gr-sec-tel"><h3>ORIGINAL EN LOS TELÉFONOS<span class="gr-sp"></span>' +
+              '<button class="gr-btn" id="gr-tel-hub" title="Estado de cada teléfono, pantallas y traer los archivos">📷 TELÉFONOS…</button></h3>' +
+            '<div class="gr-lista">' +
+              '<div class="gr-fila"><label title="Cada teléfono-cámara graba en su memoria el original (video y audio del mismo aparato), empezando todos a la vez"><input type="checkbox" id="gr-tel-on"> GRABAR EL ORIGINAL EN LOS TELÉFONOS</label>' +
+                '<label>CALIDAD <select id="gr-tel-cal"><option value="normal">Normal</option><option value="alta">Alta</option><option value="maxima">Máxima</option></select></label></div>' +
+              '<div class="gr-fila"><label title="Mientras graban, a MIDIVJ va una versión de 480p a 15 cuadros/s: menos Wi-Fi, menos calor y menos trabajo para esta PC"><input type="checkbox" id="gr-tel-liv"> REFERENCIA LIVIANA POR WI-FI</label>' +
+                '<label title="Pone en negro la pantalla de los teléfonos al empezar (ahorra batería; la cámara sigue)"><input type="checkbox" id="gr-tel-neg"> APAGAR SUS PANTALLAS</label></div>' +
+              '<div class="gr-fila"><label title="Un pitido por los parlantes de esta PC un par de segundos después de empezar: queda en el audio de todos los teléfonos y sirve para alinearlos al editar"><input type="checkbox" id="gr-tel-claq"> 🔔 CLAQUETA AL EMPEZAR</label>' +
+                '<label title="Al detener, los teléfonos pasan sus archivos a la carpeta de la toma (usa la Wi-Fi: mejor cuando ya no hace falta el video en vivo)"><input type="checkbox" id="gr-tel-traer"> TRAERLOS AL TERMINAR</label></div>' +
+              '<div class="gr-dato" id="gr-tel-dato"></div>' +
+            '</div>' +
+            '<p class="gr-ayuda">El video por Wi-Fi queda como referencia en vivo; el <b>original</b> se graba en cada teléfono y no depende de la red ni de esta PC: si algo se cae, sigue grabando. ' +
+              'Los teléfonos empiezan a la misma hora (reloj común) y la hora exacta de cada archivo queda en <b>telefonos.json</b>. Al final, <b>📷 TELÉFONOS → ⬇ TRAER</b> los pasa a la carpeta de la toma.</p>' +
+          '</div>' +
           '<div class="gr-sec" id="gr-sec-control"><h3>GRABAR DESDE UN BOTÓN</h3>' +
             '<div class="gr-lista" id="gr-control"></div>' +
             '<p class="gr-ayuda">Pulsa <b>MAPEAR</b> y toca el botón que quieras usar: un botón de un mando (teléfono), una tecla o pad de un controlador MIDI, ' +
@@ -181,12 +195,13 @@
       const g = JSON.parse(localStorage.getItem(CLAVE) || 'null') || {};
       if (typeof g.titulo === 'string') cfg.titulo = g.titulo.slice(0, 60);
       ['conFecha', 'audio', 'audioRef'].forEach(k => { if (typeof g[k] === 'boolean') cfg[k] = g[k]; });
+      if (g.telefonos && typeof g.telefonos === 'object') cfg.telefonos = { ...cfg.telefonos, ...g.telefonos };
       if (typeof g.calidad === 'string' && grabador.calidades().some(c => c.id === g.calidad)) cfg.calidad = g.calidad;
       if (g.fps === 30 || g.fps === 60) cfg.fps = g.fps;
       if (typeof g.formato === 'string' && fmts.some(f => f.id === g.formato)) cfg.formato = g.formato;
     } catch (e) {}
     function recordar() {
-      try { localStorage.setItem(CLAVE, JSON.stringify({ titulo: cfg.titulo, conFecha: cfg.conFecha, audio: cfg.audio, audioRef: cfg.audioRef, calidad: cfg.calidad, fps: cfg.fps, formato: cfg.formato })); } catch (e) {}
+      try { localStorage.setItem(CLAVE, JSON.stringify({ titulo: cfg.titulo, conFecha: cfg.conFecha, audio: cfg.audio, audioRef: cfg.audioRef, calidad: cfg.calidad, fps: cfg.fps, formato: cfg.formato, telefonos: cfg.telefonos })); } catch (e) {}
     }
     if (cfg.formato === 'auto' && fmts.length) cfg.formato = fmts[0].id;
     $('gr-formato').value = cfg.formato;
@@ -204,6 +219,24 @@
       const nombre = grabador.nombreDeCarpeta();
       $('gr-carpeta-toma').innerHTML = 'La toma se guardará en la carpeta <b>' + esc(nombre) + '</b>' +
         (cfg.conFecha !== false ? '' : ' (si ya existe una con ese nombre, se le agrega «(2)», «(3)»…)');
+    }
+
+    /* ── Original en los teléfonos ── */
+    const tel = op.telefonos || null;
+    if (!tel) $('gr-sec-tel').hidden = true;
+    cfg.telefonos = { activo: false, calidad: 'alta', liviana: true, apagar: false, claqueta: false, traer: false, ...(cfg.telefonos || {}) };
+    const telCampos = { 'gr-tel-on': 'activo', 'gr-tel-liv': 'liviana', 'gr-tel-neg': 'apagar', 'gr-tel-claq': 'claqueta', 'gr-tel-traer': 'traer' };
+    Object.entries(telCampos).forEach(([id, k]) => {
+      $(id).checked = !!cfg.telefonos[k];
+      $(id).onchange = e => { cfg.telefonos[k] = e.target.checked; recordar(); ui.refrescar(); };
+    });
+    $('gr-tel-cal').value = cfg.telefonos.calidad;
+    $('gr-tel-cal').onchange = e => { cfg.telefonos.calidad = e.target.value; recordar(); };
+    $('gr-tel-hub').onclick = () => { if (tel && tel.abrir) tel.abrir(); };
+    function pintarTel(bloqueado) {
+      if (!tel) return;
+      ['gr-tel-on', 'gr-tel-cal', 'gr-tel-liv', 'gr-tel-neg', 'gr-tel-claq'].forEach(id => { $(id).disabled = bloqueado; });
+      $('gr-tel-dato').innerHTML = tel.resumen ? tel.resumen() : '';
     }
 
     /* ── Botones que graban y detienen ── */
@@ -396,13 +429,15 @@
       const btn = $('gr-rec');
       btn.textContent = grabando ? '⏹ DETENER' : st.fase === 'abriendo' ? '… ABRIENDO' : st.fase === 'cerrando' ? '… GUARDANDO' : '⏺ GRABAR';
       btn.classList.toggle('on', grabando);
-      btn.disabled = ocupado || !fmts.length || (!grabando && !grabador.fuentes().some(f => f.elegida && f.disponible));
+      const hayTel = !!(tel && cfg.telefonos && cfg.telefonos.activo && tel.cuantos && tel.cuantos() > 0);
+      btn.disabled = ocupado || (!fmts.length && !hayTel) || (!grabando && !hayTel && !grabador.fuentes().some(f => f.elegida && f.disponible));
       const rel = $('gr-reloj');
       rel.textContent = reloj(st.transcurridoMs);
       rel.classList.toggle('on', grabando);
       const bloqueado = grabando || ocupado;
       ['gr-formato', 'gr-calidad', 'gr-fps', 'gr-titulo', 'gr-fecha', 'gr-todas', 'gr-solo-salida', 'gr-ruta', 'gr-ruta-ok', 'gr-elegir'].forEach(id => { $(id).disabled = bloqueado; });
       pintarAudio(bloqueado);
+      pintarTel(bloqueado);
       pintarControl();
       pintarCarpetaDeToma();
       if (grabando || st.fase === 'cerrando') $('gr-carpeta-toma').innerHTML = 'Grabando en la carpeta <b>' + esc(st.toma || '…') + '</b>';
@@ -419,7 +454,9 @@
         if (st.fase === 'cerrando') dato += '<br>Terminando de guardar…' + (st.sinRelay ? ' esperando al relay (si cierras la pestaña ahora, se pierde lo pendiente).' : '');
       } else {
         const mbps = grabador.estimarMbps();
-        dato = !elegidas.length ? 'Marca qué quieres grabar.'
+        const soloTel = !elegidas.length && tel && cfg.telefonos.activo && tel.cuantos && tel.cuantos() > 0;
+        dato = soloTel ? 'Sólo los originales de los teléfonos (ningún archivo de esta PC).'
+          : !elegidas.length ? 'Marca qué quieres grabar.'
           : '<b>' + conSenal.length + '</b> ' + (conSenal.length === 1 ? 'archivo' : 'archivos') + ' por toma · ~' + mbps.toFixed(1) + ' Mbps' +
             ' (~' + Math.round(mbps * 450 / 1024 * 10) / 10 + ' GB por hora)' +
             (conSenal.length < elegidas.length ? ' · ' + (elegidas.length - conSenal.length) + ' sin señal ahora (no se graban)' : '');

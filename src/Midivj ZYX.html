@@ -4648,6 +4648,22 @@ function paramCatalogo() {
         const otra = t.xform.scaleLink ? xformLinkedKey(p.key) : null;
         if (otra) setSliderRow('#track-info', otra, v, p.fmt);
       } }));
+    /* La imagen de la cámara de la pista (teléfono o USB), en 0..1 del rango que declare */
+    IMG_PARAM.forEach(([k, nombre]) => out.push({ id:`t${i}.cam.${k}`, grupo, nombre:`P${i+1} · ${nombre}`, min:0, max:1, def:.5, fmt:'pct',
+      get:() => { const im = camImagen(t), c = im && im.caps[k], v = im && im.valores[k]; return c && v !== undefined ? (v - c.min) / (c.max - c.min) : .5; },
+      set:v => {
+        const im = camImagen(t), c = im && im.caps[k];
+        if (!c || Array.isArray(c)) return;
+        let x = c.min + v * (c.max - c.min);
+        if (c.step) x = c.min + Math.round((x - c.min) / c.step) * c.step;
+        im.aplicar({ [k]: x });
+      },
+      ui:() => {
+        const im = camImagen(t), c = im && im.caps[k], v = im && im.valores[k];
+        if (!c || v === undefined) return;
+        document.querySelectorAll(`input[data-img-pista="${i}"][data-img-clave="${k}"]`).forEach(el => { el.value = v; });
+        document.querySelectorAll(`[data-img-val="${i}-${k}"]`).forEach(s => { s.textContent = imgFmt(k, v); });
+      } }));
     VPROC_PARAMS.forEach(p => out.push({ id:`t${i}.vproc.${p.key}`, grupo, nombre:`P${i+1} · Color: ${p.lbl}`, min:p.min, max:p.max, def:p.def, fmt:p.fmt,
       get:() => t.vproc[p.key] ?? p.def,
       set:v => { t.vproc[p.key] = v; t.vproc.on = true; },   // igual que el slider: moverlo lo enciende
@@ -8247,6 +8263,8 @@ function netConnect() {
     /* rol:'app' → el relay sabe que esta pestaña es MIDIVJ y le manda la
        presencia de los mandos; los emisores MIDI antiguos siguen igual. */
     netWS.send(JSON.stringify({ type:'join', room, rol:'app', disp:APP_DISP, nombre:'MIDIVJ' }));
+    telSincronizar();
+    setTimeout(() => telOrden('todas', { cmd: 'estado' }), 300);   // qué tiene (o está grabando) cada teléfono
     dot.classList.add('on');
     btn.textContent = 'DESCONECTAR'; btn.classList.add('con');
     setSt('st-net', url.replace(/^ws:\/\//,'')+' · '+room, 'ok');
@@ -8271,7 +8289,9 @@ function netConnect() {
         _origenMando = null;
         return;
       }
-      if (msg.type === 'presencia') { pintarPresenciaMandos(msg); return; }
+      if (msg.type === 'presencia') { pintarPresenciaMandos(msg); telPresencia(msg); return; }
+      if (msg.type === 'hora') { telRecibirHora(msg); return; }
+      if (msg.type === 'tel-estado') { telRecibirEstado(msg); return; }
       if (msg.type === 'mapear-param') { mapearParamDesdeMando(msg); return; }
       if (msg.type === 'reemplazado') {
         appendNetLog('⚠ otra pestaña de MIDIVJ tomó la sala');
@@ -8577,10 +8597,13 @@ function _camEstadoRecibido(slot, msg) {
       limite: ['cpu', 'bandwidth', 'other'].includes(r.limite) ? r.limite : null, audio: !!r.audio, errorAudio: r.errorAudio ? String(r.errorAudio).slice(0, 80) : null },
     caps: msg.caps && typeof msg.caps === 'object' ? msg.caps : null,
     error: msg.error ? String(msg.error).slice(0, 200) : null,
+    imagen: msg.imagen && typeof msg.imagen === 'object' && msg.imagen.caps ? { caps: msg.imagen.caps, valores: msg.imagen.valores || {} } : null,
   };
   if (ses.tel.error) _camLog('⚠ cámara '+slot+' (pista '+idx+'): '+ses.tel.error);
   hubCamRefrescar();
-  if (S.ati !== idx) return;
+  hubImgRefrescar();
+  publicarEstadoVisorPronto();
+  if (S.ati !== idx || imgArrastre) return;   // no se redibuja con un control de imagen en la mano
   const box = document.getElementById('camtel');
   if (box) box.innerHTML = camTelCuerpoHTML(idx, ses);
   else if (primera) renderTrackInfo();
@@ -8620,6 +8643,8 @@ function camTelCuerpoHTML(idx, ses) {
     `<div class="ep-row"><span class="ep-note" id="camtel-st"${tel.error ? ' style="color:var(--hot);"' : ''}>${tel.error ? '⚠ ' + escHtml(tel.error) : envia}</span></div>`,
     `<div class="ep-row"><span class="ep-note" id="camtel-llega">Llega: —</span></div>`,
     `<div class="ep-row"><span class="ep-note">También se cambia desde el teléfono (⚙ en /camara). Con un formato vertical, el AJUSTE de abajo decide si se encaja o llena la salida.</span></div>`,
+    `<div class="ep-row" style="margin-top:6px;"><span class="ep-lbl wide" style="color:var(--accent);">IMAGEN</span><span class="ep-note">exposición, foco, balance y zoom de la cámara</span></div>`,
+    `<div id="camimg">${imgControlesHTML(idx, camImagen(S.tracks[idx]), false)}</div>`,
   ].join('');
 }
 function camTelSet(idx, campo, valor) {
@@ -8711,16 +8736,40 @@ function hubCamCrear() {
   #hubcam .mal{color:var(--hot);}
   #hubcam .dif{color:#ffcc00;}
   #hubcam p{margin:0;padding:10px 16px 14px;font-size:8px;line-height:1.8;color:var(--text3);}
-  #hubcam .vacio{padding:22px 16px;text-align:center;color:var(--text3);}`;
+  #hubcam .vacio{padding:22px 16px;text-align:center;color:var(--text3);}
+  #hubimg{border-top:1px solid var(--border2);margin-top:6px;}
+  #hubimg h3{margin:0;padding:12px 16px 6px;font-size:10px;letter-spacing:2px;color:var(--accent);font-weight:400;}
+  #hubimg .img-barra{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:4px 16px 10px;}
+  #hubimg .hbtn{font-size:9px;padding:3px 8px;}
+  #hubimg td{white-space:normal;}
+  #hubimg .img-ctl{display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;}
+  #hubimg .img-ctl b{color:var(--text3);font-weight:400;}
+  #hubimg .img-sl{width:90px;}
+  #hubimg .ep-val{min-width:38px;}
+  #hubimg .vacio-img{color:var(--text3);}
+  #hubtel{border-top:1px solid var(--border2);margin-top:6px;}
+  #hubtel h3{margin:0;padding:12px 16px 6px;font-size:10px;letter-spacing:2px;color:var(--accent);font-weight:400;}
+  #hubtel .tel-barra{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:4px 16px 10px;}
+  #hubtel .tel-reloj{margin-left:auto;color:var(--text3);}
+  #hubtel .hbtn{font-size:9px;padding:3px 8px;}`;
   document.head.appendChild(st);
   const o = document.createElement('div');
   o.id = 'hubcam-ovl';
-  o.innerHTML = '<div id="hubcam"><header><h2>CÁMARAS · FORMATO DE TODAS</h2><button class="hbtn" onclick="cerrarHubCamaras()">✕ CERRAR</button></header><div id="hubcam-cuerpo"></div>' +
+  o.innerHTML = '<div id="hubcam"><header><h2>CÁMARAS DE TELÉFONO</h2><button class="hbtn" onclick="cerrarHubCamaras()">✕ CERRAR</button></header><div id="hubcam-cuerpo"></div>' +
     '<p>La fila <b>TODAS</b> cambia ese ajuste en todas las cámaras a la vez (también en los teléfonos conectados que aún no están en una pista). ' +
     '«Envía» es lo que el teléfono dice que manda y «Llega» lo que mide MIDIVJ: si no coinciden con lo pedido, la cámara o la Wi-Fi no dan para más. ' +
     '<b>FLUIDEZ</b> dice si hay tirones y de dónde vienen: «cortes» y «falta red» son de la Wi-Fi (prueba <b>SUAVIZAR</b> con 100–200 ms, bajar la CALIDAD o acercar el teléfono al router); ' +
     '«el teléfono no da abasto» se arregla bajando RESOLUCIÓN o FPS. <b>PRIORIDAD fluidez</b> mantiene los FPS y cede resolución cuando falta red. ' +
-    'En amarillo, lo que es distinto entre cámaras. El teléfono recuerda su configuración.</p></div>';
+    'En amarillo, lo que es distinto entre cámaras. El teléfono recuerda su configuración.</p>' +
+    '<div id="hubimg"><h3>IMAGEN · EXPOSICIÓN, FOCO, BALANCE Y ZOOM</h3><div id="hubimg-cuerpo"></div>' +
+    '<p>Sólo aparece lo que la cámara de cada teléfono deja ajustar desde el navegador (cambia mucho entre modelos: en iPhone casi nada). <b>🔒 FIJAR</b> deja exposición, foco y balance en manual con los valores de ahora, para que no cambien solos con las luces del show; <b>↺ AUTO</b> los devuelve a automático. ' +
+    'También están en la pista (CONFIG. DE CÁMARA · 📱), en el visor (CUADRÍCULA) y se pueden mapear a un fader o perilla (🎯 MAPEO).</p></div>' +
+    '<div id="hubtel"><h3>GRABACIÓN DEL ORIGINAL EN LOS TELÉFONOS</h3><div id="hubtel-cuerpo"></div>' +
+    '<p>Cada teléfono marcado en <b>GRABA</b> graba en su memoria el original de su cámara (video y audio del mismo aparato) cuando empieza la toma; todos arrancan a la misma hora del reloj común. ' +
+    'Si se cae la Wi-Fi o esta PC, siguen grabando. <b>⬇ TRAER</b> pasa los archivos a la carpeta de la toma (usa la Wi-Fi: mejor sin video en vivo) y <b>🗑</b> borra del teléfono sólo lo que llegó completo. ' +
+    '<b>🌙</b> pone la pantalla en negro para ahorrar batería; bloquear el teléfono o cambiar de app <b>sí</b> corta la cámara. Las opciones (calidad, referencia liviana, claqueta) están en ⏺ GRABAR.</p></div></div>';
+  o.addEventListener('click', hubTelClic);
+  o.addEventListener('change', hubTelCambio);
   o.addEventListener('click', e => { if (e.target === o) cerrarHubCamaras(); });
   o.addEventListener('change', e => {
     const s = e.target.closest('select[data-campo]');
@@ -8739,11 +8788,31 @@ function hubCamCrear() {
   HUBCAM.el = o;
   setInterval(hubCamMedir, 1000);
 }
+function hubImgRefrescar() {
+  if (!hubCamAbierto() || imgArrastre) return;
+  const caja = document.getElementById('hubimg-cuerpo');
+  if (!caja) return;
+  const filas = hubCamFilas();
+  const html = filas.length
+    ? '<div class="img-barra"><b style="color:var(--text3);font-weight:400;">TODAS:</b>' +
+        '<button class="hbtn" data-img-accion="fijar" data-img-pista="todas">🔒 FIJAR EN TODAS</button>' +
+        '<button class="hbtn" data-img-accion="auto" data-img-pista="todas">↺ AUTO EN TODAS</button>' +
+        '<button class="hbtn" data-img-accion="enfocar" data-img-pista="todas">◎ ENFOCAR TODAS</button></div>' +
+      '<table>' + filas.map(({ idx, ses }) => '<tr><td style="width:60px;"><b>T' + (idx + 1) + '</b> · ' + ses.slot + '</td><td>' +
+        (ses.tel ? imgControlesHTML(idx, camImagen(S.tracks[idx]), true) : '⏳') + '</td></tr>').join('') + '</table>'
+    : '<div class="vacio">Ninguna cámara de teléfono está en una pista.</div>';
+  if (html === HUBCAM.firmaImg) return;
+  HUBCAM.firmaImg = html;
+  caja.innerHTML = html;
+}
 function abrirHubCamaras() {
   hubCamCrear();
   HUBCAM.el.classList.add('vis');
-  HUBCAM.firma = '';
+  HUBCAM.firma = ''; HUBCAM.firmaTel = ''; HUBCAM.firmaImg = '';
   hubCamRefrescar();
+  hubImgRefrescar();
+  hubTelRefrescar();
+  telOrden('todas', { cmd: 'estado' });
 }
 function cerrarHubCamaras() { if (HUBCAM.el) HUBCAM.el.classList.remove('vis'); }
 function hubCamAbierto() { return !!(HUBCAM.el && HUBCAM.el.classList.contains('vis')); }
@@ -8836,13 +8905,17 @@ function hubCamFluidez(idx, ses, r) {
   const cortes = Math.max(0, b.cortes - a.cortes);
   const colchon = b.n > previo.n ? Math.round(1000 * (b.jb - previo.jb) / (b.n - previo.n)) : null;
   const fps = Math.round(r.framesPerSecond || 0);
-  const pedido = ses.tel ? +ses.tel.config.fps || 0 : 0;
+  /* Grabando el original con referencia liviana, los 15 cuadros/s son a propósito */
+  const te = typeof TEL !== 'undefined' ? TEL.estados.get(ses.slot) : null;
+  const liviana = !!(te && te.grabando === 'grabando' && te.liviana);
+  const pedido = ses.tel ? (liviana ? Math.min(15, +ses.tel.config.fps || 15) : +ses.tel.config.fps || 0) : 0;
   const lim = ses.tel && ses.tel.real ? ses.tel.real.limite : null;
   const lento = pedido && fps && fps < pedido * 0.8;
   const txt = fps + ' fps' + (colchon !== null ? ' · colchón ' + colchon + ' ms' : '') +
     (cortes ? ' · ⚠ ' + cortes + (cortes === 1 ? ' corte' : ' cortes') + ' en 10 s' : '') +
     (lim === 'cpu' ? ' · 📱 el teléfono no da abasto' : lim === 'bandwidth' ? ' · 📶 falta red' : '') +
-    (lento && !lim && !cortes ? ' · menos de lo pedido (' + pedido + ')' : '');
+    (lento && !lim && !cortes ? ' · menos de lo pedido (' + pedido + ')' : '') +
+    (liviana ? ' · referencia liviana (el original se graba en el teléfono)' : '');
   const mal = !!(cortes || lento || lim === 'cpu' || lim === 'bandwidth');
   HUBCAM.fluidez.set(idx, { txt, mal, fps, cortes, colchon, limite: lim });
   const el = document.getElementById('hubcam-flu-' + idx);
@@ -8851,6 +8924,7 @@ function hubCamFluidez(idx, ses, r) {
 /* Lo que llega de verdad de cada cámara (estadísticas del receptor) */
 async function hubCamMedir() {
   if (!hubCamAbierto()) return;
+  hubTelRefrescar();
   for (const { idx, ses } of hubCamFilas()) {
     if (!ses.pc) continue;
     try {
@@ -9909,12 +9983,28 @@ function grabacionInicializar() {
     disponible: () => !!mezcla.entrada.activa && !!(mezcla.canales.get('entrada') || {}).rec,
   });
   grabador = MIDIVJGrabacion.crear({
+    externos: telExternos,   // los teléfonos graban su original (ver TELÉFONOS: GRABACIÓN DEL ORIGINAL)
     log: msg => appendNetLog('[grabación] ' + msg),
     onChange: () => { pintarBotonGrabacion(); if (grabadorUI) grabadorUI.refrescar(); },
   });
   MIDIVJ.modulos.registrar(grabador);
   grabadorUI = MIDIVJGrabacionUI.crear(grabador, MIDIVJ.host, {
     avisar: msg => appendNetLog('[grabación] ' + msg),
+    telefonos: {
+      cuantos: () => telSlotsQueGraban().length,
+      abrir: () => abrirHubCamaras(),
+      resumen: () => {
+        const slots = telSlotsQueGraban(), estados = [...TEL.estados.values()].filter(e => e.conectado);
+        const grab = estados.filter(e => e.grabando === 'grabando').length;
+        const pend = estados.reduce((n, e) => n + (e.archivos || []).filter(a => !a.enPC && a.estado !== 'grabando').length, 0);
+        const sinApp = (CAM.disponibles || []).filter(c => !TEL.estados.has(c.slot)).length;
+        return (slots.length ? '<b>' + slots.length + '</b> ' + (slots.length === 1 ? 'teléfono listo' : 'teléfonos listos') + ' para grabar su original'
+            : 'No hay teléfonos-cámara conectados: abre /camara en cada uno (📡 RELAY → 4).') +
+          (grab ? ' · ● ' + grab + ' grabando' : '') + (pend ? ' · ' + pend + ' archivo(s) sin traer' : '') +
+          (sinApp ? ' · ⚠ ' + sinApp + ' con la página de antes (recárgala)' : '') +
+          (slots.length && TEL.reloj.offset === null ? ' · ⚠ reloj sin sincronizar' : '');
+      },
+    },
     antesDeGrabar: async () => {
       if (!mezcla || grabador.config.audio === false) return;
       await mezcla.start();
@@ -10019,6 +10109,472 @@ async function grabacionPorControl(modo) {
   } catch (e) {
     avisar('No se pudo grabar: ' + (e.message || e));
   } finally { _grabCtlOcupado = false; }
+}
+
+
+/* ═══════════════════════════════════════════════════════
+   TELÉFONOS: GRABACIÓN DEL ORIGINAL
+
+   Cada teléfono-cámara (/camara) puede grabar en su memoria el original de
+   su cámara —video y audio del mismo aparato, sin pasar por la Wi-Fi— y
+   después subirlo a la carpeta de la toma. Aquí está el lado de MIDIVJ:
+
+   - Reloj común: MIDIVJ y los teléfonos le preguntan la hora al relay
+     (`hora?`). La orden de grabar lleva una hora de inicio en ese reloj y
+     todos empiezan juntos; la hora real de cada archivo queda anotada.
+   - El grabador (⏺ GRABAR) los trata como «fuentes externas»: al empezar
+     la toma les manda grabar, al detenerla les manda detener.
+   - 📷 CÁMARAS muestra el estado de cada teléfono (grabando, memoria libre,
+     batería, archivos sin traer), apaga o enciende sus pantallas, y TRAER
+     les pide subir sus archivos con un permiso del relay para esa toma.
+   Mensajes: `tel-cmd` (app → teléfono/s) y `tel-estado` (teléfono → app).
+═══════════════════════════════════════════════════════ */
+const TEL = {
+  estados: new Map(),          // slot → último tel-estado (+ conectado)
+  reloj: { offset: null, muestras: [] },
+  toma: null, activa: false, en: null, slots: [], claquetas: [], ctx: null,   // toma: la última que grabaron (queda para su toma.json)
+  excluidos: new Set(),        // slots que no graban el original (📷 CÁMARAS → GRABA)
+};
+try { (JSON.parse(localStorage.getItem('midivj-tel-excluidos') || '[]') || []).forEach(s => TEL.excluidos.add(+s)); } catch (_) {}
+const telAhoraLocal = () => (performance.timeOrigin ? performance.timeOrigin + performance.now() : Date.now());
+const telReloj = () => telAhoraLocal() + (TEL.reloj.offset || 0);
+function telSincronizar() {
+  for (let i = 0; i < 6; i++) setTimeout(() => { if (netWS && netWS.readyState === 1) netWS.send(JSON.stringify({ type: 'hora?', t0: telAhoraLocal() })); }, i * 120);
+}
+function telRecibirHora(msg) {
+  const t1 = telAhoraLocal(), t0 = +msg.t0, rtt = t1 - t0;
+  if (!(rtt >= 0 && rtt < 3000) || !Number.isFinite(+msg.tr)) return;
+  TEL.reloj.muestras.push({ rtt, off: +msg.tr - (t0 + t1) / 2, t: t1 });
+  TEL.reloj.muestras = TEL.reloj.muestras.filter(m => t1 - m.t < 120000).slice(-24);
+  TEL.reloj.offset = TEL.reloj.muestras.reduce((a, b) => (b.rtt < a.rtt ? b : a)).off;
+}
+setInterval(() => { if (netWS && netWS.readyState === 1) telSincronizar(); }, 30000);
+function telOrden(slot, cuerpo) {
+  if (!netWS || netWS.readyState !== 1) return false;
+  netWS.send(JSON.stringify({ type: 'tel-cmd', slot, ...cuerpo }));
+  return true;
+}
+function telRecibirEstado(msg) {
+  const slot = parseInt(msg.slot, 10);
+  if (!slot) return;
+  if (msg.ausente) { const e = TEL.estados.get(slot); if (e) e.conectado = false; }
+  else {
+    const previo = TEL.estados.get(slot);
+    TEL.estados.set(slot, { ...msg, conectado: true, recibido: Date.now() });
+    if (msg.error && (!previo || previo.error !== msg.error)) appendNetLog('📱 cámara ' + slot + ': ' + msg.error);
+  }
+  telAlCambiar();
+}
+function telPresencia(msg) {
+  const conectados = new Set((msg.camaras || []).map(c => c.slot));
+  for (const [slot, e] of TEL.estados) e.conectado = conectados.has(slot);
+  telAlCambiar();
+}
+function telAlCambiar() {
+  hubTelRefrescar();
+  if (typeof grabadorUI !== 'undefined' && grabadorUI) grabadorUI.refrescar();
+}
+function telCfg() {
+  return (typeof grabador !== 'undefined' && grabador && grabador.config.telefonos) || { activo: false, calidad: 'alta', liviana: true };
+}
+/* Los que van a grabar: conectados a /camara, sin desmarcar, y con un navegador que puede grabar */
+function telSlotsQueGraban() {
+  return (CAM.disponibles || []).map(c => c.slot).filter(s => !TEL.excluidos.has(s) && (TEL.estados.get(s) || {}).puedeGrabar !== false);
+}
+const telMegas = b => (b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : Math.round(b / 1048576) + ' MB');
+
+/* Fuentes externas del grabador (ver midivj-grabacion.js) */
+const telExternos = {
+  cuantos: () => (telCfg().activo ? telSlotsQueGraban().length : 0),
+  iniciar: async ({ toma }) => {
+    if (TEL.reloj.offset === null) { telSincronizar(); await new Promise(r => setTimeout(r, 900)); }
+    const cfg = telCfg(), slots = telSlotsQueGraban();
+    /* Margen para que la orden llegue y, si alguno tiene la cámara cerrada, para abrirla */
+    const abiertas = slots.every(s => (TEL.estados.get(s) || {}).camara);
+    const en = telReloj() + (abiertas ? 700 : 1800);
+    TEL.toma = toma; TEL.activa = true; TEL.en = en; TEL.slots = slots; TEL.claquetas = [];
+    slots.forEach(slot => telOrden(slot, { cmd: 'grabar', toma, en, calidad: cfg.calidad, liviana: !!cfg.liviana }));
+    appendNetLog('📱 grabando el original en ' + slots.length + (slots.length === 1 ? ' teléfono' : ' teléfonos') + ' (toma «' + toma + '»)');
+    const falta = Math.max(0, en - telReloj());
+    if (cfg.apagar) setTimeout(() => slots.forEach(s => telOrden(s, { cmd: 'pantalla', apagada: true })), falta + 1500);
+    if (cfg.claqueta) setTimeout(telClaqueta, falta + 2000);
+  },
+  detener: ({ toma }) => {
+    if (!TEL.activa) return;
+    TEL.activa = false;
+    telOrden('todas', { cmd: 'detener', toma: TEL.toma });
+    const cfg = telCfg(), slots = TEL.slots.slice();
+    if (cfg.apagar) setTimeout(() => slots.forEach(s => telOrden(s, { cmd: 'pantalla', apagada: false })), 600);
+    if (cfg.traer) telTraerAlTerminar(slots);
+  },
+  /* Va en toma.json: el inicio de la toma en el reloj común y qué teléfonos grabaron */
+  manifiesto: toma => {
+    const o = {};
+    if (TEL.reloj.offset !== null && toma && Number.isFinite(toma.t0)) {
+      o.relojComun = { inicio: Math.round(telReloj() - (performance.now() - toma.t0)), nota: 'Milisegundos del reloj común (el del relay). Los originales de los teléfonos (telefonos.json) usan el mismo reloj.' };
+    }
+    if (toma && TEL.toma === toma.nombre) o.telefonos = { slots: TEL.slots, inicioPedido: Math.round(TEL.en), claquetas: TEL.claquetas.map(Math.round) };
+    return o;
+  },
+};
+/* Traer al terminar: cuando cada teléfono cerró su archivo */
+async function telTraerAlTerminar(slots) {
+  const fin = Date.now() + 20000;
+  while (Date.now() < fin && slots.some(s => { const e = TEL.estados.get(s); return e && e.conectado && e.grabando !== 'libre'; })) await new Promise(r => setTimeout(r, 500));
+  telTraer('todas');
+}
+
+/* Pitido de sincronización por los parlantes de esta PC: queda en el audio de todos los teléfonos */
+function telClaqueta() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = (typeof mezcla !== 'undefined' && mezcla && mezcla.ctx) || TEL.ctx || (TEL.ctx = new AC());
+    if (ctx.state === 'suspended') ctx.resume();
+    const t = ctx.currentTime + 0.02, o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 1000;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.9, t + 0.005);
+    g.gain.setValueAtTime(0.9, t + 0.12);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t); o.stop(t + 0.2);
+    TEL.claquetas.push(telReloj() + 20);
+    appendNetLog('🔔 claqueta');
+  } catch (e) { appendNetLog('🔔 no se pudo sonar la claqueta: ' + (e.message || e)); }
+}
+
+/* Pedir los archivos: un permiso del relay por toma, y el teléfono sube */
+async function telPermiso(toma, slot, archivo) {
+  const pedir = async cuerpo => {
+    const r = await fetch('/api/grabaciones/telefonos/permiso', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error(d.error || ('el relay respondió ' + r.status)); e.status = r.status; throw e; }
+    return d;
+  };
+  if (toma) {
+    try { return await pedir({ toma, slot }); }
+    catch (e) { if (e.status !== 404) throw e; }   // la carpeta ya no está: se crea con el mismo nombre
+  }
+  const d = archivo && archivo.inicio ? new Date(archivo.inicio) : new Date(), dos = n => String(n).padStart(2, '0');
+  const fecha = d.getFullYear() + '-' + dos(d.getMonth() + 1) + '-' + dos(d.getDate()) + ' ' + dos(d.getHours()) + '-' + dos(d.getMinutes()) + '-' + dos(d.getSeconds());
+  return pedir({ nueva: toma || ('Teléfono ' + slot + ' - ' + fecha), slot });
+}
+async function telTraer(cual) {
+  const slots = cual === 'todas' ? [...TEL.estados.keys()] : [cual];
+  let n = 0;
+  for (const slot of slots) {
+    const e = TEL.estados.get(slot);
+    if (!e || !e.conectado) continue;
+    const pend = (e.archivos || []).filter(a => !a.enPC && a.estado !== 'grabando' && a.bytes > 0);
+    if (!pend.length) continue;
+    const grupos = new Map();
+    for (const a of pend) { const k = a.toma || ''; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(a); }
+    const lotes = [];
+    for (const [toma, archivos] of grupos) {
+      try {
+        const r = await telPermiso(toma, slot, archivos[0]);
+        lotes.push({ permiso: r.permiso, toma: r.toma, ids: archivos.map(a => a.id) });
+      } catch (err) { appendNetLog('📱 cámara ' + slot + ': no se pudo preparar la carpeta (' + (err.message || err) + ')'); }
+    }
+    if (lotes.length && telOrden(slot, { cmd: 'subir', lotes })) n += lotes.reduce((k, l) => k + l.ids.length, 0);
+  }
+  appendNetLog(n ? '📱 pidiendo ' + n + (n === 1 ? ' archivo' : ' archivos') + ' a los teléfonos' : '📱 no hay archivos sin traer en los teléfonos conectados');
+  return n;
+}
+function telBorrarTraidos(cual) {
+  const slots = cual === 'todas' ? [...TEL.estados.keys()] : [cual];
+  const porSlot = new Map();
+  let bytes = 0, n = 0;
+  for (const slot of slots) {
+    const e = TEL.estados.get(slot);
+    if (!e || !e.conectado) continue;
+    const ok = (e.archivos || []).filter(a => a.enPC && a.subido === a.bytes);
+    if (!ok.length) continue;
+    porSlot.set(slot, ok.map(a => a.id));
+    n += ok.length; bytes += ok.reduce((k, a) => k + a.bytes, 0);
+  }
+  if (!n) { appendNetLog('📱 no hay archivos ya traídos para borrar'); return 0; }
+  if (!confirm('¿Borrar de ' + (cual === 'todas' ? 'los teléfonos' : 'la cámara ' + cual) + ' ' + n + (n === 1 ? ' grabación que ya está' : ' grabaciones que ya están') + ' en la PC (' + telMegas(bytes) + ')?\n\nSólo se borran las que llegaron completas. No se puede deshacer.')) return 0;
+  for (const [slot, ids] of porSlot) telOrden(slot, { cmd: 'borrar', ids });
+  return n;
+}
+function telPantalla(cual, apagada) {
+  telOrden(cual, { cmd: 'pantalla', apagada: !!apagada });
+}
+async function telGrabarDesdeHub(iniciar) {
+  if (!grabacionDisponible()) return;
+  grabacionInicializar();
+  if (iniciar) {
+    if (!grabador.config.telefonos.activo) { grabador.config.telefonos.activo = true; if (grabadorUI) grabadorUI.refrescar(); }
+    await grabacionPorControl('iniciar');
+  } else {
+    if (grabador.grabando()) await grabacionPorControl('detener');
+    telOrden('todas', { cmd: 'detener' });   // también lo que siga grabando sin una toma de esta PC
+  }
+}
+
+/* ── 📷 CÁMARAS: la sección de los teléfonos ── */
+function hubTelRefrescar() {
+  if (typeof hubCamAbierto !== 'function' || !hubCamAbierto()) return;
+  const caja = document.getElementById('hubtel-cuerpo');
+  if (!caja) return;
+  const slots = [...new Set([...(CAM.disponibles || []).map(c => c.slot), ...TEL.estados.keys()])].sort((a, b) => a - b);
+  const tomaPc = typeof grabador !== 'undefined' && grabador && grabador.grabando();
+  const reloj = ms => { const s = Math.max(0, Math.floor(ms / 1000)), d = n => String(n).padStart(2, '0'); return d(Math.floor(s / 3600)) + ':' + d(Math.floor(s / 60) % 60) + ':' + d(s % 60); };
+  const filas = slots.map(slot => {
+    const e = TEL.estados.get(slot) || null;
+    const conectado = (CAM.disponibles || []).some(c => c.slot === slot);
+    const pista = CAM.porSlot.get(slot);
+    const archivos = e && e.archivos ? e.archivos : [];
+    const pend = archivos.filter(a => !a.enPC && a.estado !== 'grabando');
+    const enPC = archivos.filter(a => a.enPC);
+    let grab = '—', mal = false;
+    if (!e) grab = conectado ? 'esta página de /camara es de antes: recárgala en el teléfono' : '—';
+    else {
+      if (e.grabando === 'grabando') grab = '● ' + reloj(telReloj() - (e.inicio || telReloj())) + ' · ' + telMegas(e.bytes || 0);
+      else if (e.grabando === 'preparando') grab = '⏳ preparando…';
+      else if (e.grabando === 'cerrando') grab = 'guardando…';
+      if (!conectado) { grab = '⚠ sin conexión' + (e.grabando === 'grabando' ? ' (sigue grabando)' : ''); mal = true; }
+      else if (e.oculta && e.grabando !== 'libre') { grab += ' · ⚠ bloqueado o en otra app'; mal = true; }
+      else if (e.grabando === 'grabando' && !e.despierta) grab += ' · ⚠ puede bloquearse solo';
+      if (e.error) { grab += ' · ⚠ ' + e.error; mal = true; }
+    }
+    const memoria = e && e.libre !== null && e.libre !== undefined ? telMegas(e.libre) + ' libres' : '—';
+    const pocaMem = e && e.libre !== null && e.libre !== undefined && e.libre < 2 * 1073741824;
+    const bat = e && e.bateria ? e.bateria.nivel + ' %' + (e.bateria.cargando ? ' ⚡' : '') : '—';
+    let arch = '—';
+    if (e) {
+      if (e.subiendo) arch = '⬆ subiendo ' + Math.floor(100 * e.subiendo.bytes / Math.max(1, e.subiendo.total)) + ' %' + (e.enCola ? ' · ' + e.enCola + ' en cola' : '');
+      else if (pend.length) arch = pend.length + ' sin traer · ' + telMegas(pend.reduce((k, a) => k + a.bytes, 0));
+      else if (enPC.length) arch = '✓ todo en la PC (' + enPC.length + ')';
+      else arch = 'ninguno';
+    }
+    const pant = e && e.pantalla === 'apagada';
+    return '<tr><td><b>' + slot + '</b></td><td>' + (pista !== undefined ? 'T' + (pista + 1) : '—') + '</td>' +
+      '<td><input type="checkbox" data-tel-graba="' + slot + '"' + (TEL.excluidos.has(slot) ? '' : ' checked') + ' title="Este teléfono graba su original"></td>' +
+      '<td' + (mal ? ' class="mal"' : '') + '>' + escHtml(grab) + '</td>' +
+      '<td' + (pocaMem ? ' class="mal"' : '') + '>' + memoria + '</td><td>' + bat + '</td>' +
+      '<td>' + (e && conectado ? '<button class="hbtn" data-tel-pant="' + slot + '" data-v="' + (pant ? '0' : '1') + '" title="' + (pant ? 'Encender la pantalla' : 'Pantalla en negro (la cámara sigue)') + '">' + (pant ? '☀' : '🌙') + '</button>' : '—') + '</td>' +
+      '<td>' + escHtml(arch) + '</td>' +
+      '<td>' + (e && conectado && pend.length && !e.subiendo ? '<button class="hbtn" data-tel-traer="' + slot + '">⬇ TRAER</button> ' : '') +
+        (e && conectado && enPC.length ? '<button class="hbtn" data-tel-borrar="' + slot + '" title="Borrar del teléfono lo que ya llegó completo a la PC">🗑</button>' : '') + '</td></tr>';
+  });
+  const grabando = [...TEL.estados.values()].some(e => e.grabando === 'grabando');
+  const html = '<div class="tel-barra">' +
+      (tomaPc || grabando ? '<button class="hbtn" data-tel-acc="detener">⏹ DETENER</button>' : '<button class="hbtn" data-tel-acc="grabar" title="Empieza la toma: los teléfonos marcados graban su original (y esta PC, lo que esté elegido en ⏺ GRABAR)">⏺ GRABAR</button>') +
+      '<button class="hbtn" data-tel-acc="negro">🌙 APAGAR PANTALLAS</button><button class="hbtn" data-tel-acc="luz">☀ ENCENDER</button>' +
+      '<button class="hbtn" data-tel-acc="claqueta" title="Un pitido por los parlantes de esta PC: queda en el audio de todos los teléfonos para alinearlos al editar">🔔 CLAQUETA</button>' +
+      '<button class="hbtn" data-tel-acc="traer">⬇ TRAER TODO</button><button class="hbtn" data-tel-acc="borrar">🗑 BORRAR LO YA TRAÍDO</button>' +
+      '<span class="tel-reloj">' + (TEL.reloj.offset === null ? '⚠ reloj sin sincronizar' : 'reloj común ✓') + '</span></div>' +
+    (filas.length
+      ? '<table><tr><th>📱</th><th>PISTA</th><th>GRABA</th><th>GRABACIÓN</th><th>MEMORIA</th><th>BATERÍA</th><th>PANTALLA</th><th>ARCHIVOS</th><th></th></tr>' + filas.join('') + '</table>'
+      : '<div class="vacio">No hay teléfonos-cámara conectados.</div>');
+  if (html === HUBCAM.firmaTel) return;
+  HUBCAM.firmaTel = html;
+  caja.innerHTML = html;
+}
+function hubTelClic(ev) {
+  const b = ev.target.closest('button');
+  if (!b) return;
+  if (b.dataset.telAcc) {
+    const a = b.dataset.telAcc;
+    if (a === 'grabar') telGrabarDesdeHub(true);
+    else if (a === 'detener') telGrabarDesdeHub(false);
+    else if (a === 'negro') telPantalla('todas', true);
+    else if (a === 'luz') telPantalla('todas', false);
+    else if (a === 'claqueta') telClaqueta();
+    else if (a === 'traer') telTraer('todas');
+    else if (a === 'borrar') telBorrarTraidos('todas');
+  }
+  else if (b.dataset.telPant) telPantalla(+b.dataset.telPant, b.dataset.v === '1');
+  else if (b.dataset.telTraer) telTraer(+b.dataset.telTraer);
+  else if (b.dataset.telBorrar) telBorrarTraidos(+b.dataset.telBorrar);
+  HUBCAM.firmaTel = '';
+  setTimeout(hubTelRefrescar, 80);
+}
+function hubTelCambio(ev) {
+  const c = ev.target.closest('input[data-tel-graba]');
+  if (!c) return;
+  const slot = +c.dataset.telGraba;
+  if (c.checked) TEL.excluidos.delete(slot); else TEL.excluidos.add(slot);
+  try { localStorage.setItem('midivj-tel-excluidos', JSON.stringify([...TEL.excluidos])); } catch (_) {}
+  telAlCambiar();
+}
+
+
+/* ═══════════════════════════════════════════════════════
+   IMAGEN DE LA CÁMARA: exposición, foco, balance, zoom, linterna
+   Lo mismo para una cámara de teléfono (se le pide con 'camara-imagen' y
+   el teléfono responde con su estado) que para una cámara USB/capturadora
+   de esta PC (applyConstraints directo, como CONFIG. DE CÁMARA). Sólo
+   aparece lo que la cámara declara poder ajustar. Lo usan la pista, el hub
+   📷 CÁMARAS, el visor (CUADRÍCULA) y los controles MIDI (P1 · Cámara: …).
+   FIJAR deja exposición, foco y balance en manual con los valores de ahora
+   (dejan de «buscar» solos); AUTO los devuelve a automático.
+═══════════════════════════════════════════════════════ */
+const IMG_CLAVES = ['exposureMode', 'exposureCompensation', 'exposureTime', 'iso', 'focusMode', 'focusDistance', 'whiteBalanceMode', 'colorTemperature', 'zoom', 'torch'];
+const IMG_LBL = { exposureMode: 'Exposición', exposureCompensation: 'Comp. exposición', exposureTime: 'Tiempo de exposición', iso: 'ISO',
+  focusMode: 'Foco', focusDistance: 'Distancia de foco', whiteBalanceMode: 'Balance de blancos', colorTemperature: 'Temperatura', zoom: 'Zoom', torch: 'Linterna' };
+const IMG_CORTO = { exposureMode: 'EXP', exposureCompensation: '±', exposureTime: 'T', iso: 'ISO', focusMode: 'FOCO', focusDistance: '↔', whiteBalanceMode: 'BAL', colorTemperature: 'K', zoom: 'ZOOM', torch: '🔦' };
+const IMG_MODO = { manual: 'manual', continuous: 'auto', 'single-shot': 'una vez', none: '—' };
+const IMG_MODO_DE = { exposureTime: ['exposureMode', 'manual'], iso: ['exposureMode', 'manual'], focusDistance: ['focusMode', 'manual'], colorTemperature: ['whiteBalanceMode', 'manual'] };
+const IMG_PARAM = [['exposureCompensation', 'Cámara: exposición'], ['exposureTime', 'Cámara: tiempo de exposición'], ['focusDistance', 'Cámara: foco'], ['colorTemperature', 'Cámara: temperatura'], ['zoom', 'Cámara: zoom']];
+const IMG_ENVIO = new Map();   // slot → { aj, extra, timer }: los ajustes de un fader salen juntos, cada ~60 ms
+let imgArrastre = false;
+
+function imgDesdePista(mt) {
+  let caps = {}, st = {};
+  try { caps = (mt.getCapabilities && mt.getCapabilities()) || {}; } catch (_) {}
+  try { st = mt.getSettings() || {}; } catch (_) {}
+  const c = {}, v = {};
+  for (const k of IMG_CLAVES) {
+    const x = caps[k];
+    if (Array.isArray(x)) { if (x.length > 1) c[k] = x.slice(); }
+    else if (x && typeof x === 'object' && Number.isFinite(x.min) && x.max > x.min) c[k] = { min: x.min, max: x.max, step: x.step || 0 };
+    if (k in c && st[k] !== undefined) v[k] = st[k];
+  }
+  return { caps: c, valores: v, ajustes: st };
+}
+/* Lo que se ajusta de la imagen de la cámara de la pista t, o null */
+function camImagen(t) {
+  if (!t || !t.loaded) return null;
+  if (t.sourceType === 'phone') {
+    const ses = CAM.sesiones.get(t.i);
+    const im = ses && ses.tel && ses.tel.imagen;
+    if (!im || !im.caps) return null;
+    return {
+      tipo: 'telefono', caps: im.caps, valores: im.valores || (im.valores = {}),
+      aplicar(aj, extra) {
+        const limpio = imgLimpiar(aj, im.caps);
+        Object.assign(im.valores, limpio);   // se ve enseguida; el teléfono confirma con su estado
+        imgEnviar(ses.slot, limpio, extra);
+      },
+    };
+  }
+  if (t.sourceType === 'capture') {
+    const mt = camTrackOf(t);
+    if (!mt) return null;
+    const im = imgDesdePista(mt);
+    return {
+      tipo: 'captura', caps: im.caps, valores: im.valores,
+      aplicar(aj, extra) {
+        let todo = { ...(aj || {}) };
+        if (extra && extra.auto) for (const mk of ['exposureMode', 'focusMode', 'whiteBalanceMode']) if ((im.caps[mk] || []).includes('continuous')) todo[mk] = 'continuous';
+        if (extra && extra.fijar) {
+          for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) if ((im.caps[mk] || []).includes(mv)) { todo[mk] = mv; if (im.caps[k] && im.ajustes[k] !== undefined) todo[k] = im.ajustes[k]; }
+        }
+        todo = imgLimpiar(todo, im.caps);
+        /* los modos primero: un valor manual necesita su modo en manual */
+        Object.keys(todo).sort((a, b) => /Mode$/.test(b) - /Mode$/.test(a)).forEach(k => camApply(t.i, k, todo[k]));
+      },
+    };
+  }
+  return null;
+}
+function imgLimpiar(aj, caps) {
+  const o = {};
+  for (const [k, val] of Object.entries(aj || {})) {
+    const c = caps[k];
+    if (!c) continue;
+    if (Array.isArray(c)) { if (c.includes(val)) o[k] = val; }
+    else { const n = +val; if (Number.isFinite(n)) o[k] = Math.max(c.min, Math.min(c.max, n)); }
+  }
+  for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) if (k in o && !(mk in o) && Array.isArray(caps[mk]) && caps[mk].includes(mv)) o[mk] = mv;
+  return o;
+}
+function imgEnviar(slot, aj, extra) {
+  const p = IMG_ENVIO.get(slot) || { aj: {}, extra: {} };
+  Object.assign(p.aj, aj || {});
+  Object.assign(p.extra, extra || {});
+  IMG_ENVIO.set(slot, p);
+  if (p.timer) return;
+  p.timer = setTimeout(() => {
+    IMG_ENVIO.delete(slot);
+    _camEnviar({ type: 'camara-imagen', slot, ajustes: p.aj, ...(p.extra.fijar ? { fijar: true } : {}), ...(p.extra.auto ? { auto: true } : {}) });
+  }, 60);
+}
+function camImgSet(idx, k, val) {
+  const im = camImagen(S.tracks[idx]);
+  if (!im) return;
+  im.aplicar({ [k]: val });
+  publicarEstadoVisorPronto();
+}
+function camImgAccion(idx, accion) {
+  const im = camImagen(S.tracks[idx]);
+  if (!im) return;
+  if (accion === 'fijar') im.aplicar({}, { fijar: true });
+  else if (accion === 'auto') im.aplicar({}, { auto: true });
+  else if (accion === 'enfocar') im.aplicar({ focusMode: 'single-shot' });
+  publicarEstadoVisorPronto();
+}
+function publicarEstadoVisorPronto() {
+  if (typeof publicarEstadoVisor !== 'function') return;
+  clearTimeout(publicarEstadoVisorPronto.t);
+  publicarEstadoVisorPronto.t = setTimeout(() => publicarEstadoVisor(false), 120);
+}
+const imgFmt = (k, v) => (v === undefined || v === null ? '—' : k === 'colorTemperature' ? Math.round(v) + 'K'
+  : k === 'zoom' ? (+v).toFixed(1) + '×' : Number.isInteger(+v) ? String(+v) : (+v).toFixed(2));
+/* Los controles de la imagen de la pista idx: filas (panel de la pista) o en línea (hub) */
+function imgControlesHTML(idx, im, enLinea) {
+  if (!im || !Object.keys(im.caps).length) {
+    return enLinea ? '<span class="vacio-img">esta cámara no deja ajustar la imagen desde el navegador</span>'
+      : '<div class="ep-row"><span class="ep-note">Esta cámara no deja ajustar exposición ni foco desde el navegador (pasa con iPhone y con muchos teléfonos): usá el PROCESADOR DE VIDEO.</span></div>';
+  }
+  const partes = [];
+  for (const k of IMG_CLAVES) {
+    const c = im.caps[k];
+    if (!c) continue;
+    const v = im.valores[k];
+    const atr = `data-img-pista="${idx}" data-img-clave="${k}" title="${IMG_LBL[k]}"`;
+    let ctl;
+    if (k === 'torch') ctl = `<label style="display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" ${atr}${v ? ' checked' : ''}>${enLinea ? '' : (v ? 'encendida' : 'apagada')}</label>`;
+    else if (Array.isArray(c)) ctl = `<select class="epsel" ${atr}>${c.map(m => `<option value="${m}"${m === v ? ' selected' : ''}>${IMG_MODO[m] || m}</option>`).join('')}</select>`;
+    else {
+      const paso = c.step || (c.max - c.min) / 100;
+      ctl = `<input type="range" class="${enLinea ? 'img-sl' : 'epsl'}" min="${c.min}" max="${c.max}" step="${paso}" value="${v !== undefined ? v : (c.min + c.max) / 2}" ${atr}><span class="ep-val" data-img-val="${idx}-${k}">${imgFmt(k, v)}</span>`;
+    }
+    const badge = IMG_PARAM.some(p => p[0] === k) ? badgeParamHTML(`t${idx}.cam.${k}`) : '';
+    partes.push(enLinea
+      ? `<span class="img-ctl"><b>${IMG_CORTO[k]}</b>${ctl}</span>`
+      : `<div class="ep-row" data-img-fila="${k}"><span class="ep-lbl wide">${IMG_LBL[k]}</span>${ctl}${badge}</div>`);
+  }
+  const enfocar = (im.caps.focusMode || []).includes('single-shot');
+  const botones = `${enfocar ? `<button class="hbtn" data-img-accion="enfocar" data-img-pista="${idx}" title="Enfoca una vez y se queda ahí">◎ ENFOCAR</button>` : ''}` +
+    `<button class="hbtn" data-img-accion="fijar" data-img-pista="${idx}" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos">🔒 FIJAR</button>` +
+    `<button class="hbtn" data-img-accion="auto" data-img-pista="${idx}" title="Exposición, foco y balance automáticos">↺ AUTO</button>`;
+  return enLinea ? partes.join('') + `<span class="img-ctl">${botones}</span>`
+    : partes.join('') + `<div class="ep-row" style="gap:6px;">${botones.replace(/class="hbtn"/g, 'class="hbtn" style="font-size:8px;padding:2px 7px;"')}</div>`;
+}
+/* Un control movido en cualquier lado (pista o hub) */
+document.addEventListener('input', ev => {
+  const el = ev.target.closest && ev.target.closest('input[type=range][data-img-clave]');
+  if (!el) return;
+  const idx = +el.dataset.imgPista, k = el.dataset.imgClave;
+  document.querySelectorAll(`[data-img-val="${idx}-${k}"]`).forEach(s => { s.textContent = imgFmt(k, +el.value); });
+  camImgSet(idx, k, +el.value);
+});
+document.addEventListener('change', ev => {
+  const el = ev.target.closest && ev.target.closest('select[data-img-clave], input[type=checkbox][data-img-clave]');
+  if (!el) return;
+  camImgSet(+el.dataset.imgPista, el.dataset.imgClave, el.type === 'checkbox' ? el.checked : el.value);
+  setTimeout(imgRepintar, 150);
+});
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('button[data-img-accion]');
+  if (!b) return;
+  if (b.dataset.imgPista === 'todas') hubCamFilas().forEach(f => camImgAccion(f.idx, b.dataset.imgAccion));
+  else camImgAccion(+b.dataset.imgPista, b.dataset.imgAccion);
+});
+/* Mientras se arrastra un control no se redibuja (se perdería el arrastre) */
+document.addEventListener('pointerdown', ev => { if (ev.target.closest && ev.target.closest('input[type=range][data-img-clave]')) imgArrastre = true; }, true);
+const imgSoltar = () => { if (imgArrastre) { imgArrastre = false; setTimeout(imgRepintar, 300); } };
+addEventListener('pointerup', imgSoltar, true);
+addEventListener('pointercancel', imgSoltar, true);
+function imgRepintar() {
+  if (imgArrastre) return;
+  const caja = document.getElementById('camimg');
+  if (caja && S.tracks[S.ati]) caja.innerHTML = imgControlesHTML(S.ati, camImagen(S.tracks[S.ati]), false);
+  if (typeof hubImgRefrescar === 'function') { HUBCAM.firmaImg = ''; hubImgRefrescar(); }
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -10774,6 +11330,7 @@ function estadoVisor() {
       fuente: t.loaded ? String(t.loadedName || '').slice(0, 60) : '',
       on: salida.pistas[i].on, opacidad: salida.pistas[i].opacidad, clip: salida.pistas[i].clip, fijo: salida.pistas[i].fijo,
       capa: t.excl === 'capa',
+      camara: (() => { const im = camImagen(t); return im ? { tipo: im.tipo, caps: im.caps, valores: im.valores } : null; })(),
       color: { on: !!t.vproc.on, ...Object.fromEntries(VPROC_PARAMS.map(p => [p.key, t.vproc[p.key] ?? p.def])) },
       forma: Object.fromEntries(efxParams({ type: 'xform' }).map(p => [p.key, t.xform[p.key] ?? p.def])),
       vivo: !!t.loaded && t.sourceType !== 'file', interruptor: t.sourceType !== 'file' && t.clips.some(c => c.srcLive),
@@ -10989,6 +11546,15 @@ function visorOrden(msg) {
       if (typeof msg.mute === 'boolean') k.mute = msg.mute;
       if (typeof msg.rec === 'boolean' && canal !== 'master') k.rec = msg.rec;
       mezcla.fijar(canal, k);
+      break;
+    }
+    /* exposición, foco, balance, zoom de la cámara de la pista */
+    case 'camara-imagen': {
+      if (!enRango) return;
+      const im = camImagen(S.tracks[i]);
+      if (!im) return;
+      im.aplicar(msg.ajustes && typeof msg.ajustes === 'object' ? msg.ajustes : {}, { fijar: msg.fijar === true, auto: msg.auto === true });
+      setTimeout(imgRepintar, 150);
       break;
     }
     case 'pista-color': {

@@ -133,6 +133,43 @@ body.limpio #volver-ver{display:block;}
 #bloqueo h2{font-family:var(--mono);color:var(--danger);font-size:15px;margin:0;}
 #bloqueo p{font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.6;margin:0;max-width:34ch;}
 #bloqueo .slots{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+
+/* ── Grabación en el teléfono ── */
+#rec-lbl{display:none;color:var(--danger);font-weight:700;white-space:nowrap;}
+#rec-lbl.vis{display:inline;}
+#rec-lbl.vis::before{content:'● ';animation:parpadeo 1s infinite;}
+#btn-grab .num{color:var(--warn);margin-left:3px;}
+#btn-rec{
+  background:transparent;color:var(--danger);border:2px solid var(--danger);border-radius:10px;
+  padding:11px 22px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;
+}
+#btn-rec.on{background:var(--danger);color:#fff;}
+#btn-rec:disabled{opacity:.4;}
+#aviso-grab{font-family:var(--mono);font-size:10px;color:var(--warn);text-align:center;max-width:36ch;line-height:1.5;display:none;text-shadow:0 1px 3px #000;}
+#aviso-grab.vis{display:block;}
+/* Pantalla «apagada»: todo negro (en pantallas OLED los píxeles negros no gastan); la cámara sigue */
+#negro{position:fixed;inset:0;z-index:300;background:#000;display:none;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;padding-bottom:calc(30px + var(--safe-b));}
+#negro.vis{display:flex;}
+#negro-rec{font-family:var(--mono);font-size:11px;color:#5a0d1c;}
+#negro-ayuda{font-family:var(--mono);font-size:9px;color:#1c1f26;}
+/* 🎞 Grabaciones guardadas en el teléfono */
+#grabs{
+  position:fixed;left:0;right:0;bottom:0;z-index:61;max-height:82vh;overflow-y:auto;
+  background:rgba(10,12,16,.97);border-top:1px solid var(--border2);
+  padding:12px 14px calc(14px + var(--safe-b));display:none;flex-direction:column;gap:9px;
+}
+#grabs.vis{display:flex;}
+#grabs .cab{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent);}
+#grabs .cab span{flex:1;}
+#grabs .nota{font-family:var(--mono);font-size:10px;color:var(--text3);line-height:1.5;}
+#grabs-libre{font-family:var(--mono);font-size:11px;color:var(--text2);}
+.garch{border:1px solid var(--border2);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;font-family:var(--mono);font-size:11px;color:var(--text2);}
+.garch b{color:var(--text);font-weight:700;}
+.garch .fila{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.garch .ok{color:var(--accent);}
+.garch .pend{color:var(--warn);}
+.garch button{background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:7px;padding:8px 11px;font-family:var(--mono);font-size:11px;font-weight:700;}
+.garch button.peligro{color:var(--danger);border-color:var(--danger);}
 #bloqueo .slots button{
   background:var(--bg3);border:1px solid var(--border2);color:var(--text);
   border-radius:8px;padding:12px 18px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;
@@ -145,8 +182,11 @@ body.limpio #volver-ver{display:block;}
   <span id="dot"></span>
   <span id="estado">conectando…</span>
   <span id="slot-lbl"></span>
+  <span id="rec-lbl"></span>
+  <button class="tbtn" id="btn-grab" title="Grabaciones guardadas en este teléfono">🎞<span class="num" id="grab-num"></span></button>
   <button class="tbtn" id="btn-cfg" title="Resolución, FPS, formato, calidad y lente de la toma">⚙</button>
   <button class="tbtn" id="btn-ajuste" title="Ver la toma completa (como llega a MIDIVJ) o llenar la pantalla">⤢ LLENAR</button>
+  <button class="tbtn" id="btn-pantalla" title="Pantalla en negro para ahorrar batería (la cámara sigue). Toca dos veces para volver">🌙</button>
   <button class="tbtn" id="btn-fs" title="Pantalla completa">⛶</button>
 </div>
 
@@ -158,6 +198,8 @@ body.limpio #volver-ver{display:block;}
   <div id="panel-inf">
     <div id="banner">Conectando con MIDIVJ…</div>
     <div id="info-toma"></div>
+    <div id="aviso-grab"></div>
+    <button id="btn-rec">⏺ GRABAR AQUÍ</button>
     <button id="btn-detener">DETENER</button>
     <div id="ayuda-toque">toca la imagen para ocultar los controles</div>
   </div>
@@ -173,9 +215,19 @@ body.limpio #volver-ver{display:block;}
   <div class="fila"><label for="cfg-lente">LENTE</label><select id="cfg-lente"></select></div>
   <div class="fila"><label for="cfg-audio">AUDIO</label><select id="cfg-audio"></select></div>
   <div class="fila"><label for="cfg-prioridad">PRIORIDAD</label><select id="cfg-prioridad"></select></div>
+  <div class="fila"><label>IMAGEN</label><button class="tbtn" id="img-fijar" style="flex:1;padding:9px 6px;" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos">🔒 FIJAR EXPOSICIÓN Y FOCO</button><button class="tbtn" id="img-auto" style="padding:9px 10px;" title="Que vuelvan a ajustarse solos">AUTO</button></div>
   <div id="cfg-envia"></div>
   <div class="nota">También se cambia desde MIDIVJ (CONFIG. DE CÁMARA de la pista). FORMATO recorta el centro de la toma: lo que ves aquí es lo que llega.</div>
 </div>
+
+<div id="grabs">
+  <div class="cab"><span>🎞 GRABACIONES EN ESTE TELÉFONO</span><button class="tbtn" id="grabs-cerrar">✕</button></div>
+  <div id="grabs-libre"></div>
+  <div id="grabs-lista"></div>
+  <div class="nota">Se guardan en la memoria del navegador. MIDIVJ las pide y las pasa a la PC; 💾 GUARDAR copia una a Fotos o Archivos del teléfono, fuera del navegador (un respaldo que no depende de MIDIVJ). Borrar los datos del navegador también las borra.</div>
+</div>
+
+<div id="negro"><div id="negro-rec"></div><div id="negro-ayuda">toca dos veces para encender la pantalla</div></div>
 
 <div id="toast"></div>
 
@@ -248,6 +300,544 @@ function _log(msg, extra) {
   const linea = '[cámara-tel] ' + msg;
   if (extra !== undefined) console.log(linea, extra); else console.log(linea);
 }
+
+/* ═══════════════════════════════════════════════════════
+   GRABACIÓN EN EL TELÉFONO
+
+   Además de enviar la cámara a MIDIVJ por Wi-Fi (una referencia en vivo),
+   el teléfono graba en su propia memoria el ORIGINAL: el video de su cámara
+   y el audio de su micrófono en un mismo archivo, sin pasar por la red. Si
+   se cae la Wi-Fi o la computadora, la grabación sigue aquí; al final
+   MIDIVJ pide los archivos y el teléfono los sube a la carpeta de la toma.
+
+   - Reloj común: el teléfono le pregunta la hora al relay (`hora?`) y
+     calcula la diferencia con la suya; MIDIVJ manda «grabar a tal hora» y
+     todos los teléfonos empiezan juntos. La hora real de inicio de cada
+     archivo queda anotada para alinearlos al editar.
+   - Lo grabado va a la memoria del navegador (IndexedDB) segundo a segundo:
+     si la página se cierra, lo grabado hasta ahí queda.
+   - La pantalla puede ponerse en negro (desde aquí o desde MIDIVJ) para
+     ahorrar batería; la cámara sigue grabando. Bloquear el teléfono o
+     cambiar de app SÍ corta la cámara: el navegador no deja grabar así.
+═══════════════════════════════════════════════════════ */
+const dormir = ms => new Promise(r => setTimeout(r, ms));
+const ahoraLocal = () => (performance.timeOrigin ? performance.timeOrigin + performance.now() : Date.now());
+
+/* ── Reloj común (el del relay) ── */
+const RELOJ = { offset: null, muestras: [] };
+const relojAhora = () => ahoraLocal() + (RELOJ.offset || 0);
+function sincronizarReloj() {
+  for (let i = 0; i < 6; i++) setTimeout(() => enviar({ type: 'hora?', t0: ahoraLocal() }), i * 120);
+}
+function recibirHora(msg) {
+  const t1 = ahoraLocal(), t0 = +msg.t0, rtt = t1 - t0;
+  if (!(rtt >= 0 && rtt < 3000) || !Number.isFinite(+msg.tr)) return;
+  RELOJ.muestras.push({ rtt, off: +msg.tr - (t0 + t1) / 2, t: t1 });
+  RELOJ.muestras = RELOJ.muestras.filter(m => t1 - m.t < 120000).slice(-24);
+  /* la de menor ida y vuelta es la más fiel */
+  RELOJ.offset = RELOJ.muestras.reduce((a, b) => (b.rtt < a.rtt ? b : a)).off;
+}
+setInterval(() => { if (C.ws && C.ws.readyState === 1) sincronizarReloj(); }, 30000);
+
+/* ── Memoria del navegador (IndexedDB): archivos y sus trozos de 1 s ── */
+const BD = (() => {
+  let db = null;
+  const abrir = () => (db ? Promise.resolve(db) : new Promise((res, rej) => {
+    const r = indexedDB.open('midivj-camara', 1);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      if (!d.objectStoreNames.contains('archivos')) d.createObjectStore('archivos', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('trozos')) d.createObjectStore('trozos', { keyPath: ['id', 'seq'] });
+    };
+    r.onsuccess = () => { db = r.result; res(db); };
+    r.onerror = () => rej(r.error);
+  }));
+  async function tx(almacenes, modo, fn) {
+    const d = await abrir();
+    return new Promise((res, rej) => {
+      const t = d.transaction(almacenes, modo);
+      let pedido = null;
+      t.oncomplete = () => res(pedido ? pedido.result : undefined);
+      t.onerror = () => rej(t.error);
+      t.onabort = () => rej(t.error || new Error('la memoria del navegador rechazó la escritura'));
+      pedido = fn(t) || null;
+    });
+  }
+  const rango = id => IDBKeyRange.bound([id, 0], [id, Number.MAX_SAFE_INTEGER]);
+  return {
+    guardarArchivo: m => tx(['archivos'], 'readwrite', t => t.objectStore('archivos').put(m)),
+    archivo: id => tx(['archivos'], 'readonly', t => t.objectStore('archivos').get(id)),
+    archivos: () => tx(['archivos'], 'readonly', t => t.objectStore('archivos').getAll()),
+    guardarTrozo: (id, seq, blob, t) => tx(['trozos'], 'readwrite', x => x.objectStore('trozos').put({ id, seq, blob, t })),
+    trozos: id => tx(['trozos'], 'readonly', t => t.objectStore('trozos').getAll(rango(id))),
+    borrar: id => tx(['archivos', 'trozos'], 'readwrite', t => { t.objectStore('archivos').delete(id); t.objectStore('trozos').delete(rango(id)); }),
+  };
+})();
+
+/* ── Grabador ── */
+const CALIDAD_GRAB = { normal: 0.1, alta: 0.2, maxima: 0.35 };   // bits por píxel y cuadro (1080p30: ~6 / 12 / 22 Mbps)
+const MIMES_GRAB = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4',
+  'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+function mimeGrab(conAudio) {
+  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+  const lista = conAudio ? MIMES_GRAB : MIMES_GRAB.map(m => m.replace(/,(mp4a\.40\.2|opus)$/, ''));
+  return [...new Set(lista)].find(m => { try { return MediaRecorder.isTypeSupported(m); } catch (_) { return false; } }) || '';
+}
+const GRAB = {
+  estado: 'libre',        // libre | preparando | grabando | cerrando
+  rec: null, meta: null, seq: 0, cola: Promise.resolve(),
+  toma: null, opciones: {}, error: null, partiendo: false,
+};
+const camaraViva = () => !!(C.raw && C.raw.getVideoTracks().some(t => t.readyState === 'live'));
+/* Una sola apertura de la cámara aunque la pidan a la vez la transmisión y la grabación */
+function obtenerCamara() {
+  if (camaraViva()) return Promise.resolve(C.raw);
+  if (!C.abriendo) C.abriendo = abrirCamara(CFG).finally(() => { C.abriendo = null; });
+  return C.abriendo;
+}
+async function asegurarCamara() {
+  const raw = await obtenerCamara();
+  if (C.raw !== raw) {
+    C.raw = raw;
+    C.errorCfg = null;
+    vigilarCamara(raw);
+    await leerCaps(raw);
+  }
+  await actualizarSalida();
+  pintarEstado();
+}
+
+async function iniciarGrabacion(o) {
+  const op = o || {};
+  if (GRAB.estado !== 'libre') { informarTel(); return; }
+  if (!window.MediaRecorder) { GRAB.error = 'este navegador no puede grabar video'; toast('Este navegador no puede grabar video'); informarTel(); return; }
+  GRAB.estado = 'preparando';
+  GRAB.error = null;
+  GRAB.toma = typeof op.toma === 'string' ? op.toma.slice(0, 120) : null;
+  GRAB.opciones = { calidad: CALIDAD_GRAB[op.calidad] ? op.calidad : 'alta', liviana: !!op.liviana, origen: op.origen || 'midivj' };
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (_) {}
+  pintarGrab(); informarTel();
+  try { await asegurarCamara(); }
+  catch (e) {
+    GRAB.estado = 'libre';
+    GRAB.error = 'no se pudo abrir la cámara (' + (e.name === 'NotAllowedError' ? 'permiso denegado' : (e.message || e.name)) + ')';
+    toast('No se pudo grabar: ' + GRAB.error);
+    pintarGrab(); informarTel();
+    return;
+  }
+  /* Todos los teléfonos empiezan a la misma hora del reloj común */
+  const espera = Number.isFinite(+op.en) ? +op.en - relojAhora() : 0;
+  if (espera > 0) await dormir(Math.min(espera, 10000));
+  if (GRAB.estado !== 'preparando') return;   // se canceló mientras esperaba
+  arrancarRecorder(1);
+}
+
+function arrancarRecorder(parte) {
+  const v = C.stream && C.stream.getVideoTracks()[0];
+  if (!v || v.readyState !== 'live') {
+    GRAB.estado = 'libre'; GRAB.error = 'la cámara no está entregando imagen';
+    pintarGrab(); informarTel(); return;
+  }
+  const audio = CFG.audio === 'si' && C.raw ? C.raw.getAudioTracks().filter(t => t.readyState === 'live') : [];
+  const mime = mimeGrab(audio.length > 0);
+  const pv = $('previa'), aj = v.getSettings ? v.getSettings() : {};
+  const w = pv.videoWidth || aj.width || 1280, h = pv.videoHeight || aj.height || 720;
+  const fps = Math.round(aj.frameRate || CFG.fps) || 30;
+  const bps = Math.round(Math.min(40e6, Math.max(2e6, w * h * fps * (CALIDAD_GRAB[GRAB.opciones.calidad] || 0.2))));
+  const flujo = new MediaStream([v, ...audio]);
+  let rec;
+  /* Un cuadro clave por segundo: el MP4 sale por fragmentos que empiezan en uno; sin esto, lo grabado
+     llegaba a la memoria cada varios segundos y un corte (página cerrada, batería) perdía ese tramo */
+  try { rec = new MediaRecorder(flujo, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: bps, videoKeyFrameIntervalDuration: 1000, ...(audio.length ? { audioBitsPerSecond: 160000 } : {}) }); }
+  catch (e) {
+    try { rec = new MediaRecorder(flujo); }
+    catch (e2) { GRAB.estado = 'libre'; GRAB.error = 'el navegador no pudo grabar: ' + (e2.message || e2.name); pintarGrab(); informarTel(); return; }
+  }
+  const tipo = rec.mimeType || mime || 'video/mp4';
+  const meta = {
+    id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    toma: GRAB.toma, parte, slot: C.slot || null,
+    nombre: String(C.slot || 'telefono') + (parte > 1 ? ' parte ' + parte : ''),
+    mime: tipo, ext: /webm/i.test(tipo) ? 'webm' : 'mp4',
+    ancho: w, alto: h, fps, audio: audio.length > 0, kbps: Math.round(bps / 1000),
+    inicioReloj: null, finReloj: null, creado: relojAhora(), bytes: 0, trozos: 0,
+    subido: 0, enPC: false, destino: null, destinoToma: null, estado: 'grabando', origen: GRAB.opciones.origen,
+  };
+  GRAB.rec = rec; GRAB.meta = meta; GRAB.seq = 0;
+  rec.onstart = () => {
+    meta.inicioReloj = relojAhora();
+    GRAB.estado = 'grabando';
+    GRAB.cola = GRAB.cola.then(() => BD.guardarArchivo(meta)).catch(falloGuardar);
+    aplicarEnvio();
+    pintarGrab(); informarTel();
+    _log('grabando en el teléfono: ' + w + '×' + h + ' · ' + fps + ' fps · ' + (bps / 1e6).toFixed(1) + ' Mbps · ' + tipo);
+  };
+  rec.ondataavailable = ev => {
+    if (!ev.data || !ev.data.size) return;
+    const seq = GRAB.seq++, datos = ev.data, t = relojAhora();
+    meta.bytes += datos.size;
+    meta.trozos = GRAB.seq;
+    GRAB.cola = GRAB.cola
+      .then(() => BD.guardarTrozo(meta.id, seq, datos, t))
+      .then(() => (seq % 5 === 0 ? BD.guardarArchivo(meta) : null))
+      .catch(falloGuardar);
+  };
+  rec.onerror = ev => {
+    GRAB.error = 'el grabador se detuvo: ' + ((ev && ev.error && ev.error.message) || 'error');
+    detenerGrabacion({ cortado: true });
+  };
+  rec.start(1000);
+}
+function falloGuardar(e) {
+  if (GRAB.error && /memoria/.test(GRAB.error)) return;
+  const lleno = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+  GRAB.error = lleno ? 'la memoria del teléfono se llenó: la grabación se detuvo' : 'no se pudo guardar en la memoria del teléfono (' + ((e && (e.message || e.name)) || 'error') + ')';
+  toast('⚠ ' + GRAB.error);
+  _log('⚠ ' + GRAB.error, e);
+  if (GRAB.estado === 'grabando') detenerGrabacion({ cortado: true });
+}
+
+async function detenerGrabacion(o) {
+  const op = o || {};
+  if (GRAB.estado === 'preparando') {
+    GRAB.estado = 'libre'; GRAB.toma = null;
+    if (C.estado === 'esperando') soltarCamara();
+    pintarGrab(); informarTel();
+    return;
+  }
+  if (GRAB.estado !== 'grabando') return;
+  GRAB.estado = 'cerrando';
+  const rec = GRAB.rec, meta = GRAB.meta;
+  pintarGrab(); informarTel();
+  await new Promise(res => {
+    if (!rec || rec.state === 'inactive') { res(); return; }
+    rec.addEventListener('stop', () => res(), { once: true });
+    try { rec.stop(); } catch (_) { res(); }
+    setTimeout(res, 4000);
+  });
+  meta.finReloj = relojAhora();
+  meta.estado = op.cortado ? 'cortado' : 'completo';
+  await GRAB.cola.catch(() => {});
+  await BD.guardarArchivo(meta).catch(falloGuardar);
+  GRAB.rec = null; GRAB.meta = null;
+  _log('grabación guardada en el teléfono: ' + (meta.bytes / 1048576).toFixed(1) + ' MB' + (op.cortado ? ' (cortada)' : ''));
+  if (op.siguiente && camaraViva()) {
+    /* La imagen cambió de tamaño (el teléfono giró): sigue en otra parte de la misma toma */
+    GRAB.estado = 'preparando';
+    arrancarRecorder(meta.parte + 1);
+    return;
+  }
+  GRAB.estado = 'libre';
+  GRAB.toma = null;
+  aplicarEnvio();
+  if (C.estado === 'esperando') soltarCamara();
+  pintarGrab(); informarTel();
+}
+/* Cada archivo con un solo tamaño de imagen: al girar el teléfono se abre otra parte */
+$('previa').addEventListener('resize', () => {
+  const m = GRAB.meta, v = $('previa');
+  if (GRAB.estado !== 'grabando' || !m || GRAB.partiendo || !v.videoWidth) return;
+  if (v.videoWidth === m.ancho && v.videoHeight === m.alto) return;
+  GRAB.partiendo = true;
+  detenerGrabacion({ siguiente: true }).finally(() => { GRAB.partiendo = false; });
+});
+
+/* Lo que quedó «grabando» de una visita anterior (la página se cerró o el teléfono se apagó) */
+async function recuperarGrabaciones() {
+  try {
+    for (const m of await BD.archivos()) {
+      if (m.estado !== 'grabando') continue;
+      const tr = await BD.trozos(m.id);
+      m.bytes = tr.reduce((n, t) => n + t.blob.size, 0);
+      m.trozos = tr.length;
+      m.finReloj = tr.length ? tr[tr.length - 1].t : m.inicioReloj;
+      m.estado = 'cortado';
+      if (m.bytes) await BD.guardarArchivo(m); else await BD.borrar(m.id);
+    }
+  } catch (e) { _log('no se pudo revisar la memoria del navegador', e); }
+  pintarGrab(); informarTelPronto();
+}
+
+/* ── Pantalla: mantenerla encendida y «apagarla» (negro) ── */
+const PANT = { lock: null, apagada: false, ultimoToque: 0 };
+async function pedirWakeLock() {
+  if (!('wakeLock' in navigator) || PANT.lock || document.visibilityState !== 'visible') return;
+  try {
+    PANT.lock = await navigator.wakeLock.request('screen');
+    PANT.lock.addEventListener('release', () => { PANT.lock = null; informarTelPronto(); });
+    informarTelPronto();
+  } catch (e) { _log('no se pudo mantener la pantalla encendida: ' + (e.message || e.name)); }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pedirWakeLock(); informarTelPronto(); });
+document.addEventListener('pointerdown', () => { if (!PANT.lock) pedirWakeLock(); }, true);
+function ponerPantalla(apagada) {
+  PANT.apagada = !!apagada;
+  $('negro').classList.toggle('vis', PANT.apagada);
+  const v = $('previa');
+  /* Sin dibujar la vista previa también se ahorra: la cámara y lo que se envía siguen igual */
+  v.style.visibility = PANT.apagada ? 'hidden' : '';
+  if (PANT.apagada) { try { v.pause(); } catch (_) {} } else v.play().catch(() => {});
+  pintarGrab(); informarTelPronto();
+}
+$('negro').addEventListener('pointerdown', ev => {
+  ev.preventDefault();
+  const ahora = performance.now();
+  if (ahora - PANT.ultimoToque < 450) ponerPantalla(false);
+  PANT.ultimoToque = ahora;
+});
+
+/* ── Subir los archivos a la PC (lo pide MIDIVJ con un permiso por toma) ── */
+const SUBIR = { cola: [], activo: false, actual: null, error: null };
+const PEDAZO_SUBIDA = 4 * 1048576;
+async function pedirJSON(metodo, url, cuerpo) {
+  const r = await fetch(url, { method: metodo, cache: 'no-store', headers: cuerpo === undefined ? undefined : { 'Content-Type': 'application/json' }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(d.error || ('la PC respondió ' + r.status)); e.status = r.status; e.datos = d; throw e; }
+  return d;
+}
+function datosParaPC(m) {
+  return {
+    telefono: 'Cámara ' + (m.slot || C.slot || ''), dispositivo: navigator.userAgent.slice(0, 120),
+    formato: m.mime, ancho: m.ancho, alto: m.alto, fps: m.fps, audio: m.audio, parte: m.parte,
+    inicioReloj: m.inicioReloj, finReloj: m.finReloj, bytes: m.bytes, cortado: m.estado === 'cortado',
+  };
+}
+async function subirArchivo(it) {
+  const meta = await BD.archivo(it.id);
+  if (!meta || meta.estado === 'grabando') return;
+  const base = '/api/telefono/' + encodeURIComponent(it.permiso);
+  const r = await pedirJSON('POST', base + '/archivo', {
+    nombre: meta.nombre, ext: meta.ext,
+    retomar: meta.destino && meta.destinoToma === it.toma ? meta.destino : undefined,
+  });
+  meta.destino = r.archivo; meta.destinoToma = r.toma;
+  await BD.guardarArchivo(meta);
+  const trozos = (await BD.trozos(meta.id)).sort((a, b) => a.seq - b.seq);
+  const todo = new Blob(trozos.map(t => t.blob), { type: meta.mime });
+  meta.bytes = todo.size;
+  let tam = r.tam || 0, guardado = tam;
+  SUBIR.actual = { id: meta.id, bytes: tam, total: todo.size };
+  informarTelPronto();
+  const url = base + '/' + encodeURIComponent(r.archivo);
+  while (tam < todo.size) {
+    const pedazo = todo.slice(tam, Math.min(todo.size, tam + PEDAZO_SUBIDA));
+    const res = await fetch(url + '?desde=' + tam, { method: 'PUT', body: pedazo, cache: 'no-store' });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok && typeof d.tam === 'number') tam = d.tam;
+    else if (res.status === 409 && typeof d.tam === 'number' && d.tam <= todo.size) tam = d.tam;
+    else { const e = new Error(d.error || ('la PC respondió ' + res.status)); e.status = res.status; throw e; }
+    SUBIR.actual.bytes = tam;
+    meta.subido = tam;
+    if (tam - guardado > 32 * 1048576) { guardado = tam; await BD.guardarArchivo(meta); }
+    informarTelPronto();
+  }
+  if (tam !== todo.size) throw new Error('el archivo en la PC no coincide con el del teléfono');
+  await pedirJSON('POST', url + '/fin', datosParaPC(meta));
+  meta.subido = todo.size; meta.enPC = true;
+  await BD.guardarArchivo(meta);
+  _log('subido a la PC: ' + r.archivo + ' (' + (todo.size / 1048576).toFixed(1) + ' MB)');
+}
+async function procesarSubidas() {
+  if (SUBIR.activo) return;
+  SUBIR.activo = true; SUBIR.error = null;
+  pintarGrab();
+  while (SUBIR.cola.length) {
+    const it = SUBIR.cola[0];
+    try { await subirArchivo(it); SUBIR.cola.shift(); it.intentos = 0; }
+    catch (e) {
+      it.intentos = (it.intentos || 0) + 1;
+      SUBIR.error = 'no se pudo subir (' + (e.message || e) + ')';
+      _log('⚠ ' + SUBIR.error);
+      /* Permiso vencido o archivo que no es de este permiso: MIDIVJ tiene que pedirlo de nuevo */
+      if (e.status === 401 || e.status === 403 || it.intentos >= 6) { SUBIR.cola = SUBIR.cola.filter(x => x.permiso !== it.permiso); }
+      else await dormir(1500 * it.intentos);
+    }
+    SUBIR.actual = null;
+    informarTelPronto();
+  }
+  SUBIR.activo = false;
+  pintarGrab(); informarTel();
+}
+function encolarSubidas(lotes) {
+  for (const l of Array.isArray(lotes) ? lotes : []) {
+    if (!l || typeof l.permiso !== 'string') continue;
+    for (const id of Array.isArray(l.ids) ? l.ids : []) {
+      if (!SUBIR.cola.some(x => x.id === id) && !(SUBIR.actual && SUBIR.actual.id === id)) SUBIR.cola.push({ id, permiso: l.permiso, toma: l.toma || null });
+    }
+  }
+  procesarSubidas();
+}
+async function borrarArchivos(ids, soloEnPC) {
+  let n = 0;
+  for (const id of ids) {
+    const m = await BD.archivo(id);
+    if (!m || m.estado === 'grabando' || (GRAB.meta && GRAB.meta.id === id)) continue;
+    if (soloEnPC && !(m.enPC && m.subido === m.bytes)) continue;
+    await BD.borrar(id); n++;
+  }
+  return n;
+}
+
+/* ── Estado para MIDIVJ ── */
+let _telEnCurso = false, _telPronto = 0;
+async function estadoTel() {
+  const lista = await BD.archivos().catch(() => []);
+  const archivos = lista.sort((a, b) => (a.creado || 0) - (b.creado || 0)).map(m => {
+    const vivo = GRAB.meta && GRAB.meta.id === m.id ? GRAB.meta : m;
+    return {
+      id: vivo.id, toma: vivo.toma, parte: vivo.parte, bytes: vivo.bytes, subido: vivo.subido || 0, enPC: !!vivo.enPC,
+      inicio: vivo.inicioReloj, fin: vivo.finReloj, estado: vivo.estado, ancho: vivo.ancho, alto: vivo.alto, fps: vivo.fps, audio: vivo.audio,
+    };
+  });
+  let libre = null;
+  try { const e = await navigator.storage.estimate(); if (e && e.quota) libre = Math.max(0, e.quota - (e.usage || 0)); } catch (_) {}
+  let bateria = null;
+  try { if (navigator.getBattery) { const b = await navigator.getBattery(); bateria = { nivel: Math.round(b.level * 100), cargando: !!b.charging }; } } catch (_) {}
+  const m = GRAB.meta;
+  return {
+    type: 'tel-estado', version: 1,
+    grabando: GRAB.estado, toma: GRAB.toma, inicio: m ? m.inicioReloj : null, bytes: m ? m.bytes : 0,
+    calidad: GRAB.opciones.calidad || null, liviana: !!GRAB.opciones.liviana,
+    libre, bateria, pantalla: PANT.apagada ? 'apagada' : 'encendida', despierta: !!PANT.lock, oculta: document.visibilityState !== 'visible',
+    camara: camaraViva(), transmitiendo: C.estado === 'transmitiendo', puedeGrabar: !!window.MediaRecorder,
+    subiendo: SUBIR.actual ? { ...SUBIR.actual } : null, enCola: SUBIR.cola.length,
+    reloj: RELOJ.offset !== null, archivos, error: GRAB.error || SUBIR.error || null,
+  };
+}
+async function informarTel() {
+  if (_telEnCurso || !C.ws || C.ws.readyState !== 1) return;
+  _telEnCurso = true;
+  try { enviar(await estadoTel()); } catch (e) { _log('no se pudo armar el estado', e); }
+  _telEnCurso = false;
+}
+function informarTelPronto() { clearTimeout(_telPronto); _telPronto = setTimeout(informarTel, 200); }
+let _telTick = 0;
+setInterval(() => {
+  _telTick++;
+  /* Grabando o subiendo, cada 2 s; si no, cada 10 s */
+  if (GRAB.estado !== 'libre' || SUBIR.activo || _telTick % 5 === 0) informarTel();
+  if (GRAB.estado === 'grabando') pintarGrab();
+}, 2000);
+
+/* ── Órdenes de MIDIVJ ── */
+async function atenderOrden(msg) {
+  switch (msg.cmd) {
+    case 'grabar': await iniciarGrabacion({ toma: msg.toma, en: msg.en, calidad: msg.calidad, liviana: msg.liviana, origen: 'midivj' }); break;
+    /* con toma: sólo si es la que se está grabando (una grabación empezada aquí no la corta la PC) */
+    case 'detener': if (!msg.toma || msg.toma === GRAB.toma) await detenerGrabacion(); break;
+    case 'pantalla': ponerPantalla(msg.apagada === true); break;
+    case 'subir': encolarSubidas(msg.lotes); break;
+    case 'borrar': {
+      const n = await borrarArchivos(Array.isArray(msg.ids) ? msg.ids : [], true);
+      if (n) toast('MIDIVJ borró ' + n + (n === 1 ? ' grabación que ya está' : ' grabaciones que ya están') + ' en la PC');
+      pintarGrab();
+      break;
+    }
+    case 'estado': break;
+  }
+  informarTel();
+}
+
+/* ── Vista ── */
+const reloj = ms => { const s = Math.max(0, Math.floor(ms / 1000)), d = n => String(n).padStart(2, '0'); return d(Math.floor(s / 3600)) + ':' + d(Math.floor(s / 60) % 60) + ':' + d(s % 60); };
+const megas = b => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : (b / 1048576).toFixed(1) + ' MB');
+let _grabsFirma = '';
+function pintarGrab() {
+  const m = GRAB.meta, grabando = GRAB.estado === 'grabando';
+  const lbl = $('rec-lbl');
+  lbl.classList.toggle('vis', GRAB.estado !== 'libre');
+  lbl.textContent = grabando && m && m.inicioReloj ? 'REC ' + reloj(relojAhora() - m.inicioReloj) : GRAB.estado === 'preparando' ? 'REC …' : GRAB.estado === 'cerrando' ? 'GUARDANDO' : '';
+  const b = $('btn-rec');
+  b.classList.toggle('on', GRAB.estado !== 'libre');
+  b.textContent = GRAB.estado === 'libre' ? '⏺ GRABAR AQUÍ' : GRAB.estado === 'preparando' ? '… PREPARANDO' : GRAB.estado === 'cerrando' ? '… GUARDANDO' : '⏹ DETENER GRABACIÓN';
+  b.disabled = GRAB.estado === 'cerrando';
+  $('aviso-grab').classList.toggle('vis', GRAB.estado !== 'libre');
+  $('aviso-grab').textContent = 'Grabando en este teléfono' + (m ? ' · ' + megas(m.bytes) : '') + '. No lo bloquees ni cambies de app: eso corta la cámara.' +
+    (GRAB.opciones.liviana && grabando ? ' A MIDIVJ va una referencia liviana.' : '');
+  $('negro-rec').textContent = grabando && m && m.inicioReloj ? '● ' + reloj(relojAhora() - m.inicioReloj) : '';
+  if ($('grabs').classList.contains('vis')) pintarGrabaciones();
+  else BD.archivos().then(l => { const n = l.filter(x => !x.enPC && x.estado !== 'grabando').length; $('grab-num').textContent = n ? String(n) : ''; }).catch(() => {});
+  pintarEstado();
+}
+async function pintarGrabaciones() {
+  const lista = (await BD.archivos().catch(() => [])).sort((a, b) => (b.creado || 0) - (a.creado || 0));
+  let libre = '';
+  try { const e = await navigator.storage.estimate(); if (e && e.quota) libre = 'Libre para grabar: ' + megas(Math.max(0, e.quota - (e.usage || 0))) + ' · usado: ' + megas(e.usage || 0); } catch (_) {}
+  const pend = lista.filter(x => !x.enPC && x.estado !== 'grabando').length;
+  $('grab-num').textContent = pend ? String(pend) : '';
+  const firma = JSON.stringify([libre, lista.map(m => [m.id, m.bytes, m.subido, m.enPC, m.estado]), SUBIR.actual, Object.keys(LISTOS)]);
+  if (firma === _grabsFirma) return;
+  _grabsFirma = firma;
+  $('grabs-libre').textContent = libre;
+  $('grabs-lista').innerHTML = lista.length ? lista.map(m => {
+    const fecha = m.inicioReloj ? new Date(m.inicioReloj).toLocaleString() : '—';
+    const dur = m.inicioReloj && m.finReloj ? reloj(m.finReloj - m.inicioReloj) : (m.estado === 'grabando' ? 'grabando…' : '—');
+    const sube = SUBIR.actual && SUBIR.actual.id === m.id ? ' · subiendo ' + Math.floor(100 * SUBIR.actual.bytes / Math.max(1, SUBIR.actual.total)) + ' %' : '';
+    const est = m.estado === 'grabando' ? '<span class="pend">● grabando</span>' : m.enPC ? '<span class="ok">✓ en la PC</span>' : '<span class="pend">sin pasar a la PC' + sube + '</span>';
+    return '<div class="garch"><div class="fila"><b>' + fecha + '</b><span>' + dur + ' · ' + megas(m.bytes) + '</span></div>' +
+      '<div class="fila">' + est + (m.toma ? '<span>toma «' + m.toma.replace(/[<>&]/g, '') + '»</span>' : '<span>grabada aquí</span>') + (m.estado === 'cortado' ? '<span class="pend">cortada</span>' : '') + (m.parte > 1 ? '<span>parte ' + m.parte + '</span>' : '') + '</div>' +
+      (m.estado === 'grabando' ? '' : '<div class="fila"><button data-guardar="' + m.id + '">' + (LISTOS[m.id] ? '💾 GUARDAR (LISTO)' : '💾 GUARDAR EN EL TELÉFONO') + '</button>' +
+        '<button class="peligro" data-borrar="' + m.id + '">🗑 BORRAR</button></div>') + '</div>';
+  }).join('') : '<div class="nota">Todavía no hay grabaciones en este teléfono.</div>';
+}
+/* «Guardar en el teléfono»: copia el archivo a Fotos / Archivos / Descargas, fuera del navegador.
+   Compartir necesita un toque reciente: si armar el archivo tarda, se pide un segundo toque. */
+const LISTOS = {};
+async function guardarEnTelefono(id) {
+  let archivo = LISTOS[id];
+  if (!archivo) {
+    const m = await BD.archivo(id);
+    if (!m) return;
+    const tr = (await BD.trozos(id)).sort((a, b) => a.seq - b.seq);
+    const fecha = m.inicioReloj ? new Date(m.inicioReloj).toISOString().slice(0, 19).replace('T', ' ').replace(/:/g, '-') : 'grabacion';
+    archivo = new File(tr.map(t => t.blob), 'MIDIVJ camara ' + (m.slot || '') + ' ' + fecha + (m.parte > 1 ? ' parte ' + m.parte : '') + '.' + m.ext, { type: m.mime });
+    LISTOS[id] = archivo;
+  }
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      await navigator.share({ files: [archivo], title: archivo.name });
+      delete LISTOS[id];
+    } else {
+      const url = URL.createObjectURL(archivo);
+      const a = document.createElement('a');
+      a.href = url; a.download = archivo.name;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60000);
+      delete LISTOS[id];
+    }
+  } catch (e) {
+    if (e && e.name === 'NotAllowedError') toast('Listo: toca 💾 GUARDAR otra vez');
+    else if (e && e.name !== 'AbortError') toast('No se pudo guardar: ' + (e.message || e.name));
+  }
+  _grabsFirma = '';
+  pintarGrabaciones();
+}
+$('grabs-lista').addEventListener('click', async ev => {
+  const g = ev.target.closest('button[data-guardar]'), b = ev.target.closest('button[data-borrar]');
+  if (g) guardarEnTelefono(g.dataset.guardar);
+  if (b) {
+    const m = await BD.archivo(b.dataset.borrar);
+    if (!m) return;
+    const aviso = m.enPC ? '¿Borrar esta grabación del teléfono? (ya está en la PC)' : '⚠ Esta grabación NO está en la PC. ¿Borrarla del teléfono de todos modos? No se puede deshacer.';
+    if (!confirm(aviso)) return;
+    await borrarArchivos([m.id], false);
+    delete LISTOS[m.id];
+    _grabsFirma = '';
+    pintarGrabaciones(); informarTel();
+  }
+});
+$('btn-grab').onclick = ev => { ev.stopPropagation(); $('grabs').classList.toggle('vis'); _grabsFirma = ''; pintarGrabaciones(); };
+$('grabs-cerrar').onclick = () => $('grabs').classList.remove('vis');
+$('btn-rec').onclick = () => {
+  if (GRAB.estado === 'libre') iniciarGrabacion({ origen: 'telefono', calidad: 'alta' });
+  else if (GRAB.estado === 'grabando' || GRAB.estado === 'preparando') {
+    if (GRAB.opciones.origen === 'midivj' && !confirm('MIDIVJ empezó esta grabación. ¿Detenerla desde el teléfono?')) return;
+    detenerGrabacion();
+  }
+};
+$('btn-pantalla').onclick = () => ponerPantalla(true);
+recuperarGrabaciones();
+
 
 /* ── Configuración de la toma ─────────────────────────────
    RESOLUCIÓN, FPS, FORMATO, CALIDAD y LENTE. Se cambian desde este
@@ -426,15 +1016,119 @@ async function leerCaps(raw) {
   };
 }
 
+/* ── Imagen: exposición, foco, balance de blancos, zoom, linterna ──
+   Sólo lo que la cámara de este teléfono le declara al navegador
+   (getCapabilities): cambia mucho entre modelos y navegadores. MIDIVJ lo
+   ajusta con 'camara-imagen' y aquí se aplica con applyConstraints sobre
+   la cámara (no sobre el recorte). Lo elegido se guarda y se vuelve a
+   aplicar si la cámara se reabre. No cambia el tamaño de la imagen: se
+   puede ajustar mientras graba. */
+const IMG_CLAVES = ['exposureMode', 'exposureCompensation', 'exposureTime', 'iso', 'focusMode', 'focusDistance', 'whiteBalanceMode', 'colorTemperature', 'zoom', 'torch'];
+const IMG_MODO_DE = { exposureTime: ['exposureMode', 'manual'], iso: ['exposureMode', 'manual'], focusDistance: ['focusMode', 'manual'], colorTemperature: ['whiteBalanceMode', 'manual'] };
+const IMG = { pendiente: null, aplicando: false, guardado: {}, error: null };
+try { IMG.guardado = JSON.parse(localStorage.getItem('midivj-camara-imagen') || '{}') || {}; } catch (_) {}
+const pistaCamara = () => { const t = C.raw && C.raw.getVideoTracks()[0]; return t && t.readyState === 'live' ? t : null; };
+function leerImagen() {
+  const t = pistaCamara();
+  if (!t) return null;
+  let caps = {}, st = {};
+  try { caps = (t.getCapabilities && t.getCapabilities()) || {}; } catch (_) {}
+  try { st = t.getSettings() || {}; } catch (_) {}
+  const c = {}, v = {};
+  for (const k of IMG_CLAVES) {
+    const x = caps[k];
+    if (Array.isArray(x)) { if (x.length > 1) c[k] = x.slice(); }
+    else if (x && typeof x === 'object' && Number.isFinite(x.min) && x.max > x.min) c[k] = { min: x.min, max: x.max, step: x.step || 0 };
+    if (k in c && st[k] !== undefined) v[k] = st[k];
+  }
+  return { caps: c, valores: v };
+}
+/* Sólo lo que la cámara admite, dentro de su rango, y con el modo manual que haga falta */
+function limpiarAjustes(aj, caps) {
+  const o = {};
+  for (const [k, val] of Object.entries(aj || {})) {
+    const c = caps[k];
+    if (!c) continue;
+    if (Array.isArray(c)) { if (c.includes(val)) o[k] = val; }
+    else { const n = +val; if (Number.isFinite(n)) o[k] = Math.max(c.min, Math.min(c.max, n)); }
+  }
+  for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) {
+    if (k in o && !(mk in o) && Array.isArray(caps[mk]) && caps[mk].includes(mv)) o[mk] = mv;
+  }
+  return o;
+}
+function ajustarImagen(aj, guardar) {
+  const info = leerImagen();
+  if (!info) return false;
+  const limpio = limpiarAjustes(aj, info.caps);
+  if (!Object.keys(limpio).length) return false;
+  IMG.pendiente = { ...(IMG.pendiente || {}), ...limpio };
+  if (guardar !== false) {
+    const g = { ...IMG.guardado, ...limpio };
+    /* «una vez» es una acción, no un estado; y un modo que deja de ser manual suelta sus valores */
+    for (const k of Object.keys(g)) if (g[k] === 'single-shot') delete g[k];
+    for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) if (mk in limpio && limpio[mk] !== mv && !(k in limpio)) delete g[k];
+    IMG.guardado = g;
+    try { localStorage.setItem('midivj-camara-imagen', JSON.stringify(g)); } catch (_) {}
+  }
+  procesarImagen();
+  return true;
+}
+async function procesarImagen() {
+  if (IMG.aplicando) return;
+  IMG.aplicando = true;
+  /* Un fader manda muchos valores seguidos: se aplica siempre el último */
+  while (IMG.pendiente) {
+    const aj = IMG.pendiente;
+    IMG.pendiente = null;
+    const t = pistaCamara();
+    if (!t) break;
+    try { await t.applyConstraints({ advanced: [aj] }); IMG.error = null; }
+    catch (e) { IMG.error = 'la cámara no aceptó el ajuste (' + (e.message || e.name) + ')'; _log('⚠ ' + IMG.error, aj); }
+  }
+  IMG.aplicando = false;
+  informarPronto();
+  if ($('ajustes').classList.contains('vis')) pintarConfig();
+}
+/* FIJAR: deja exposición, foco y balance en manual con los valores de ahora (que no «busquen» solos) */
+function fijarImagen() {
+  const info = leerImagen(), t = pistaCamara();
+  if (!info || !t) return false;
+  let st = {};
+  try { st = t.getSettings() || {}; } catch (_) {}
+  const aj = {};
+  for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) {
+    if (Array.isArray(info.caps[mk]) && info.caps[mk].includes(mv)) { aj[mk] = mv; if (info.caps[k] && st[k] !== undefined) aj[k] = st[k]; }
+  }
+  return ajustarImagen(aj);
+}
+/* AUTO: exposición, foco y balance vuelven a ajustarse solos */
+function autoImagen() {
+  const info = leerImagen();
+  if (!info) return false;
+  const aj = {};
+  for (const mk of ['exposureMode', 'focusMode', 'whiteBalanceMode']) if (Array.isArray(info.caps[mk]) && info.caps[mk].includes('continuous')) aj[mk] = 'continuous';
+  return ajustarImagen(aj);
+}
+function reaplicarImagen() { if (Object.keys(IMG.guardado).length) ajustarImagen(IMG.guardado, false); }
+function atenderImagen(msg) {
+  if (msg.auto) autoImagen();
+  if (msg.fijar) fijarImagen();
+  if (msg.ajustes && typeof msg.ajustes === 'object') ajustarImagen(msg.ajustes);
+  if (!pistaCamara()) { IMG.error = 'la cámara está cerrada'; informarPronto(); }
+}
+
 /* El track de hardware: si el sistema corta la cámara (bloqueo de pantalla,
    otra app la toma), se avisa a MIDIVJ. */
 function vigilarCamara(raw) {
   const trackLocal = raw.getVideoTracks()[0];
   _log('cámara local abierta', trackLocal && { label: trackLocal.label, readyState: trackLocal.readyState, ajustes: trackLocal.getSettings && trackLocal.getSettings() });
   if (!trackLocal) return;
+  setTimeout(() => { if (C.raw === raw) reaplicarImagen(); }, 400);   // la exposición/foco elegidos sobreviven a reabrir la cámara
   trackLocal.onended = () => {
     if (C.raw !== raw) return;   // es la cámara anterior, soltada a propósito al cambiar de lente
     _log('⚠ el track LOCAL de la cámara terminó por sí solo (track.onended) — el sistema/navegador cortó la cámara (pantalla bloqueada, otra app la tomó, etc.)');
+    if (GRAB.estado !== 'libre') { GRAB.error = 'la cámara se cortó (¿se bloqueó el teléfono o se cambió de app?): la grabación quedó guardada hasta ahí'; detenerGrabacion({ cortado: true }); }
     detenerCamara({ avisar: true, motivo: 'la cámara del teléfono se cortó sola (bloqueo de pantalla, otra app, etc.)' });
   };
   trackLocal.onmute   = () => _log('cámara local silenciada (sin frames por un instante)');
@@ -451,6 +1145,13 @@ async function aplicarEnvio() {
   const e = p.encodings[0];
   if (CFG.calidad === 'auto') delete e.maxBitrate; else e.maxBitrate = +CFG.calidad * 1e6;
   e.maxFramerate = CFG.fps;
+  /* Mientras graba el original, a MIDIVJ puede ir sólo una referencia liviana (menos red y menos calor) */
+  if (GRAB.estado === 'grabando' && GRAB.opciones.liviana) {
+    const v = $('previa'), corto = Math.min(v.videoWidth || 720, v.videoHeight || 720);
+    e.scaleResolutionDownBy = Math.max(1, corto / 480);
+    e.maxFramerate = Math.min(15, CFG.fps);
+    e.maxBitrate = Math.min(e.maxBitrate || 1.5e6, 1.5e6);
+  } else e.scaleResolutionDownBy = 1;
   p.degradationPreference = CFG.prioridad === 'fluidez' ? 'maintain-framerate' : 'maintain-resolution';
   try { await s.setParameters(p); }
   catch (err) { _log('⚠ no se pudo fijar la calidad del envío: ' + err.message); }
@@ -552,6 +1253,12 @@ function cambiarConfig(parcial, desde) {
   const antes = CFG;
   const ahora = sanearCfg({ ...CFG, ...parcial });
   if (JSON.stringify(antes) === JSON.stringify(ahora)) { informarEstado(); return; }
+  /* Mientras graba, lo que cambia la imagen (tamaño, cuadros, lente, audio) cortaría el archivo */
+  if (GRAB.estado !== 'libre' && ['res', 'fps', 'formato', 'lente', 'audio'].some(k => String(antes[k]) !== String(ahora[k]))) {
+    toast('No se puede cambiar la toma mientras graba en el teléfono');
+    pintarConfig(); informarEstado();
+    return;
+  }
   CFG = ahora;
   guardarCfg();
   pintarConfig();
@@ -580,7 +1287,7 @@ let timerEstado = 0;
 function informarEstado() {
   clearTimeout(timerEstado);
   if (C.estado !== 'transmitiendo' && C.estado !== 'pidiendo') return;
-  enviar({ type: 'camara-estado', config: CFG, real: medidaReal(), caps: C.caps, error: C.errorCfg });
+  enviar({ type: 'camara-estado', config: CFG, real: medidaReal(), caps: C.caps, error: C.errorCfg || IMG.error, imagen: leerImagen() });
 }
 /* Al girar el teléfono o tras un cambio, el tamaño real llega un instante después */
 function informarPronto() { clearTimeout(timerEstado); timerEstado = setTimeout(informarEstado, 350); }
@@ -621,6 +1328,8 @@ function pintarConfig() {
   $('cfg-' + campo).addEventListener('change', ev => cambiarConfig({ [campo]: ev.target.value }, 'teléfono'));
 });
 $('btn-cfg').onclick = ev => { ev.stopPropagation(); pintarConfig(); $('ajustes').classList.toggle('vis'); $('btn-cfg').classList.toggle('act', $('ajustes').classList.contains('vis')); };
+$('img-fijar').onclick = () => { toast(fijarImagen() ? 'Exposición y foco fijados' : 'Esta cámara no deja fijar la exposición ni el foco'); };
+$('img-auto').onclick = () => { toast(autoImagen() ? 'Exposición y foco automáticos' : 'Esta cámara no los ajusta sola'); };
 $('cfg-cerrar').onclick = () => { $('ajustes').classList.remove('vis'); $('btn-cfg').classList.remove('act'); };
 
 /* ── Conexión ─────────────────────────────────────────── */
@@ -683,6 +1392,8 @@ function recibir(msg) {
       $('slot-lbl').textContent = msg.slot ? 'C' + msg.slot : '';
       $('bloqueo').classList.remove('vis');
       pintarEstado();
+      sincronizarReloj();
+      informarTelPronto();   // MIDIVJ se entera de lo que tiene (o está grabando) este teléfono
       break;
 
     case 'slot-ocupado':
@@ -702,12 +1413,24 @@ function recibir(msg) {
       iniciarTransmision();
       break;
 
+    case 'hora':
+      recibirHora(msg);
+      break;
+
+    case 'tel-cmd':
+      atenderOrden(msg);
+      break;
+
     case 'rtc-respuesta':
       recibirRespuesta(msg.sdp);
       break;
 
     case 'camara-config':
       cambiarConfig(msg.config || {}, 'midivj');
+      break;
+
+    case 'camara-imagen':
+      atenderImagen(msg);
       break;
 
     case 'rtc-candidato':
@@ -764,7 +1487,7 @@ function pintarEstado() {
   const banner = $('banner');
   const app = C.appConectada ? '' : ' · MIDIVJ no está conectada';
   banner.className = C.estado === 'transmitiendo' ? 'transmitiendo' : C.estado === 'error' ? 'error' : '';
-  $('previa-wrap').classList.toggle('transmitiendo', C.estado === 'transmitiendo');
+  $('previa-wrap').classList.toggle('transmitiendo', C.estado === 'transmitiendo' || !!C.stream);
   $('btn-detener').classList.toggle('vis', C.estado === 'transmitiendo' || C.estado === 'pidiendo');
 
   if (C.estado === 'pidiendo') {
@@ -774,6 +1497,10 @@ function pintarEstado() {
     banner.textContent = 'Transmitiendo a MIDIVJ';
     $('estado').textContent = 'sala ' + SALA + ' · cámara ' + (C.slot || '') + app;
   } else if (C.estado === 'error') {
+    $('estado').textContent = 'sala ' + SALA + app;
+  } else if (GRAB.estado !== 'libre') {
+    banner.className = 'transmitiendo';
+    banner.textContent = 'Grabando en este teléfono' + (C.ws && C.ws.readyState === 1 ? ' · sin enviar video a MIDIVJ' : ' · sin conexión con MIDIVJ (la grabación sigue)');
     $('estado').textContent = 'sala ' + SALA + app;
   } else {
     banner.textContent = 'Conectado. Esperando que MIDIVJ pida esta cámara.';
@@ -793,7 +1520,7 @@ async function iniciarTransmision() {
   let raw;
   const cfgAlAbrir = CFG;
   try {
-    raw = await abrirCamara(cfgAlAbrir);
+    raw = await obtenerCamara();   // si ya está abierta (p. ej. grabando), la misma
   } catch (e) {
     C.estado = 'error';
     pintarEstado();
@@ -807,7 +1534,7 @@ async function iniciarTransmision() {
     /* MIDIVJ ya se rindió (timeout) mientras esperábamos el permiso: no
        tiene sentido seguir armando la conexión con nadie del otro lado. */
     _log('MIDIVJ ya había cancelado el pedido mientras esperábamos el permiso — se suelta la cámara sin avisar');
-    raw.getTracks().forEach(t => t.stop());
+    if (GRAB.estado === 'libre') raw.getTracks().forEach(t => t.stop());
     C.estado = 'esperando';
     pintarEstado();
     return;
@@ -898,21 +1625,28 @@ async function recibirCandidato(candidato) {
    corresponde avisar, viaja a MIDIVJ para que su propio log diga por qué
    colgó este teléfono en vez de un genérico "se cortó". */
 function detenerCamara({ avisar, motivo }) {
-  _log('apagando cámara — motivo: ' + (motivo || 'sin especificar') + (avisar ? ' — avisando a MIDIVJ' : ' — sin avisar a MIDIVJ'));
+  _log('apagando cámara — motivo: ' + (motivo || 'sin especificar') + (avisar ? ' — avisando a MIDIVJ' : ' — sin avisar a MIDIVJ') +
+    (GRAB.estado !== 'libre' ? ' — la GRABACIÓN en el teléfono sigue: sólo se corta el envío' : ''));
   if (C.estado === 'pidiendo' && !C.stream) C.abandonado = true;   // getUserMedia sigue pendiente
-  if (C.proc) { C.proc.detener(); C.proc = null; }
-  if (C.raw) { C.raw.getTracks().forEach(t => t.stop()); C.raw = null; }
-  if (C.stream) { C.stream.getTracks().forEach(t => t.stop()); C.stream = null; }
-  $('previa').srcObject = null;
   if (C.pc) { C.pc.onconnectionstatechange = null; C.pc.oniceconnectionstatechange = null; C.pc.close(); C.pc = null; }
   C.audioTx = null;
   C.candidatosPendientes = [];
   const habiaSesion = C.estado !== 'esperando';
   C.estado = 'esperando';
+  /* Si graba el original, la cámara sigue: se cayó la red o la PC, no la toma */
+  if (GRAB.estado === 'libre') soltarCamara();
   document.body.classList.remove('limpio');
   pintarInfoToma();
   pintarEstado();
   if (avisar && habiaSesion) enviar({ type: 'camara-colgar', motivo });
+}
+function soltarCamara() {
+  if (C.proc) { C.proc.detener(); C.proc = null; }
+  if (C.raw) { C.raw.getTracks().forEach(t => t.stop()); C.raw = null; }
+  if (C.stream) { C.stream.getTracks().forEach(t => t.stop()); C.stream = null; }
+  $('previa').srcObject = null;
+  pintarInfoToma();
+  pintarEstado();
 }
 
 function enviar(payload) {
@@ -947,7 +1681,7 @@ $('btn-fs').onclick = () => {
 
 /* Tocar la imagen oculta la barra y los controles: queda sólo la toma */
 $('previa-wrap').addEventListener('click', () => {
-  if (C.estado !== 'transmitiendo' && C.estado !== 'pidiendo') return;
+  if (C.estado !== 'transmitiendo' && C.estado !== 'pidiendo' && !C.stream) return;
   document.body.classList.toggle('limpio');
 });
 $('volver-ver').onclick = () => document.body.classList.remove('limpio');
@@ -995,8 +1729,16 @@ document.addEventListener('gesturestart', ev => ev.preventDefault());
 /* Mejor esfuerzo: en móvil no está garantizado que esto llegue a correr.
    El respaldo real es que el relay detecta el cierre del socket y avisa
    a MIDIVJ por su cuenta (ver leaveRoom() en midivj-relay.js). */
-addEventListener('pagehide', () => detenerCamara({ avisar: true, motivo: 'la pestaña se cerró o pasó a segundo plano (pagehide)' }));
-addEventListener('beforeunload', () => detenerCamara({ avisar: true, motivo: 'la página se está cerrando (beforeunload)' }));
+addEventListener('pagehide', () => {
+  /* Lo grabado hasta aquí ya está en la memoria; se deja anotado como cortado */
+  if (GRAB.meta) { GRAB.meta.estado = 'cortado'; GRAB.meta.finReloj = relojAhora(); BD.guardarArchivo(GRAB.meta).catch(() => {}); }
+  detenerCamara({ avisar: true, motivo: 'la pestaña se cerró o pasó a segundo plano (pagehide)' });
+});
+addEventListener('beforeunload', ev => {
+  /* Grabando: el navegador pregunta antes de cerrar (cerrar corta la grabación) */
+  if (GRAB.estado !== 'libre') { ev.preventDefault(); ev.returnValue = ''; return ''; }
+  detenerCamara({ avisar: true, motivo: 'la página se está cerrando (beforeunload)' });
+});
 
 /* Sólo diagnóstico: no apaga nada, pero deja rastro de si el teléfono se
    bloqueó o cambió de app justo antes de que la cámara se cortara — en
@@ -1007,7 +1749,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 conectar();
-mantenerPantalla();
+pedirWakeLock();
 pintarEstado();
 pintarConfig();
 </script>
