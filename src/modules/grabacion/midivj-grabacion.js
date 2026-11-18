@@ -25,6 +25,12 @@
    Una captura `soloAudio` (la entrada de audio elegida) se graba en un
    archivo de audio aparte (`audio-entrada.m4a`).
 
+   Fuentes externas (`opciones.externos`): otros aparatos que graban por su
+   cuenta en la misma toma (los teléfonos graban su original). El motor sólo
+   les avisa cuándo empieza y termina la toma y suma lo que ellos digan al
+   manifiesto; una toma puede ser sólo de externos (carpeta sin archivos de
+   este equipo, que llegan después).
+
    Una toma es una carpeta con todos sus archivos juntos: `salida.mp4`,
    `pista-1.mp4`, `pista-3.mp4`… Todas las tomas van a una misma carpeta,
    que se elige en el panel (por defecto, Grabaciones/ del proyecto). Si una
@@ -137,6 +143,8 @@
     };
 
     let formato = null, fAudio = null, tick = 0;
+    /* { cuantos() → nº de aparatos que van a grabar, iniciar({toma, carpeta, t0}), detener({toma}), manifiesto() → {…} } */
+    const externos = () => (op.externos && typeof op.externos.cuantos === 'function' ? op.externos : null);
     const extDe = cap => (cap.soloAudio ? fAudio.ext : formato.ext);
     let sinRelayDesde = 0, ocultaDesde = 0, avisoCola = false;
     let manifiestoEnCurso = Promise.resolve();
@@ -394,6 +402,7 @@
         inicio: g.toma.inicio.toISOString(),
         fin: g.toma.fin ? g.toma.fin.toISOString() : null,
         nota: 'desdeMs/hastaMs: milisegundos desde el inicio de la toma, con el mismo reloj para todos los archivos (salida y pistas).',
+        ...((externos() && externos().manifiesto && externos().manifiesto(g.toma)) || {}),
         archivos: g.segmentos.filter(s => s.archivo).map(s => ({
           archivo: s.archivo, fuente: s.fuente, nombre: s.nombre, contenido: s.detalle || undefined, formato: s.mime,
           audio: !!s.audio, soloAudio: s.soloAudio || undefined,
@@ -455,6 +464,8 @@
       let caps = fuentesAGrabar();
       /* Sin grabación de audio (apagada o el navegador no la tiene), las capturas de sólo audio no entran */
       if (g.config.audio === false || !fAudio) caps = caps.filter(cap => !cap.soloAudio);
+      const ext = externos();
+      const nExt = ext ? ext.cuantos() : 0;
       g.fase = 'abriendo';
       g.estado = 'iniciando';
       g.ultimoError = '';
@@ -462,10 +473,10 @@
       cambio();
       try {
         if (!formato && caps.some(cap => !cap.soloAudio)) throw new Error('Este navegador no puede grabar video (MediaRecorder sin MP4 ni WebM).');
-        if (!caps.length) {
+        if (!caps.length && !nExt) {
           throw new Error(g.config.fuentes.length
             ? 'Ninguna de las fuentes elegidas tiene señal ahora.'
-            : 'Elige al menos una fuente para grabar (la salida o una pista).');
+            : 'Elige al menos una fuente para grabar (la salida, una pista o los teléfonos).');
         }
         g.toma = { nombre: null, carpeta: null, inicio: new Date(), t0: ahoraMs(), fin: null };
         g.segmentos = [];
@@ -474,7 +485,13 @@
         /* Todas graban desde ya, con el mismo reloj; el relay crea la carpeta
            y los archivos mientras tanto */
         for (const canal of g.canales) abrirSegmento(canal, null);
-        let toma = null;
+        if (!g.canales.length) {
+          /* Sólo los teléfonos: la carpeta de la toma, sin archivos de este equipo */
+          const nueva = await pedir('POST', API, { soloCarpeta: true, titulo: g.config.titulo, conFecha: g.config.conFecha !== false });
+          g.toma.nombre = nueva.toma;
+          g.toma.carpeta = nueva.carpeta;
+        }
+        let toma = g.toma.nombre;
         for (const canal of g.canales) {
           const nuevo = await pedir('POST', API, toma
             ? { toma, nombre: canal.cap.id, ext: extDe(canal.cap) }
@@ -490,6 +507,10 @@
         g.fase = 'grabando';
         g.estado = 'activo';
         tick = setInterval(revisar, 1000);
+        if (nExt) {
+          try { await ext.iniciar({ toma: g.toma.nombre, carpeta: g.toma.carpeta, t0: g.toma.t0 }); }
+          catch (e) { aviso('Los teléfonos no recibieron la orden de grabar: ' + mensajeDe(e)); }
+        }
         escribirManifiesto();
         log('grabando en ' + g.toma.carpeta + ': ' + g.canales.map(c =>
           c.actual.archivo + ' (' + (c.actual.soloAudio ? 'sólo audio' : c.actual.ancho + '×' + c.actual.alto + ' · ' + (c.actual.kbps / 1000).toFixed(1) + ' Mbps' + (c.actual.audio ? ' · con audio' : '')) + ')').join(', ') +
@@ -519,6 +540,7 @@
       g.fase = 'cerrando';
       clearInterval(tick);
       cambio();
+      if (externos()) { try { externos().detener({ toma: g.toma.nombre }); } catch (e) { aviso('No se pudo avisar a los teléfonos: ' + mensajeDe(e)); } }
       /* Todos los grabadores paran en el mismo instante */
       const abiertos = g.canales.map(c => c.actual).filter(Boolean);
       abiertos.forEach(seg => { if (seg.rec.state !== 'inactive') { try { seg.rec.stop(); } catch (e) {} } });

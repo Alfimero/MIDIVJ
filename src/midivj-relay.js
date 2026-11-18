@@ -21,6 +21,11 @@ const os = require('os');
 const path = require('path');
 const fsp = require('fs/promises');
 const net = require('net');
+const crypto = require('crypto');
+const { performance: perf } = require('perf_hooks');
+/* Reloj común de la sala: los teléfonos y la app se sincronizan con éste
+   (mensaje `hora?`) para empezar a grabar a la vez y alinear los archivos. */
+const relojRelay = () => perf.timeOrigin + perf.now();
 const { execFile } = require('child_process');
 const { WebSocketServer } = require('ws');
 const selfsigned = require('selfsigned');
@@ -303,6 +308,15 @@ async function crearSinPisar(dir, base, ext, crear) {
 async function crearGrabacion(req, res) {
   const pedido = await readJson(req, MAX_MANIFIESTO_BYTES);
   const ext = String((pedido && pedido.ext) || '').toLowerCase();
+  /* soloCarpeta: una toma sin archivos de este equipo (sólo los originales de los teléfonos) */
+  if (pedido && pedido.soloCarpeta === true && !pedido.toma) {
+    await fsp.mkdir(RECORDINGS_DIR, { recursive: true });
+    const titulo = limpiarNombre(pedido.titulo, 60);
+    const base = pedido.conFecha === false ? (titulo || 'Toma') : (titulo ? `${titulo} - ${fechaParaCarpeta()}` : fechaParaCarpeta());
+    const toma = await crearSinPisar(RECORDINGS_DIR, base, '', p => fsp.mkdir(p));
+    sendJson(res, 201, { toma, archivo: null, carpeta: rutaGrabacion(toma) });
+    return;
+  }
   if (!EXT_GRABACION.has(ext)) {
     sendJson(res, 400, { error: 'Formato no admitido (mp4, webm o m4a).' });
     return;
@@ -489,6 +503,143 @@ async function abrirCarpetaGrabaciones(req, res) {
   sendJson(res, 200, { ok: true, carpeta: dir });
 }
 
+/* ═══════════════════════════════════════════════════════
+   Archivos grabados EN LOS TELÉFONOS
+
+   Cada teléfono graba en su memoria el original de su cámara (video y
+   audio del mismo aparato: no se desfasan) y después lo sube aquí, a la
+   carpeta de la toma. El teléfono no está en este equipo, así que no le
+   alcanza con ser «loopback» como a la app: MIDIVJ (que sí lo es) pide un
+   permiso para una toma y un teléfono (`/api/grabaciones/telefonos/permiso`)
+   y se lo pasa al teléfono, que sube con ese permiso:
+
+     POST /api/telefono/<permiso>/archivo           { nombre, ext, retomar? } → { archivo, tam }
+     GET  /api/telefono/<permiso>/<archivo>                                → { tam }
+     PUT  /api/telefono/<permiso>/<archivo>?desde=N  (igual que la grabación de la app)
+     POST /api/telefono/<permiso>/<archivo>/fin      { datos del archivo }  → telefonos.json
+
+   Los archivos del teléfono se llaman `camara-…` y nunca pisan a otro.
+   `telefonos.json` (en la carpeta de la toma) dice de qué teléfono es cada
+   uno y cuándo empezó en el reloj común (ver `hora?`), para alinearlos.
+═══════════════════════════════════════════════════════ */
+const PERMISOS_TEL = new Map();   // permiso → { toma, slot, archivos: Set, vence }
+const PERMISO_TEL_MS = 12 * 3600 * 1000;
+const EXT_TELEFONO = new Set(['mp4', 'webm']);
+const TELEFONOS_JSON = 'telefonos.json';
+
+async function permisoTelefono(req, res) {
+  const pedido = (await readJson(req, MAX_MANIFIESTO_BYTES)) || {};
+  const slot = parseInt(pedido.slot, 10) || 0;
+  await fsp.mkdir(RECORDINGS_DIR, { recursive: true });
+  let toma = typeof pedido.toma === 'string' ? pedido.toma : '';
+  if (toma) {
+    const dir = rutaGrabacion(toma);
+    if (!dir || !(await esCarpeta(dir))) { sendJson(res, 404, { error: 'No existe esa toma.' }); return; }
+  } else {
+    /* Grabado en el teléfono sin una toma de MIDIVJ: carpeta propia */
+    const base = limpiarNombre(pedido.nueva, 80) || ('Teléfono ' + (slot || ''));
+    toma = await crearSinPisar(RECORDINGS_DIR, base, '', p => fsp.mkdir(p));
+  }
+  const ahora = Date.now();
+  for (const [k, p] of PERMISOS_TEL) if (p.vence < ahora) PERMISOS_TEL.delete(k);
+  const permiso = crypto.randomBytes(16).toString('hex');
+  PERMISOS_TEL.set(permiso, { toma, slot, archivos: new Set(), vence: ahora + PERMISO_TEL_MS });
+  sendJson(res, 201, { permiso, toma, carpeta: rutaGrabacion(toma) });
+}
+
+/** Anota (o actualiza) un archivo del teléfono en telefonos.json de la toma */
+async function anotarTelefono(toma, archivo, slot, datos) {
+  const dir = rutaGrabacion(toma);
+  if (!dir) return;
+  const destino = path.join(dir, TELEFONOS_JSON);
+  const num = (v, max) => (Number.isFinite(+v) ? Math.max(0, Math.min(max, +v)) : null);
+  const d = datos && typeof datos === 'object' ? datos : {};
+  await enFila(destino, async () => {
+    let todo = { app: 'MIDIVJ', version: 1, nota: '', archivos: [] };
+    try { todo = JSON.parse(await fsp.readFile(destino, 'utf8')); } catch { /* primera vez */ }
+    if (!Array.isArray(todo.archivos)) todo.archivos = [];
+    /* El inicio de la toma (reloj común), si la app lo dejó en toma.json */
+    let inicioToma = null;
+    try { inicioToma = num(JSON.parse(await fsp.readFile(path.join(dir, MANIFIESTO), 'utf8')).relojComun.inicio, 1e16); } catch { /* sin toma.json */ }
+    let tam = 0;
+    try { tam = (await fsp.stat(path.join(dir, archivo))).size; } catch { /* aún no existe */ }
+    const inicio = num(d.inicioReloj, 1e16), fin = num(d.finReloj, 1e16);
+    const fila = {
+      archivo, slot, telefono: limpiarNombre(d.telefono, 40) || ('Cámara ' + slot),
+      dispositivo: String(d.dispositivo || '').slice(0, 120) || undefined,
+      formato: String(d.formato || '').slice(0, 80), ancho: num(d.ancho, 10000), alto: num(d.alto, 10000), fps: num(d.fps, 240),
+      audio: !!d.audio, parte: num(d.parte, 999) || 1,
+      inicioReloj: inicio, finReloj: fin, duracionMs: inicio !== null && fin !== null ? Math.max(0, fin - inicio) : null,
+      desdeMs: inicio !== null && inicioToma !== null ? Math.round(inicio - inicioToma) : null,
+      bytes: tam, completo: tam > 0 && tam === num(d.bytes, 1e13), cortado: !!d.cortado || undefined,
+    };
+    todo.archivos = todo.archivos.filter(a => a && a.archivo !== archivo).concat([fila]).sort((a, b) => (a.slot - b.slot) || String(a.archivo).localeCompare(b.archivo));
+    todo.nota = 'Originales grabados en cada teléfono. inicioReloj/finReloj: milisegundos del reloj común (el del relay), el mismo que toma.json usa en relojComun; desdeMs: cuándo empezó cada archivo respecto del inicio de la toma.';
+    const temporal = `${destino}.tmp-${process.pid}-${Date.now()}`;
+    await fsp.writeFile(temporal, `${JSON.stringify(todo, null, 2)}\n`, 'utf8');
+    await fsp.rename(temporal, destino);
+  });
+}
+
+async function atenderTelefono(req, res, ruta, requestUrl) {
+  let partes;
+  try { partes = ruta.slice('/api/telefono/'.length).split('/').map(decodeURIComponent); }
+  catch { partes = []; }
+  const permiso = PERMISOS_TEL.get(partes[0]);
+  if (!permiso || permiso.vence < Date.now()) {
+    sendJson(res, 401, { error: 'Permiso vencido: pide los archivos otra vez desde MIDIVJ.' });
+    return;
+  }
+  const dir = rutaGrabacion(permiso.toma);
+  if (!dir || !(await esCarpeta(dir))) { sendJson(res, 404, { error: 'La carpeta de la toma ya no existe.' }); return; }
+
+  if (partes.length === 2 && partes[1] === 'archivo' && req.method === 'POST') {
+    const pedido = (await readJson(req, MAX_MANIFIESTO_BYTES)) || {};
+    /* Seguir subiendo uno que quedó a medias (otro permiso, el relay se reinició…) */
+    const retomar = typeof pedido.retomar === 'string' ? pedido.retomar : '';
+    if (retomar) {
+      const ruta = rutaGrabacion(permiso.toma, retomar);
+      if (ruta && /^camara-/.test(retomar) && EXT_TELEFONO.has(path.extname(retomar).slice(1).toLowerCase())) {
+        try {
+          const tam = (await fsp.stat(ruta)).size;
+          permiso.archivos.add(retomar);
+          sendJson(res, 200, { archivo: retomar, tam, toma: permiso.toma });
+          return;
+        } catch { /* ya no está: se crea de nuevo */ }
+      }
+    }
+    const ext = String(pedido.ext || '').toLowerCase();
+    if (!EXT_TELEFONO.has(ext)) { sendJson(res, 400, { error: 'Formato no admitido (mp4 o webm).' }); return; }
+    const base = 'camara-' + (limpiarNombre(pedido.nombre, 60).replace(/^camara-/i, '') || ('telefono ' + (permiso.slot || '')));
+    const archivo = await crearSinPisar(dir, base, `.${ext}`, p => fsp.writeFile(p, '', { flag: 'wx' }));
+    permiso.archivos.add(archivo);
+    console.log(`  [teléfono ${permiso.slot || '?'}] ${path.join(dir, archivo)}`);
+    sendJson(res, 201, { archivo, tam: 0, toma: permiso.toma });
+    return;
+  }
+  const archivo = partes[1];
+  if (partes.length < 2 || !permiso.archivos.has(archivo)) { sendJson(res, 404, { error: 'Ese archivo no es de este permiso.' }); return; }
+  if (partes.length === 2 && req.method === 'GET') {
+    try { sendJson(res, 200, { tam: (await fsp.stat(path.join(dir, archivo))).size }); }
+    catch { sendJson(res, 404, { error: 'No existe ese archivo.' }); }
+    return;
+  }
+  if (partes.length === 2 && req.method === 'PUT') {
+    await agregarTrozo(req, res, permiso.toma, archivo, requestUrl.searchParams.get('desde'));
+    return;
+  }
+  if (partes.length === 3 && partes[2] === 'fin' && req.method === 'POST') {
+    const datos = (await readJson(req, MAX_MANIFIESTO_BYTES)) || {};
+    await anotarTelefono(permiso.toma, archivo, permiso.slot, datos);
+    let tam = 0;
+    try { tam = (await fsp.stat(path.join(dir, archivo))).size; } catch { /* nada */ }
+    console.log(`  [teléfono ${permiso.slot || '?'}] listo: ${archivo} (${(tam / 1048576).toFixed(1)} MB)`);
+    sendJson(res, 200, { tam, archivo, toma: permiso.toma });
+    return;
+  }
+  sendJson(res, 404, { error: 'Ruta no encontrada.' });
+}
+
 async function atenderGrabaciones(req, res, ruta, requestUrl) {
   if (!isLoopback(req.socket.remoteAddress)) {
     sendJson(res, 403, { error: 'Grabar sólo está disponible desde este equipo.' });
@@ -525,6 +676,10 @@ async function atenderGrabaciones(req, res, ruta, requestUrl) {
     try { await fijarCarpetaGrabaciones(elegida); }
     catch (error) { sendJson(res, 400, { error: error.message, ...infoCarpeta() }); return; }
     sendJson(res, 200, infoCarpeta());
+    return;
+  }
+  if (ruta === '/api/grabaciones/telefonos/permiso' && req.method === 'POST') {
+    await permisoTelefono(req, res);
     return;
   }
   if (ruta === '/api/grabaciones/abrir' && req.method === 'POST') {
@@ -1104,6 +1259,10 @@ async function handleHttp(req, res) {
     await atenderGrabaciones(req, res, ruta, requestUrl);
     return;
   }
+  if (ruta.startsWith('/api/telefono/')) {
+    await atenderTelefono(req, res, ruta, requestUrl);
+    return;
+  }
   if (req.method === 'POST' && ruta === '/api/sessions') {
     await saveSession(req, res);
     return;
@@ -1575,6 +1734,12 @@ function alConectar(ws) {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
+    /* ── Reloj común: cualquiera pregunta la hora del relay ── */
+    if (msg.type === 'hora?') {
+      enviar(ws, { type: 'hora', t0: msg.t0, tr: relojRelay() });
+      return;
+    }
+
     /* ── Alta en la sala ── */
     if (msg.type === 'join') {
       leaveRoom(ws, myRoom);
@@ -1706,6 +1871,27 @@ function alConectar(ws) {
     /* ── MIDI: comportamiento original, sin tocar ── */
     /* Un enlace sólo escucha: nada de lo que mande entra a la sala */
     if (ws._rol === 'enlace') return;
+
+    /* ── Teléfonos que graban su original: órdenes de la app (grabar,
+       detener, pantalla, subir, borrar…) a uno o a todos, y su estado de
+       vuelta a la app. El relay sólo reparte. ── */
+    if (msg.type === 'tel-cmd') {
+      const sala = rooms.get(myRoom);
+      if (!sala || ws._rol !== 'app') return;
+      const destinos = msg.slot === 'todas'
+        ? [...sala.camaras.values()]
+        : [sala.camaras.get(parseInt(msg.slot, 10))].filter(Boolean);
+      const texto = JSON.stringify({ ...msg, slot: undefined });
+      for (const d of destinos) if (d.readyState === 1) d.send(texto);
+      if (!destinos.length && msg.slot !== 'todas') enviar(ws, { type: 'tel-estado', slot: parseInt(msg.slot, 10) || 0, ausente: true });
+      return;
+    }
+    if (msg.type === 'tel-estado') {
+      const sala = rooms.get(myRoom);
+      if (!sala || ws._rol !== 'camara' || !ws._slot) return;
+      if (sala.app) enviar(sala.app, { ...msg, slot: ws._slot, nombre: ws._nombre });
+      return;
+    }
     /* El MIDI físico de la app, si eligió compartirlo: sólo a los otros equipos */
     if (msg.type === 'midi-local' && Array.isArray(msg.data)) {
       if (ws._rol !== 'app' || msg.data.length > 3) return;
