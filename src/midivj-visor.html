@@ -159,6 +159,9 @@ body[data-vista="cuadricula"] #monitores,body[data-vista="cuadricula"] #transpor
 .aj input[type=range]{width:100%;min-width:0;accent-color:var(--accent2);height:24px;}
 .aj b{font-weight:400;color:var(--text);text-align:right;font-variant-numeric:tabular-nums;}
 .aj.mov span{color:var(--accent2);}
+.aj select{min-width:0;font-size:10px;padding:4px 3px;}
+.aj.chk{grid-template-columns:78px 1fr;}
+#cq-panel .cam-bot{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;}
 #cq-vacio{color:var(--text3);line-height:1.8;padding:6px 2px;}
 @media (max-width:820px){ #cuadricula{flex-direction:column;} #cq-panel{width:auto;max-height:46%;} #cq-mini{display:none;} }
 @media (max-width:760px){
@@ -1011,6 +1014,30 @@ function dibujarCuadricula() {
 requestAnimationFrame(dibujarCuadricula);
 
 const cifra = (a, v) => (a.step >= 1 ? String(Math.round(v)) : (+v).toFixed(2));
+/* ── CÁMARA: exposición, foco, balance, zoom (sólo lo que esa cámara deja ajustar) ── */
+const CAM_LBL = { exposureMode: 'Exposición', exposureCompensation: 'Comp. expos.', exposureTime: 'Tiempo exp.', iso: 'ISO',
+  focusMode: 'Foco', focusDistance: 'Dist. foco', whiteBalanceMode: 'Balance', colorTemperature: 'Temperatura', zoom: 'Zoom', torch: 'Linterna' };
+const CAM_MODO = { manual: 'manual', continuous: 'auto', 'single-shot': 'una vez', none: '—' };
+const CAM_ORDEN = ['exposureMode', 'exposureCompensation', 'exposureTime', 'iso', 'focusMode', 'focusDistance', 'whiteBalanceMode', 'colorTemperature', 'zoom', 'torch'];
+function camaraHTML(cam) {
+  if (!cam) return '';
+  const cab = '<div class="fila" style="margin-top:12px"><h3>CÁMARA</h3></div>';
+  const caps = cam.caps || {}, val = cam.valores || {};
+  if (!Object.keys(caps).length) return cab + '<div id="cq-vacio">Esta cámara no deja ajustar exposición ni foco desde el navegador (pasa con iPhone y con muchos teléfonos): usa el COLOR de arriba.</div>';
+  const filas = CAM_ORDEN.filter(k => caps[k]).map(k => {
+    const c = caps[k], v = val[k];
+    if (k === 'torch') return '<div class="aj chk"><span>' + CAM_LBL[k] + '</span><label><input type="checkbox" data-cam-clave="torch"' + (v ? ' checked' : '') + '> ' + (v ? 'encendida' : 'apagada') + '</label></div>';
+    if (Array.isArray(c)) return '<div class="aj chk"><span>' + CAM_LBL[k] + '</span><select data-cam-clave="' + k + '">' +
+      c.map(m => '<option value="' + esc(m) + '"' + (m === v ? ' selected' : '') + '>' + esc(CAM_MODO[m] || m) + '</option>').join('') + '</select></div>';
+    const a = { key: k, lbl: CAM_LBL[k], min: c.min, max: c.max, step: c.step || (c.max - c.min) / 100, def: (c.min + c.max) / 2 };
+    return '<div class="aj"><span>' + esc(a.lbl) + '</span><input type="range" data-grupo="camara" data-key="' + k + '" min="' + a.min + '" max="' + a.max + '" step="' + a.step + '" value="' + (v !== undefined ? v : a.def) + '" data-def="' + a.def + '">' +
+      '<b>' + (v === undefined ? '—' : cifra(a, v)) + '</b></div>';
+  }).join('');
+  const enfocar = (caps.focusMode || []).includes('single-shot');
+  return cab + filas + '<div class="cam-bot">' + (enfocar ? '<button data-acc="cam-enfocar" title="Enfoca una vez y se queda ahí">◎ ENFOCAR</button>' : '') +
+    '<button data-acc="cam-fijar" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos con las luces">🔒 FIJAR</button>' +
+    '<button data-acc="cam-auto" title="Exposición, foco y balance automáticos">↺ AUTO</button></div>';
+}
 function pintarEditor() {
   const e = V.est, ed = $('cq-editor');
   if (!e || CQ.moviendo) return;
@@ -1020,7 +1047,7 @@ function pintarEditor() {
     return;
   }
   const p = e.pistas[i];
-  const firma = JSON.stringify([i, p.fuente, p.color, p.forma, p.on]);
+  const firma = JSON.stringify([i, p.fuente, p.color, p.forma, p.on, p.camara]);
   if (firma === CQ.firmaEd) return;
   CQ.firmaEd = firma;
   const fila = (grupo, a, v) => '<div class="aj' + (Math.abs(v - a.def) > 1e-6 ? ' mov' : '') + '" title="Doble toque: vuelve a ' + cifra(a, a.def) + '"><span>' + esc(a.lbl) + '</span>' +
@@ -1033,12 +1060,16 @@ function pintarEditor() {
       '<button data-acc="color-reset" title="Vuelve todos los valores de color a neutro">↺</button></div>' +
     e.ajustes.color.map(a => fila('color', a, p.color[a.key])).join('') +
     '<div class="fila" style="margin-top:12px"><h3>TRANSFORMACIÓN</h3><button data-acc="forma-reset" title="Vuelve posición, escala y giro a su lugar">↺</button></div>' +
-    e.ajustes.forma.map(a => fila('forma', a, p.forma[a.key])).join('');
+    e.ajustes.forma.map(a => fila('forma', a, p.forma[a.key])).join('') +
+    camaraHTML(p.camara);
 }
 /* Los cambios de un slider salen a lo sumo una vez por cuadro */
 function enviarAjustes() {
   CQ.raf = 0;
-  for (const [, a] of CQ.cola) orden('pista-ajuste', a);
+  for (const [, a] of CQ.cola) {
+    if (a.grupo === 'camara') orden('camara-imagen', { pista: a.pista, ajustes: { [a.key]: a.valor } });
+    else orden('pista-ajuste', a);
+  }
   CQ.cola.clear();
 }
 function ajustar(el) {
@@ -1050,6 +1081,12 @@ function ajustar(el) {
   if (!CQ.raf) CQ.raf = requestAnimationFrame(enviarAjustes);
 }
 $('cq-editor').addEventListener('input', ev => { if (ev.target.matches('input[type=range]')) ajustar(ev.target); });
+/* Modos (automático / manual…) y linterna de la cámara: al momento */
+$('cq-editor').addEventListener('change', ev => {
+  const el = ev.target;
+  if (!el.dataset.camClave || V.cq.sel === null) return;
+  orden('camara-imagen', { pista: V.cq.sel, ajustes: { [el.dataset.camClave]: el.type === 'checkbox' ? el.checked : el.value } });
+});
 $('cq-editor').addEventListener('pointerdown', ev => { if (ev.target.matches('input[type=range]')) CQ.moviendo = true; });
 const cqSoltar = () => { if (CQ.moviendo) { CQ.moviendo = false; setTimeout(() => { CQ.firmaEd = ''; pintarEditor(); }, 400); } };
 window.addEventListener('pointerup', cqSoltar);
@@ -1067,6 +1104,9 @@ $('cq-editor').addEventListener('click', ev => {
   if (b.dataset.acc === 'color-on') orden('pista-color', { pista: i, on: !e.pistas[i].color.on });
   if (b.dataset.acc === 'color-reset') orden('pista-color', { pista: i, reset: true });
   if (b.dataset.acc === 'forma-reset') orden('pista-forma', { pista: i, reset: true });
+  if (b.dataset.acc === 'cam-fijar') orden('camara-imagen', { pista: i, fijar: true });
+  if (b.dataset.acc === 'cam-auto') orden('camara-imagen', { pista: i, auto: true });
+  if (b.dataset.acc === 'cam-enfocar') orden('camara-imagen', { pista: i, ajustes: { focusMode: 'single-shot' } });
 });
 
 </script>

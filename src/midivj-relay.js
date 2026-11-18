@@ -1444,7 +1444,8 @@ entrada.on('listening', () => server.emit('listening'));
      ambos   → { type:'camara-colgar', [slot] }
      relay   → { type:'camara-error', slot, motivo }           (destino inexistente)
      app     → { type:'camara-config', slot, config }          (resolución, fps, formato… de la toma)
-     cámara  → { type:'camara-estado', config, real, caps }    (lo que de verdad envía)
+     cámara  → { type:'camara-estado', config, real, caps, imagen }  (lo que de verdad envía; imagen = controles de exposición/foco… y sus valores)
+     app     → { type:'camara-imagen', slot, ajustes?, fijar?, auto? }   (exposición, foco, balance, zoom, linterna)
 
    Señalización WebRTC de salida (unicast app↔fuente-de-navegador-de-un-id;
    misma idea que la cámara pero con los papeles invertidos: aquí la app es
@@ -1471,10 +1472,10 @@ entrada.on('listening', () => server.emit('listening'));
      visor   → { type:'visor-cmd', cmd, ... }                  (sólo a la app, con el id del visor)
 ═══════════════════════════════════════════════════════ */
 
-const TIPOS_RTC = new Set(['camara-iniciar', 'camara-colgar', 'camara-error', 'rtc-oferta', 'rtc-respuesta', 'rtc-candidato', 'camara-config', 'camara-estado']);
+const TIPOS_RTC = new Set(['camara-iniciar', 'camara-colgar', 'camara-error', 'rtc-oferta', 'rtc-respuesta', 'rtc-candidato', 'camara-config', 'camara-estado', 'camara-imagen']);
 /* Configuración de la toma: van y vienen con la llamada ya armada, no
    resuelven un pedido de cámara pendiente */
-const TIPOS_CAMARA_CFG = new Set(['camara-config', 'camara-estado']);
+const TIPOS_CAMARA_CFG = new Set(['camara-config', 'camara-estado', 'camara-imagen']);   // camara-imagen: exposición, foco, balance, zoom
 const TIPOS_SALIDA = new Set(['salida-oferta', 'salida-respuesta', 'salida-candidato', 'salida-cerrar', 'salida-error']);
 const TIPOS_VISOR = new Set(['visor-oferta', 'visor-respuesta', 'visor-candidato', 'visor-cerrar', 'visor-error', 'visor-estado', 'visor-cmd', 'visor-niveles']);
 /* El estado lleva la lista de clips, medios y escenas: puede ser grande. */

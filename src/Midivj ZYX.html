@@ -4648,6 +4648,22 @@ function paramCatalogo() {
         const otra = t.xform.scaleLink ? xformLinkedKey(p.key) : null;
         if (otra) setSliderRow('#track-info', otra, v, p.fmt);
       } }));
+    /* La imagen de la cámara de la pista (teléfono o USB), en 0..1 del rango que declare */
+    IMG_PARAM.forEach(([k, nombre]) => out.push({ id:`t${i}.cam.${k}`, grupo, nombre:`P${i+1} · ${nombre}`, min:0, max:1, def:.5, fmt:'pct',
+      get:() => { const im = camImagen(t), c = im && im.caps[k], v = im && im.valores[k]; return c && v !== undefined ? (v - c.min) / (c.max - c.min) : .5; },
+      set:v => {
+        const im = camImagen(t), c = im && im.caps[k];
+        if (!c || Array.isArray(c)) return;
+        let x = c.min + v * (c.max - c.min);
+        if (c.step) x = c.min + Math.round((x - c.min) / c.step) * c.step;
+        im.aplicar({ [k]: x });
+      },
+      ui:() => {
+        const im = camImagen(t), c = im && im.caps[k], v = im && im.valores[k];
+        if (!c || v === undefined) return;
+        document.querySelectorAll(`input[data-img-pista="${i}"][data-img-clave="${k}"]`).forEach(el => { el.value = v; });
+        document.querySelectorAll(`[data-img-val="${i}-${k}"]`).forEach(s => { s.textContent = imgFmt(k, v); });
+      } }));
     VPROC_PARAMS.forEach(p => out.push({ id:`t${i}.vproc.${p.key}`, grupo, nombre:`P${i+1} · Color: ${p.lbl}`, min:p.min, max:p.max, def:p.def, fmt:p.fmt,
       get:() => t.vproc[p.key] ?? p.def,
       set:v => { t.vproc[p.key] = v; t.vproc.on = true; },   // igual que el slider: moverlo lo enciende
@@ -8581,10 +8597,13 @@ function _camEstadoRecibido(slot, msg) {
       limite: ['cpu', 'bandwidth', 'other'].includes(r.limite) ? r.limite : null, audio: !!r.audio, errorAudio: r.errorAudio ? String(r.errorAudio).slice(0, 80) : null },
     caps: msg.caps && typeof msg.caps === 'object' ? msg.caps : null,
     error: msg.error ? String(msg.error).slice(0, 200) : null,
+    imagen: msg.imagen && typeof msg.imagen === 'object' && msg.imagen.caps ? { caps: msg.imagen.caps, valores: msg.imagen.valores || {} } : null,
   };
   if (ses.tel.error) _camLog('⚠ cámara '+slot+' (pista '+idx+'): '+ses.tel.error);
   hubCamRefrescar();
-  if (S.ati !== idx) return;
+  hubImgRefrescar();
+  publicarEstadoVisorPronto();
+  if (S.ati !== idx || imgArrastre) return;   // no se redibuja con un control de imagen en la mano
   const box = document.getElementById('camtel');
   if (box) box.innerHTML = camTelCuerpoHTML(idx, ses);
   else if (primera) renderTrackInfo();
@@ -8624,6 +8643,8 @@ function camTelCuerpoHTML(idx, ses) {
     `<div class="ep-row"><span class="ep-note" id="camtel-st"${tel.error ? ' style="color:var(--hot);"' : ''}>${tel.error ? '⚠ ' + escHtml(tel.error) : envia}</span></div>`,
     `<div class="ep-row"><span class="ep-note" id="camtel-llega">Llega: —</span></div>`,
     `<div class="ep-row"><span class="ep-note">También se cambia desde el teléfono (⚙ en /camara). Con un formato vertical, el AJUSTE de abajo decide si se encaja o llena la salida.</span></div>`,
+    `<div class="ep-row" style="margin-top:6px;"><span class="ep-lbl wide" style="color:var(--accent);">IMAGEN</span><span class="ep-note">exposición, foco, balance y zoom de la cámara</span></div>`,
+    `<div id="camimg">${imgControlesHTML(idx, camImagen(S.tracks[idx]), false)}</div>`,
   ].join('');
 }
 function camTelSet(idx, campo, valor) {
@@ -8716,6 +8737,16 @@ function hubCamCrear() {
   #hubcam .dif{color:#ffcc00;}
   #hubcam p{margin:0;padding:10px 16px 14px;font-size:8px;line-height:1.8;color:var(--text3);}
   #hubcam .vacio{padding:22px 16px;text-align:center;color:var(--text3);}
+  #hubimg{border-top:1px solid var(--border2);margin-top:6px;}
+  #hubimg h3{margin:0;padding:12px 16px 6px;font-size:10px;letter-spacing:2px;color:var(--accent);font-weight:400;}
+  #hubimg .img-barra{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:4px 16px 10px;}
+  #hubimg .hbtn{font-size:9px;padding:3px 8px;}
+  #hubimg td{white-space:normal;}
+  #hubimg .img-ctl{display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;}
+  #hubimg .img-ctl b{color:var(--text3);font-weight:400;}
+  #hubimg .img-sl{width:90px;}
+  #hubimg .ep-val{min-width:38px;}
+  #hubimg .vacio-img{color:var(--text3);}
   #hubtel{border-top:1px solid var(--border2);margin-top:6px;}
   #hubtel h3{margin:0;padding:12px 16px 6px;font-size:10px;letter-spacing:2px;color:var(--accent);font-weight:400;}
   #hubtel .tel-barra{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:4px 16px 10px;}
@@ -8730,6 +8761,9 @@ function hubCamCrear() {
     '<b>FLUIDEZ</b> dice si hay tirones y de dónde vienen: «cortes» y «falta red» son de la Wi-Fi (prueba <b>SUAVIZAR</b> con 100–200 ms, bajar la CALIDAD o acercar el teléfono al router); ' +
     '«el teléfono no da abasto» se arregla bajando RESOLUCIÓN o FPS. <b>PRIORIDAD fluidez</b> mantiene los FPS y cede resolución cuando falta red. ' +
     'En amarillo, lo que es distinto entre cámaras. El teléfono recuerda su configuración.</p>' +
+    '<div id="hubimg"><h3>IMAGEN · EXPOSICIÓN, FOCO, BALANCE Y ZOOM</h3><div id="hubimg-cuerpo"></div>' +
+    '<p>Sólo aparece lo que la cámara de cada teléfono deja ajustar desde el navegador (cambia mucho entre modelos: en iPhone casi nada). <b>🔒 FIJAR</b> deja exposición, foco y balance en manual con los valores de ahora, para que no cambien solos con las luces del show; <b>↺ AUTO</b> los devuelve a automático. ' +
+    'También están en la pista (CONFIG. DE CÁMARA · 📱), en el visor (CUADRÍCULA) y se pueden mapear a un fader o perilla (🎯 MAPEO).</p></div>' +
     '<div id="hubtel"><h3>GRABACIÓN DEL ORIGINAL EN LOS TELÉFONOS</h3><div id="hubtel-cuerpo"></div>' +
     '<p>Cada teléfono marcado en <b>GRABA</b> graba en su memoria el original de su cámara (video y audio del mismo aparato) cuando empieza la toma; todos arrancan a la misma hora del reloj común. ' +
     'Si se cae la Wi-Fi o esta PC, siguen grabando. <b>⬇ TRAER</b> pasa los archivos a la carpeta de la toma (usa la Wi-Fi: mejor sin video en vivo) y <b>🗑</b> borra del teléfono sólo lo que llegó completo. ' +
@@ -8754,11 +8788,29 @@ function hubCamCrear() {
   HUBCAM.el = o;
   setInterval(hubCamMedir, 1000);
 }
+function hubImgRefrescar() {
+  if (!hubCamAbierto() || imgArrastre) return;
+  const caja = document.getElementById('hubimg-cuerpo');
+  if (!caja) return;
+  const filas = hubCamFilas();
+  const html = filas.length
+    ? '<div class="img-barra"><b style="color:var(--text3);font-weight:400;">TODAS:</b>' +
+        '<button class="hbtn" data-img-accion="fijar" data-img-pista="todas">🔒 FIJAR EN TODAS</button>' +
+        '<button class="hbtn" data-img-accion="auto" data-img-pista="todas">↺ AUTO EN TODAS</button>' +
+        '<button class="hbtn" data-img-accion="enfocar" data-img-pista="todas">◎ ENFOCAR TODAS</button></div>' +
+      '<table>' + filas.map(({ idx, ses }) => '<tr><td style="width:60px;"><b>T' + (idx + 1) + '</b> · ' + ses.slot + '</td><td>' +
+        (ses.tel ? imgControlesHTML(idx, camImagen(S.tracks[idx]), true) : '⏳') + '</td></tr>').join('') + '</table>'
+    : '<div class="vacio">Ninguna cámara de teléfono está en una pista.</div>';
+  if (html === HUBCAM.firmaImg) return;
+  HUBCAM.firmaImg = html;
+  caja.innerHTML = html;
+}
 function abrirHubCamaras() {
   hubCamCrear();
   HUBCAM.el.classList.add('vis');
-  HUBCAM.firma = ''; HUBCAM.firmaTel = '';
+  HUBCAM.firma = ''; HUBCAM.firmaTel = ''; HUBCAM.firmaImg = '';
   hubCamRefrescar();
+  hubImgRefrescar();
   hubTelRefrescar();
   telOrden('todas', { cmd: 'estado' });
 }
@@ -10349,6 +10401,182 @@ function hubTelCambio(ev) {
   telAlCambiar();
 }
 
+
+/* ═══════════════════════════════════════════════════════
+   IMAGEN DE LA CÁMARA: exposición, foco, balance, zoom, linterna
+   Lo mismo para una cámara de teléfono (se le pide con 'camara-imagen' y
+   el teléfono responde con su estado) que para una cámara USB/capturadora
+   de esta PC (applyConstraints directo, como CONFIG. DE CÁMARA). Sólo
+   aparece lo que la cámara declara poder ajustar. Lo usan la pista, el hub
+   📷 CÁMARAS, el visor (CUADRÍCULA) y los controles MIDI (P1 · Cámara: …).
+   FIJAR deja exposición, foco y balance en manual con los valores de ahora
+   (dejan de «buscar» solos); AUTO los devuelve a automático.
+═══════════════════════════════════════════════════════ */
+const IMG_CLAVES = ['exposureMode', 'exposureCompensation', 'exposureTime', 'iso', 'focusMode', 'focusDistance', 'whiteBalanceMode', 'colorTemperature', 'zoom', 'torch'];
+const IMG_LBL = { exposureMode: 'Exposición', exposureCompensation: 'Comp. exposición', exposureTime: 'Tiempo de exposición', iso: 'ISO',
+  focusMode: 'Foco', focusDistance: 'Distancia de foco', whiteBalanceMode: 'Balance de blancos', colorTemperature: 'Temperatura', zoom: 'Zoom', torch: 'Linterna' };
+const IMG_CORTO = { exposureMode: 'EXP', exposureCompensation: '±', exposureTime: 'T', iso: 'ISO', focusMode: 'FOCO', focusDistance: '↔', whiteBalanceMode: 'BAL', colorTemperature: 'K', zoom: 'ZOOM', torch: '🔦' };
+const IMG_MODO = { manual: 'manual', continuous: 'auto', 'single-shot': 'una vez', none: '—' };
+const IMG_MODO_DE = { exposureTime: ['exposureMode', 'manual'], iso: ['exposureMode', 'manual'], focusDistance: ['focusMode', 'manual'], colorTemperature: ['whiteBalanceMode', 'manual'] };
+const IMG_PARAM = [['exposureCompensation', 'Cámara: exposición'], ['exposureTime', 'Cámara: tiempo de exposición'], ['focusDistance', 'Cámara: foco'], ['colorTemperature', 'Cámara: temperatura'], ['zoom', 'Cámara: zoom']];
+const IMG_ENVIO = new Map();   // slot → { aj, extra, timer }: los ajustes de un fader salen juntos, cada ~60 ms
+let imgArrastre = false;
+
+function imgDesdePista(mt) {
+  let caps = {}, st = {};
+  try { caps = (mt.getCapabilities && mt.getCapabilities()) || {}; } catch (_) {}
+  try { st = mt.getSettings() || {}; } catch (_) {}
+  const c = {}, v = {};
+  for (const k of IMG_CLAVES) {
+    const x = caps[k];
+    if (Array.isArray(x)) { if (x.length > 1) c[k] = x.slice(); }
+    else if (x && typeof x === 'object' && Number.isFinite(x.min) && x.max > x.min) c[k] = { min: x.min, max: x.max, step: x.step || 0 };
+    if (k in c && st[k] !== undefined) v[k] = st[k];
+  }
+  return { caps: c, valores: v, ajustes: st };
+}
+/* Lo que se ajusta de la imagen de la cámara de la pista t, o null */
+function camImagen(t) {
+  if (!t || !t.loaded) return null;
+  if (t.sourceType === 'phone') {
+    const ses = CAM.sesiones.get(t.i);
+    const im = ses && ses.tel && ses.tel.imagen;
+    if (!im || !im.caps) return null;
+    return {
+      tipo: 'telefono', caps: im.caps, valores: im.valores || (im.valores = {}),
+      aplicar(aj, extra) {
+        const limpio = imgLimpiar(aj, im.caps);
+        Object.assign(im.valores, limpio);   // se ve enseguida; el teléfono confirma con su estado
+        imgEnviar(ses.slot, limpio, extra);
+      },
+    };
+  }
+  if (t.sourceType === 'capture') {
+    const mt = camTrackOf(t);
+    if (!mt) return null;
+    const im = imgDesdePista(mt);
+    return {
+      tipo: 'captura', caps: im.caps, valores: im.valores,
+      aplicar(aj, extra) {
+        let todo = { ...(aj || {}) };
+        if (extra && extra.auto) for (const mk of ['exposureMode', 'focusMode', 'whiteBalanceMode']) if ((im.caps[mk] || []).includes('continuous')) todo[mk] = 'continuous';
+        if (extra && extra.fijar) {
+          for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) if ((im.caps[mk] || []).includes(mv)) { todo[mk] = mv; if (im.caps[k] && im.ajustes[k] !== undefined) todo[k] = im.ajustes[k]; }
+        }
+        todo = imgLimpiar(todo, im.caps);
+        /* los modos primero: un valor manual necesita su modo en manual */
+        Object.keys(todo).sort((a, b) => /Mode$/.test(b) - /Mode$/.test(a)).forEach(k => camApply(t.i, k, todo[k]));
+      },
+    };
+  }
+  return null;
+}
+function imgLimpiar(aj, caps) {
+  const o = {};
+  for (const [k, val] of Object.entries(aj || {})) {
+    const c = caps[k];
+    if (!c) continue;
+    if (Array.isArray(c)) { if (c.includes(val)) o[k] = val; }
+    else { const n = +val; if (Number.isFinite(n)) o[k] = Math.max(c.min, Math.min(c.max, n)); }
+  }
+  for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) if (k in o && !(mk in o) && Array.isArray(caps[mk]) && caps[mk].includes(mv)) o[mk] = mv;
+  return o;
+}
+function imgEnviar(slot, aj, extra) {
+  const p = IMG_ENVIO.get(slot) || { aj: {}, extra: {} };
+  Object.assign(p.aj, aj || {});
+  Object.assign(p.extra, extra || {});
+  IMG_ENVIO.set(slot, p);
+  if (p.timer) return;
+  p.timer = setTimeout(() => {
+    IMG_ENVIO.delete(slot);
+    _camEnviar({ type: 'camara-imagen', slot, ajustes: p.aj, ...(p.extra.fijar ? { fijar: true } : {}), ...(p.extra.auto ? { auto: true } : {}) });
+  }, 60);
+}
+function camImgSet(idx, k, val) {
+  const im = camImagen(S.tracks[idx]);
+  if (!im) return;
+  im.aplicar({ [k]: val });
+  publicarEstadoVisorPronto();
+}
+function camImgAccion(idx, accion) {
+  const im = camImagen(S.tracks[idx]);
+  if (!im) return;
+  if (accion === 'fijar') im.aplicar({}, { fijar: true });
+  else if (accion === 'auto') im.aplicar({}, { auto: true });
+  else if (accion === 'enfocar') im.aplicar({ focusMode: 'single-shot' });
+  publicarEstadoVisorPronto();
+}
+function publicarEstadoVisorPronto() {
+  if (typeof publicarEstadoVisor !== 'function') return;
+  clearTimeout(publicarEstadoVisorPronto.t);
+  publicarEstadoVisorPronto.t = setTimeout(() => publicarEstadoVisor(false), 120);
+}
+const imgFmt = (k, v) => (v === undefined || v === null ? '—' : k === 'colorTemperature' ? Math.round(v) + 'K'
+  : k === 'zoom' ? (+v).toFixed(1) + '×' : Number.isInteger(+v) ? String(+v) : (+v).toFixed(2));
+/* Los controles de la imagen de la pista idx: filas (panel de la pista) o en línea (hub) */
+function imgControlesHTML(idx, im, enLinea) {
+  if (!im || !Object.keys(im.caps).length) {
+    return enLinea ? '<span class="vacio-img">esta cámara no deja ajustar la imagen desde el navegador</span>'
+      : '<div class="ep-row"><span class="ep-note">Esta cámara no deja ajustar exposición ni foco desde el navegador (pasa con iPhone y con muchos teléfonos): usá el PROCESADOR DE VIDEO.</span></div>';
+  }
+  const partes = [];
+  for (const k of IMG_CLAVES) {
+    const c = im.caps[k];
+    if (!c) continue;
+    const v = im.valores[k];
+    const atr = `data-img-pista="${idx}" data-img-clave="${k}" title="${IMG_LBL[k]}"`;
+    let ctl;
+    if (k === 'torch') ctl = `<label style="display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" ${atr}${v ? ' checked' : ''}>${enLinea ? '' : (v ? 'encendida' : 'apagada')}</label>`;
+    else if (Array.isArray(c)) ctl = `<select class="epsel" ${atr}>${c.map(m => `<option value="${m}"${m === v ? ' selected' : ''}>${IMG_MODO[m] || m}</option>`).join('')}</select>`;
+    else {
+      const paso = c.step || (c.max - c.min) / 100;
+      ctl = `<input type="range" class="${enLinea ? 'img-sl' : 'epsl'}" min="${c.min}" max="${c.max}" step="${paso}" value="${v !== undefined ? v : (c.min + c.max) / 2}" ${atr}><span class="ep-val" data-img-val="${idx}-${k}">${imgFmt(k, v)}</span>`;
+    }
+    const badge = IMG_PARAM.some(p => p[0] === k) ? badgeParamHTML(`t${idx}.cam.${k}`) : '';
+    partes.push(enLinea
+      ? `<span class="img-ctl"><b>${IMG_CORTO[k]}</b>${ctl}</span>`
+      : `<div class="ep-row" data-img-fila="${k}"><span class="ep-lbl wide">${IMG_LBL[k]}</span>${ctl}${badge}</div>`);
+  }
+  const enfocar = (im.caps.focusMode || []).includes('single-shot');
+  const botones = `${enfocar ? `<button class="hbtn" data-img-accion="enfocar" data-img-pista="${idx}" title="Enfoca una vez y se queda ahí">◎ ENFOCAR</button>` : ''}` +
+    `<button class="hbtn" data-img-accion="fijar" data-img-pista="${idx}" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos">🔒 FIJAR</button>` +
+    `<button class="hbtn" data-img-accion="auto" data-img-pista="${idx}" title="Exposición, foco y balance automáticos">↺ AUTO</button>`;
+  return enLinea ? partes.join('') + `<span class="img-ctl">${botones}</span>`
+    : partes.join('') + `<div class="ep-row" style="gap:6px;">${botones.replace(/class="hbtn"/g, 'class="hbtn" style="font-size:8px;padding:2px 7px;"')}</div>`;
+}
+/* Un control movido en cualquier lado (pista o hub) */
+document.addEventListener('input', ev => {
+  const el = ev.target.closest && ev.target.closest('input[type=range][data-img-clave]');
+  if (!el) return;
+  const idx = +el.dataset.imgPista, k = el.dataset.imgClave;
+  document.querySelectorAll(`[data-img-val="${idx}-${k}"]`).forEach(s => { s.textContent = imgFmt(k, +el.value); });
+  camImgSet(idx, k, +el.value);
+});
+document.addEventListener('change', ev => {
+  const el = ev.target.closest && ev.target.closest('select[data-img-clave], input[type=checkbox][data-img-clave]');
+  if (!el) return;
+  camImgSet(+el.dataset.imgPista, el.dataset.imgClave, el.type === 'checkbox' ? el.checked : el.value);
+  setTimeout(imgRepintar, 150);
+});
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('button[data-img-accion]');
+  if (!b) return;
+  if (b.dataset.imgPista === 'todas') hubCamFilas().forEach(f => camImgAccion(f.idx, b.dataset.imgAccion));
+  else camImgAccion(+b.dataset.imgPista, b.dataset.imgAccion);
+});
+/* Mientras se arrastra un control no se redibuja (se perdería el arrastre) */
+document.addEventListener('pointerdown', ev => { if (ev.target.closest && ev.target.closest('input[type=range][data-img-clave]')) imgArrastre = true; }, true);
+const imgSoltar = () => { if (imgArrastre) { imgArrastre = false; setTimeout(imgRepintar, 300); } };
+addEventListener('pointerup', imgSoltar, true);
+addEventListener('pointercancel', imgSoltar, true);
+function imgRepintar() {
+  if (imgArrastre) return;
+  const caja = document.getElementById('camimg');
+  if (caja && S.tracks[S.ati]) caja.innerHTML = imgControlesHTML(S.ati, camImagen(S.tracks[S.ati]), false);
+  if (typeof hubImgRefrescar === 'function') { HUBCAM.firmaImg = ''; hubImgRefrescar(); }
+}
+
 /* ═══════════════════════════════════════════════════════
    MEZCLA — puente con src/modules/mezcla/
    Un canal por pista ('pista-1'…) y uno para la entrada de audio del
@@ -11102,6 +11330,7 @@ function estadoVisor() {
       fuente: t.loaded ? String(t.loadedName || '').slice(0, 60) : '',
       on: salida.pistas[i].on, opacidad: salida.pistas[i].opacidad, clip: salida.pistas[i].clip, fijo: salida.pistas[i].fijo,
       capa: t.excl === 'capa',
+      camara: (() => { const im = camImagen(t); return im ? { tipo: im.tipo, caps: im.caps, valores: im.valores } : null; })(),
       color: { on: !!t.vproc.on, ...Object.fromEntries(VPROC_PARAMS.map(p => [p.key, t.vproc[p.key] ?? p.def])) },
       forma: Object.fromEntries(efxParams({ type: 'xform' }).map(p => [p.key, t.xform[p.key] ?? p.def])),
       vivo: !!t.loaded && t.sourceType !== 'file', interruptor: t.sourceType !== 'file' && t.clips.some(c => c.srcLive),
@@ -11317,6 +11546,15 @@ function visorOrden(msg) {
       if (typeof msg.mute === 'boolean') k.mute = msg.mute;
       if (typeof msg.rec === 'boolean' && canal !== 'master') k.rec = msg.rec;
       mezcla.fijar(canal, k);
+      break;
+    }
+    /* exposición, foco, balance, zoom de la cámara de la pista */
+    case 'camara-imagen': {
+      if (!enRango) return;
+      const im = camImagen(S.tracks[i]);
+      if (!im) return;
+      im.aplicar(msg.ajustes && typeof msg.ajustes === 'object' ? msg.ajustes : {}, { fijar: msg.fijar === true, auto: msg.auto === true });
+      setTimeout(imgRepintar, 150);
       break;
     }
     case 'pista-color': {

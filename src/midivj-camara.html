@@ -215,6 +215,7 @@ body.limpio #volver-ver{display:block;}
   <div class="fila"><label for="cfg-lente">LENTE</label><select id="cfg-lente"></select></div>
   <div class="fila"><label for="cfg-audio">AUDIO</label><select id="cfg-audio"></select></div>
   <div class="fila"><label for="cfg-prioridad">PRIORIDAD</label><select id="cfg-prioridad"></select></div>
+  <div class="fila"><label>IMAGEN</label><button class="tbtn" id="img-fijar" style="flex:1;padding:9px 6px;" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos">🔒 FIJAR EXPOSICIÓN Y FOCO</button><button class="tbtn" id="img-auto" style="padding:9px 10px;" title="Que vuelvan a ajustarse solos">AUTO</button></div>
   <div id="cfg-envia"></div>
   <div class="nota">También se cambia desde MIDIVJ (CONFIG. DE CÁMARA de la pista). FORMATO recorta el centro de la toma: lo que ves aquí es lo que llega.</div>
 </div>
@@ -1015,12 +1016,115 @@ async function leerCaps(raw) {
   };
 }
 
+/* ── Imagen: exposición, foco, balance de blancos, zoom, linterna ──
+   Sólo lo que la cámara de este teléfono le declara al navegador
+   (getCapabilities): cambia mucho entre modelos y navegadores. MIDIVJ lo
+   ajusta con 'camara-imagen' y aquí se aplica con applyConstraints sobre
+   la cámara (no sobre el recorte). Lo elegido se guarda y se vuelve a
+   aplicar si la cámara se reabre. No cambia el tamaño de la imagen: se
+   puede ajustar mientras graba. */
+const IMG_CLAVES = ['exposureMode', 'exposureCompensation', 'exposureTime', 'iso', 'focusMode', 'focusDistance', 'whiteBalanceMode', 'colorTemperature', 'zoom', 'torch'];
+const IMG_MODO_DE = { exposureTime: ['exposureMode', 'manual'], iso: ['exposureMode', 'manual'], focusDistance: ['focusMode', 'manual'], colorTemperature: ['whiteBalanceMode', 'manual'] };
+const IMG = { pendiente: null, aplicando: false, guardado: {}, error: null };
+try { IMG.guardado = JSON.parse(localStorage.getItem('midivj-camara-imagen') || '{}') || {}; } catch (_) {}
+const pistaCamara = () => { const t = C.raw && C.raw.getVideoTracks()[0]; return t && t.readyState === 'live' ? t : null; };
+function leerImagen() {
+  const t = pistaCamara();
+  if (!t) return null;
+  let caps = {}, st = {};
+  try { caps = (t.getCapabilities && t.getCapabilities()) || {}; } catch (_) {}
+  try { st = t.getSettings() || {}; } catch (_) {}
+  const c = {}, v = {};
+  for (const k of IMG_CLAVES) {
+    const x = caps[k];
+    if (Array.isArray(x)) { if (x.length > 1) c[k] = x.slice(); }
+    else if (x && typeof x === 'object' && Number.isFinite(x.min) && x.max > x.min) c[k] = { min: x.min, max: x.max, step: x.step || 0 };
+    if (k in c && st[k] !== undefined) v[k] = st[k];
+  }
+  return { caps: c, valores: v };
+}
+/* Sólo lo que la cámara admite, dentro de su rango, y con el modo manual que haga falta */
+function limpiarAjustes(aj, caps) {
+  const o = {};
+  for (const [k, val] of Object.entries(aj || {})) {
+    const c = caps[k];
+    if (!c) continue;
+    if (Array.isArray(c)) { if (c.includes(val)) o[k] = val; }
+    else { const n = +val; if (Number.isFinite(n)) o[k] = Math.max(c.min, Math.min(c.max, n)); }
+  }
+  for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) {
+    if (k in o && !(mk in o) && Array.isArray(caps[mk]) && caps[mk].includes(mv)) o[mk] = mv;
+  }
+  return o;
+}
+function ajustarImagen(aj, guardar) {
+  const info = leerImagen();
+  if (!info) return false;
+  const limpio = limpiarAjustes(aj, info.caps);
+  if (!Object.keys(limpio).length) return false;
+  IMG.pendiente = { ...(IMG.pendiente || {}), ...limpio };
+  if (guardar !== false) {
+    const g = { ...IMG.guardado, ...limpio };
+    /* «una vez» es una acción, no un estado; y un modo que deja de ser manual suelta sus valores */
+    for (const k of Object.keys(g)) if (g[k] === 'single-shot') delete g[k];
+    for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) if (mk in limpio && limpio[mk] !== mv && !(k in limpio)) delete g[k];
+    IMG.guardado = g;
+    try { localStorage.setItem('midivj-camara-imagen', JSON.stringify(g)); } catch (_) {}
+  }
+  procesarImagen();
+  return true;
+}
+async function procesarImagen() {
+  if (IMG.aplicando) return;
+  IMG.aplicando = true;
+  /* Un fader manda muchos valores seguidos: se aplica siempre el último */
+  while (IMG.pendiente) {
+    const aj = IMG.pendiente;
+    IMG.pendiente = null;
+    const t = pistaCamara();
+    if (!t) break;
+    try { await t.applyConstraints({ advanced: [aj] }); IMG.error = null; }
+    catch (e) { IMG.error = 'la cámara no aceptó el ajuste (' + (e.message || e.name) + ')'; _log('⚠ ' + IMG.error, aj); }
+  }
+  IMG.aplicando = false;
+  informarPronto();
+  if ($('ajustes').classList.contains('vis')) pintarConfig();
+}
+/* FIJAR: deja exposición, foco y balance en manual con los valores de ahora (que no «busquen» solos) */
+function fijarImagen() {
+  const info = leerImagen(), t = pistaCamara();
+  if (!info || !t) return false;
+  let st = {};
+  try { st = t.getSettings() || {}; } catch (_) {}
+  const aj = {};
+  for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) {
+    if (Array.isArray(info.caps[mk]) && info.caps[mk].includes(mv)) { aj[mk] = mv; if (info.caps[k] && st[k] !== undefined) aj[k] = st[k]; }
+  }
+  return ajustarImagen(aj);
+}
+/* AUTO: exposición, foco y balance vuelven a ajustarse solos */
+function autoImagen() {
+  const info = leerImagen();
+  if (!info) return false;
+  const aj = {};
+  for (const mk of ['exposureMode', 'focusMode', 'whiteBalanceMode']) if (Array.isArray(info.caps[mk]) && info.caps[mk].includes('continuous')) aj[mk] = 'continuous';
+  return ajustarImagen(aj);
+}
+function reaplicarImagen() { if (Object.keys(IMG.guardado).length) ajustarImagen(IMG.guardado, false); }
+function atenderImagen(msg) {
+  if (msg.auto) autoImagen();
+  if (msg.fijar) fijarImagen();
+  if (msg.ajustes && typeof msg.ajustes === 'object') ajustarImagen(msg.ajustes);
+  if (!pistaCamara()) { IMG.error = 'la cámara está cerrada'; informarPronto(); }
+}
+
 /* El track de hardware: si el sistema corta la cámara (bloqueo de pantalla,
    otra app la toma), se avisa a MIDIVJ. */
 function vigilarCamara(raw) {
   const trackLocal = raw.getVideoTracks()[0];
   _log('cámara local abierta', trackLocal && { label: trackLocal.label, readyState: trackLocal.readyState, ajustes: trackLocal.getSettings && trackLocal.getSettings() });
   if (!trackLocal) return;
+  setTimeout(() => { if (C.raw === raw) reaplicarImagen(); }, 400);   // la exposición/foco elegidos sobreviven a reabrir la cámara
   trackLocal.onended = () => {
     if (C.raw !== raw) return;   // es la cámara anterior, soltada a propósito al cambiar de lente
     _log('⚠ el track LOCAL de la cámara terminó por sí solo (track.onended) — el sistema/navegador cortó la cámara (pantalla bloqueada, otra app la tomó, etc.)');
@@ -1183,7 +1287,7 @@ let timerEstado = 0;
 function informarEstado() {
   clearTimeout(timerEstado);
   if (C.estado !== 'transmitiendo' && C.estado !== 'pidiendo') return;
-  enviar({ type: 'camara-estado', config: CFG, real: medidaReal(), caps: C.caps, error: C.errorCfg });
+  enviar({ type: 'camara-estado', config: CFG, real: medidaReal(), caps: C.caps, error: C.errorCfg || IMG.error, imagen: leerImagen() });
 }
 /* Al girar el teléfono o tras un cambio, el tamaño real llega un instante después */
 function informarPronto() { clearTimeout(timerEstado); timerEstado = setTimeout(informarEstado, 350); }
@@ -1224,6 +1328,8 @@ function pintarConfig() {
   $('cfg-' + campo).addEventListener('change', ev => cambiarConfig({ [campo]: ev.target.value }, 'teléfono'));
 });
 $('btn-cfg').onclick = ev => { ev.stopPropagation(); pintarConfig(); $('ajustes').classList.toggle('vis'); $('btn-cfg').classList.toggle('act', $('ajustes').classList.contains('vis')); };
+$('img-fijar').onclick = () => { toast(fijarImagen() ? 'Exposición y foco fijados' : 'Esta cámara no deja fijar la exposición ni el foco'); };
+$('img-auto').onclick = () => { toast(autoImagen() ? 'Exposición y foco automáticos' : 'Esta cámara no los ajusta sola'); };
 $('cfg-cerrar').onclick = () => { $('ajustes').classList.remove('vis'); $('btn-cfg').classList.remove('act'); };
 
 /* ── Conexión ─────────────────────────────────────────── */
@@ -1321,6 +1427,10 @@ function recibir(msg) {
 
     case 'camara-config':
       cambiarConfig(msg.config || {}, 'midivj');
+      break;
+
+    case 'camara-imagen':
+      atenderImagen(msg);
       break;
 
     case 'rtc-candidato':

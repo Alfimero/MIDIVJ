@@ -244,6 +244,20 @@ El teléfono guarda su configuración y la muestra de los dos lados: la sección
 - **La primera vez, el teléfono muestra "conexión no privada".** `/camara` necesita HTTPS — es la única forma de que el navegador del teléfono dé acceso a la cámara en una IP de red, `getUserMedia` no funciona por HTTP salvo en `localhost`. El relay genera un certificado autofirmado en esta misma computadora (nada de internet ni de una CA real), así que el teléfono avisa que no reconoce el certificado: toca **Avanzado → continuar de todos modos**. Es esperado, una sola vez por teléfono (mientras la red no cambie), y no significa que algo esté mal.
 - El teléfono manda video y, si AUDIO está en *micrófono*, también su sonido (el navegador pedirá permiso de micrófono; si se niega, sigue sólo el video). `PANTALLA` y `CAPTURA` siguen siendo sólo video.
 
+### Exposición, foco, balance y zoom
+
+Con las luces de un show, la exposición y el foco automáticos de un teléfono «buscan» todo el tiempo. Desde MIDIVJ se ajustan los de cada cámara:
+
+- **En la pista**: CONFIG. DE CÁMARA · 📱 → **IMAGEN**.
+- **En 📷 CÁMARAS → IMAGEN**: todas las cámaras juntas, con **🔒 FIJAR EN TODAS**, **↺ AUTO EN TODAS** y **◎ ENFOCAR TODAS**.
+- **En el visor**: vista **⊞ CUADRÍCULA**, sección **CÁMARA** de la pista elegida.
+- **Con un fader o una perilla**: aparecen en **🎯 MAPEO** y en 🎛 CONTROLES como «P1 · Cámara: exposición / tiempo de exposición / foco / temperatura / zoom».
+- **En el teléfono**: ⚙ → 🔒 FIJAR EXPOSICIÓN Y FOCO.
+
+**🔒 FIJAR** deja exposición, foco y balance de blancos en manual con los valores de ese momento, para que no cambien solos; **↺ AUTO** los devuelve a automático; **◎ ENFOCAR** enfoca una vez y se queda ahí. Mover un control manual (tiempo de exposición, distancia de foco, temperatura) pone ese modo en manual. El teléfono recuerda lo elegido y lo vuelve a aplicar si la cámara se reabre, y se puede ajustar mientras graba.
+
+Sólo aparece lo que la cámara de cada teléfono le declara al navegador, y eso cambia mucho: Chrome en Android suele dar exposición y foco (y a veces ISO, balance, zoom y linterna); **Safari en iPhone casi nada**. Cuando una cámara no da ningún control, MIDIVJ lo dice y queda el PROCESADOR DE VIDEO (brillo, contraste, color) como alternativa. Las cámaras USB de la PC ofrecen estos mismos controles en el hub, el visor y los faders.
+
 ### Hub de cámaras: el formato de todas a la vez
 
 **📷 CÁMARAS** (en el encabezado) abre una tabla con todas las cámaras de teléfono: la pista, lo que cada una **envía**, lo que **llega** y sus ajustes (resolución, FPS, formato, calidad, lente, audio). La fila **TODAS** cambia un ajuste en todas a la vez — por ejemplo, dejarlas en 1080p · 30 fps · 16:9 con un solo cambio — y marca en amarillo lo que es distinto entre cámaras. Los teléfonos conectados que todavía no están en una pista también reciben el cambio y lo usan al empezar a transmitir.
