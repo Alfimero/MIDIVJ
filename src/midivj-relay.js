@@ -1445,7 +1445,7 @@ entrada.on('listening', () => server.emit('listening'));
      relay   → { type:'camara-error', slot, motivo }           (destino inexistente)
      app     → { type:'camara-config', slot, config }          (resolución, fps, formato… de la toma)
      cámara  → { type:'camara-estado', config, real, caps, imagen }  (lo que de verdad envía; imagen = controles de exposición/foco… y sus valores)
-     app     → { type:'camara-imagen', slot, ajustes?, fijar?, auto? }   (exposición, foco, balance, zoom, linterna)
+     app     → { type:'camara-imagen', slot, ajustes?, fijar?, auto?, bloquear? }   (exposición, foco, balance, zoom, linterna; bloquear: la cámara se queda así)
 
    Señalización WebRTC de salida (unicast app↔fuente-de-navegador-de-un-id;
    misma idea que la cámara pero con los papeles invertidos: aquí la app es

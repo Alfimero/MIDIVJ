@@ -8588,7 +8588,7 @@ function _camEstadoRecibido(slot, msg) {
       limite: ['cpu', 'bandwidth', 'other'].includes(r.limite) ? r.limite : null, audio: !!r.audio, errorAudio: r.errorAudio ? String(r.errorAudio).slice(0, 80) : null },
     caps: msg.caps && typeof msg.caps === 'object' ? msg.caps : null,
     error: msg.error ? String(msg.error).slice(0, 200) : null,
-    imagen: msg.imagen && typeof msg.imagen === 'object' && msg.imagen.caps ? { caps: msg.imagen.caps, valores: msg.imagen.valores || {} } : null,
+    imagen: msg.imagen && typeof msg.imagen === 'object' && msg.imagen.caps ? { caps: msg.imagen.caps, valores: msg.imagen.valores || {}, bloqueada: msg.imagen.bloqueada === true, corregida: msg.imagen.corregida | 0 } : null,
   };
   if (ses.tel.error) _camLog('⚠ cámara '+slot+' (pista '+idx+'): '+ses.tel.error);
   hubCamRefrescar();
@@ -8786,9 +8786,11 @@ function hubImgRefrescar() {
   const filas = hubCamFilas();
   const html = filas.length
     ? '<div class="img-barra"><b style="color:var(--text3);font-weight:400;">TODAS:</b>' +
-        '<button class="hbtn" data-img-accion="fijar" data-img-pista="todas">🔒 FIJAR EN TODAS</button>' +
+        '<button class="hbtn" data-img-accion="fijar" data-img-pista="todas">📌 FIJAR EN TODAS</button>' +
         '<button class="hbtn" data-img-accion="auto" data-img-pista="todas">↺ AUTO EN TODAS</button>' +
-        '<button class="hbtn" data-img-accion="enfocar" data-img-pista="todas">◎ ENFOCAR TODAS</button></div>' +
+        '<button class="hbtn" data-img-accion="enfocar" data-img-pista="todas">◎ ENFOCAR TODAS</button>' +
+        '<button class="hbtn" data-img-accion="bloquear" data-img-pista="todas" title="Todas las cámaras se quedan como están">🔒 BLOQUEAR TODAS</button>' +
+        '<button class="hbtn" data-img-accion="desbloquear" data-img-pista="todas">🔓 DESBLOQUEAR TODAS</button></div>' +
       '<table>' + filas.map(({ idx, ses }) => '<tr><td style="width:60px;"><b>T' + (idx + 1) + '</b> · ' + ses.slot + '</td><td>' +
         (ses.tel ? imgControlesHTML(idx, camImagen(S.tracks[idx]), true) : '⏳') + '</td></tr>').join('') + '</table>'
     : '<div class="vacio">Ninguna cámara de teléfono está en una pista.</div>';
@@ -10424,8 +10426,11 @@ function camImagen(t) {
     const im = ses && ses.tel && ses.tel.imagen;
     if (!im || !im.caps) return null;
     return {
-      tipo: 'telefono', caps: im.caps, valores: im.valores || (im.valores = {}),
+      tipo: 'telefono', caps: im.caps, valores: im.valores || (im.valores = {}), bloqueada: !!im.bloqueada,
       aplicar(aj, extra) {
+        /* 🔒 bloqueada: sólo vale desbloquearla (el teléfono también lo ignora) */
+        if (extra && typeof extra.bloquear === 'boolean') { im.bloqueada = extra.bloquear; imgEnviar(ses.slot, {}, { bloquear: extra.bloquear }); return; }
+        if (im.bloqueada) return;
         const limpio = imgLimpiar(aj, im.caps);
         Object.assign(im.valores, limpio);   // se ve enseguida; el teléfono confirma con su estado
         imgEnviar(ses.slot, limpio, extra);
@@ -10437,21 +10442,74 @@ function camImagen(t) {
     if (!mt) return null;
     const im = imgDesdePista(mt);
     return {
-      tipo: 'captura', caps: im.caps, valores: im.valores,
+      tipo: 'captura', caps: im.caps, valores: im.valores, bloqueada: !!t._imgBloqueo,
       aplicar(aj, extra) {
+        if (extra && extra.bloquear === false) { t._imgBloqueo = null; return; }
+        if (extra && extra.bloquear === true) {
+          const foto = imgFoto(im.caps, im.ajustes);
+          if (!Object.keys(foto).length) return;
+          t._imgBloqueo = foto;
+          imgAplicarCaptura(t, foto);
+          return;
+        }
+        if (t._imgBloqueo) return;
         let todo = { ...(aj || {}) };
         if (extra && extra.auto) for (const mk of ['exposureMode', 'focusMode', 'whiteBalanceMode']) if ((im.caps[mk] || []).includes('continuous')) todo[mk] = 'continuous';
         if (extra && extra.fijar) {
           for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) if ((im.caps[mk] || []).includes(mv)) { todo[mk] = mv; if (im.caps[k] && im.ajustes[k] !== undefined) todo[k] = im.ajustes[k]; }
         }
-        todo = imgLimpiar(todo, im.caps);
-        /* los modos primero: un valor manual necesita su modo en manual */
-        Object.keys(todo).sort((a, b) => /Mode$/.test(b) - /Mode$/.test(a)).forEach(k => camApply(t.i, k, todo[k]));
+        imgAplicarCaptura(t, imgLimpiar(todo, im.caps));
       },
     };
   }
   return null;
 }
+/* los modos primero: un valor manual necesita su modo en manual */
+function imgAplicarCaptura(t, todo) {
+  Object.keys(todo).sort((a, b) => /Mode$/.test(b) - /Mode$/.test(a)).forEach(k => camApply(t.i, k, todo[k]));
+}
+/* 🔒 BLOQUEAR (lo mismo que hace el teléfono): la foto de la imagen de ahora,
+   con exposición, foco y balance en manual. Mientras dure, la cámara no
+   acepta cambios y, si se mueve sola, se vuelve a esa foto. */
+function imgFoto(caps, st) {
+  const aj = {};
+  for (const k of IMG_CLAVES) {
+    if (!caps[k] || st[k] === undefined || Array.isArray(caps[k])) continue;
+    aj[k] = k === 'torch' ? !!st[k] : st[k];
+  }
+  for (const mk of ['exposureMode', 'focusMode', 'whiteBalanceMode']) {
+    const c = caps[mk];
+    if (!Array.isArray(c)) continue;
+    if (c.includes('manual')) aj[mk] = 'manual';
+    else if (st[mk] && st[mk] !== 'single-shot') aj[mk] = st[mk];
+  }
+  for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) if (k in aj && aj[mk] !== mv) delete aj[k];
+  return aj;
+}
+function imgDesvio(foto, caps, st) {
+  for (const [k, v] of Object.entries(foto)) {
+    if (st[k] === undefined) continue;
+    if (typeof v === 'number') {
+      const c = caps[k] || {};
+      const tol = Math.max(c.step || 0, Number.isFinite(c.max - c.min) ? (c.max - c.min) * 0.01 : 0);
+      if (Math.abs(st[k] - v) > tol + 1e-9) return k;
+    } else if (st[k] !== v) return k;
+  }
+  return null;
+}
+/* Las cámaras USB bloqueadas: cada 2 s, que sigan como se bloquearon */
+setInterval(() => {
+  for (const t of S.tracks) {
+    if (!t._imgBloqueo) continue;
+    const mt = t.sourceType === 'capture' && t.loaded ? camTrackOf(t) : null;
+    if (!mt) { t._imgBloqueo = null; continue; }   // la cámara ya no está: el candado se suelta
+    const im = imgDesdePista(mt);
+    const k = imgDesvio(t._imgBloqueo, im.caps, im.ajustes);
+    if (!k) continue;
+    appendNetLog('[cámara] 🔒 T' + (t.i + 1) + ' cambió ' + k + ' sola: se vuelve a lo bloqueado');
+    imgAplicarCaptura(t, t._imgBloqueo);
+  }
+}, 2000);
 function imgLimpiar(aj, caps) {
   const o = {};
   for (const [k, val] of Object.entries(aj || {})) {
@@ -10471,7 +10529,8 @@ function imgEnviar(slot, aj, extra) {
   if (p.timer) return;
   p.timer = setTimeout(() => {
     IMG_ENVIO.delete(slot);
-    _camEnviar({ type: 'camara-imagen', slot, ajustes: p.aj, ...(p.extra.fijar ? { fijar: true } : {}), ...(p.extra.auto ? { auto: true } : {}) });
+    _camEnviar({ type: 'camara-imagen', slot, ajustes: p.aj, ...(p.extra.fijar ? { fijar: true } : {}), ...(p.extra.auto ? { auto: true } : {}),
+      ...(typeof p.extra.bloquear === 'boolean' ? { bloquear: p.extra.bloquear } : {}) });
   }, 60);
 }
 function camImgSet(idx, k, val) {
@@ -10486,7 +10545,10 @@ function camImgAccion(idx, accion) {
   if (accion === 'fijar') im.aplicar({}, { fijar: true });
   else if (accion === 'auto') im.aplicar({}, { auto: true });
   else if (accion === 'enfocar') im.aplicar({ focusMode: 'single-shot' });
+  else if (accion === 'bloquear') im.aplicar({}, { bloquear: true });
+  else if (accion === 'desbloquear') im.aplicar({}, { bloquear: false });
   publicarEstadoVisorPronto();
+  setTimeout(imgRepintar, 200);
 }
 function publicarEstadoVisorPronto() {
   if (typeof publicarEstadoVisor !== 'function') return;
@@ -10502,11 +10564,12 @@ function imgControlesHTML(idx, im, enLinea) {
       : '<div class="ep-row"><span class="ep-note">Esta cámara no deja ajustar exposición ni foco desde el navegador (pasa con iPhone y con muchos teléfonos): usá el PROCESADOR DE VIDEO.</span></div>';
   }
   const partes = [];
+  const bloq = !!im.bloqueada;
   for (const k of IMG_CLAVES) {
     const c = im.caps[k];
     if (!c) continue;
     const v = im.valores[k];
-    const atr = `data-img-pista="${idx}" data-img-clave="${k}" title="${IMG_LBL[k]}"`;
+    const atr = `data-img-pista="${idx}" data-img-clave="${k}" title="${IMG_LBL[k]}${bloq ? ' (bloqueada)' : ''}"${bloq ? ' disabled' : ''}`;
     let ctl;
     if (k === 'torch') ctl = `<label style="display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" ${atr}${v ? ' checked' : ''}>${enLinea ? '' : (v ? 'encendida' : 'apagada')}</label>`;
     else if (Array.isArray(c)) ctl = `<select class="epsel" ${atr}>${c.map(m => `<option value="${m}"${m === v ? ' selected' : ''}>${IMG_MODO[m] || m}</option>`).join('')}</select>`;
@@ -10520,9 +10583,12 @@ function imgControlesHTML(idx, im, enLinea) {
       : `<div class="ep-row" data-img-fila="${k}"><span class="ep-lbl wide">${IMG_LBL[k]}</span>${ctl}${badge}</div>`);
   }
   const enfocar = (im.caps.focusMode || []).includes('single-shot');
-  const botones = `${enfocar ? `<button class="hbtn" data-img-accion="enfocar" data-img-pista="${idx}" title="Enfoca una vez y se queda ahí">◎ ENFOCAR</button>` : ''}` +
-    `<button class="hbtn" data-img-accion="fijar" data-img-pista="${idx}" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos">🔒 FIJAR</button>` +
-    `<button class="hbtn" data-img-accion="auto" data-img-pista="${idx}" title="Exposición, foco y balance automáticos">↺ AUTO</button>`;
+  const botones = bloq
+    ? `<button class="hbtn" data-img-accion="desbloquear" data-img-pista="${idx}" style="color:var(--accent);border-color:var(--accent);" title="La cámara está bloqueada: no cambia sola ni desde los controles. Desbloquear para volver a ajustarla">🔓 DESBLOQUEAR</button>`
+    : `${enfocar ? `<button class="hbtn" data-img-accion="enfocar" data-img-pista="${idx}" title="Enfoca una vez y se queda ahí">◎ ENFOCAR</button>` : ''}` +
+      `<button class="hbtn" data-img-accion="fijar" data-img-pista="${idx}" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos">📌 FIJAR</button>` +
+      `<button class="hbtn" data-img-accion="auto" data-img-pista="${idx}" title="Exposición, foco y balance automáticos">↺ AUTO</button>` +
+      `<button class="hbtn" data-img-accion="bloquear" data-img-pista="${idx}" title="La cámara se queda como está ahora (exposición, foco, balance, zoom): no cambia sola ni desde faders, hub o visor hasta desbloquearla; si se mueve, vuelve sola">🔒 BLOQUEAR</button>`;
   return enLinea ? partes.join('') + `<span class="img-ctl">${botones}</span>`
     : partes.join('') + `<div class="ep-row" style="gap:6px;">${botones.replace(/class="hbtn"/g, 'class="hbtn" style="font-size:8px;padding:2px 7px;"')}</div>`;
 }
@@ -10705,8 +10771,28 @@ function dibujarVisor() {
   if (VIS.sesiones.size) {
     if (visNecesita('previa')) dibujarPrevia();
     const grande = visMosaicoGrande();
-    if ((grande || S.frame % 2 === 0) && visNecesita('pistas')) dibujarMosaico(grande);
+    if ((grande || S.frame % 2 === 0) && visNecesita('pistas')) dibujarMosaico();
   }
+}
+/* PANTALLA COMPLETA de la cuadrícula: el visor pide una sola pista a todo
+   el tamaño (ver.foco). Sólo si todos los que miran el mosaico piden la
+   misma; si no, el mosaico normal (el visor recorta su celda). */
+function visMosaicoFoco() {
+  let foco = null;
+  for (const s of VIS.sesiones.values()) {
+    if (!s.ver || s.ver.pistas === false) continue;
+    if (s.ver.pistas !== 'grande' || !Number.isInteger(s.ver.foco)) return null;
+    if (foco !== null && foco !== s.ver.foco) return null;
+    foco = s.ver.foco;
+  }
+  return foco;
+}
+/* La forma del mosaico: celdas chicas, grandes (cuadrícula) o una pista sola */
+function formaMosaico() {
+  const foco = visMosaicoFoco();
+  if (foco !== null) return { cols: 1, filas: 1, cw: 1920, ch: 1080, foco };
+  const grande = visMosaicoGrande();
+  return { cols: MOSAICO.cols, filas: Math.ceil(N_TRACKS / MOSAICO.cols), cw: grande ? 640 : 320, ch: grande ? 360 : 180, foco: null };
 }
 /* La vista CUADRÍCULA del visor compara cámaras: pide el mosaico con celdas
    más grandes y a todos los cuadros (ver.pistas === 'grande'). */
@@ -11216,16 +11302,21 @@ function dibujarPrevia() {
     ctx = real;
   }
 }
-function dibujarMosaico(grande) {
+function dibujarMosaico() {
   const mv = VIS.mv;
   if (!mv) return;
-  MOSAICO.cw = grande ? 640 : 320;
-  MOSAICO.ch = grande ? 360 : 180;
-  const mw = MOSAICO.cols * MOSAICO.cw, mh = Math.ceil(N_TRACKS / MOSAICO.cols) * MOSAICO.ch;
+  const f = formaMosaico();
+  MOSAICO.cw = f.cw; MOSAICO.ch = f.ch;
+  const mw = f.cols * f.cw, mh = f.filas * f.ch;
   if (mv.cvs.width !== mw || mv.cvs.height !== mh) { mv.cvs.width = mw; mv.cvs.height = mh; }
-  const c = mv.ctx, { cols, cw, ch } = MOSAICO;
+  const c = mv.ctx, { cols, cw, ch } = f;
   c.fillStyle = '#000';
   c.fillRect(0, 0, mv.cvs.width, mv.cvs.height);
+  if (f.foco !== null) {
+    const t = S.tracks[f.foco], src = fuentePista(t);
+    if (src) dibujarEncajado(c, vprocApply(t, src), 0, 0, cw, ch);
+    return;
+  }
   for (let i = 0; i < N_TRACKS; i++) {
     const t = S.tracks[i], src = fuentePista(t);
     if (src) dibujarEncajado(c, vprocApply(t, src), (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch);
@@ -11240,14 +11331,14 @@ function estadoVisor() {
   return {
     type: 'visor-estado',
     salida: { w: cvs.width, h: cvs.height },
-    mosaico: { cols: MOSAICO.cols, filas: Math.ceil(N_TRACKS / MOSAICO.cols), cw: MOSAICO.cw, ch: MOSAICO.ch },
+    mosaico: formaMosaico(),
     pistas: S.tracks.map((t, i) => ({
       nombre: t.name, color: t.acc, cargada: !!t.loaded,
       tipo: t.loaded ? (t.sourceType === 'file' ? (t.mediaKind === 'image' ? 'imagen' : 'video') : t.sourceType) : '',
       fuente: t.loaded ? String(t.loadedName || '').slice(0, 60) : '',
       on: salida.pistas[i].on, opacidad: salida.pistas[i].opacidad, clip: salida.pistas[i].clip, fijo: salida.pistas[i].fijo,
       capa: t.excl === 'capa',
-      camara: (() => { const im = camImagen(t); return im ? { tipo: im.tipo, caps: im.caps, valores: im.valores } : null; })(),
+      camara: (() => { const im = camImagen(t); return im ? { tipo: im.tipo, caps: im.caps, valores: im.valores, bloqueada: !!im.bloqueada } : null; })(),
       color: { on: !!t.vproc.on, ...Object.fromEntries(VPROC_PARAMS.map(p => [p.key, t.vproc[p.key] ?? p.def])) },
       forma: Object.fromEntries(efxParams({ type: 'xform' }).map(p => [p.key, t.xform[p.key] ?? p.def])),
       vivo: !!t.loaded && t.sourceType !== 'file', interruptor: t.sourceType !== 'file' && t.clips.some(c => c.srcLive),
@@ -11422,7 +11513,8 @@ function visorOrden(msg) {
     case 'ver': {
       const sesion = VIS.sesiones.get(msg.id);
       if (!sesion) return;
-      sesion.ver = { salida: msg.salida !== false, previa: msg.previa !== false, pistas: msg.pistas === 'grande' ? 'grande' : msg.pistas !== false, audio: msg.audio === true };
+      sesion.ver = { salida: msg.salida !== false, previa: msg.previa !== false, pistas: msg.pistas === 'grande' ? 'grande' : msg.pistas !== false, audio: msg.audio === true,
+        foco: msg.pistas === 'grande' && Number.isInteger(msg.foco) && msg.foco >= 0 && msg.foco < N_TRACKS ? msg.foco : null };
       _visAplicarVer(sesion);
       relojNivelesVisor();
       VIS.firma = '';
@@ -11470,7 +11562,9 @@ function visorOrden(msg) {
       if (!enRango) return;
       const im = camImagen(S.tracks[i]);
       if (!im) return;
-      im.aplicar(msg.ajustes && typeof msg.ajustes === 'object' ? msg.ajustes : {}, { fijar: msg.fijar === true, auto: msg.auto === true });
+      im.aplicar(msg.ajustes && typeof msg.ajustes === 'object' ? msg.ajustes : {}, { fijar: msg.fijar === true, auto: msg.auto === true,
+        ...(typeof msg.bloquear === 'boolean' ? { bloquear: msg.bloquear } : {}) });
+      publicarEstadoVisorPronto();
       setTimeout(imgRepintar, 150);
       break;
     }

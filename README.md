@@ -249,12 +249,14 @@ El teléfono guarda su configuración y la muestra de los dos lados: la sección
 Con las luces de un show, la exposición y el foco automáticos de un teléfono «buscan» todo el tiempo. Desde MIDIVJ se ajustan los de cada cámara:
 
 - **En la pista**: CONFIG. DE CÁMARA · 📱 → **IMAGEN**.
-- **En 📷 CÁMARAS → IMAGEN**: todas las cámaras juntas, con **🔒 FIJAR EN TODAS**, **↺ AUTO EN TODAS** y **◎ ENFOCAR TODAS**.
-- **En el visor**: vista **⊞ CUADRÍCULA**, sección **CÁMARA** de la pista elegida.
+- **En 📷 CÁMARAS → IMAGEN**: todas las cámaras juntas, con **📌 FIJAR EN TODAS**, **↺ AUTO EN TODAS**, **◎ ENFOCAR TODAS** y **🔒 BLOQUEAR / 🔓 DESBLOQUEAR TODAS**.
+- **En el visor**: vista **⊞ CUADRÍCULA**, sección **CÁMARA** de la pista elegida (también en ⛶ PANTALLA COMPLETA).
 - **Con un fader o una perilla**: aparecen en **🎯 MAPEO** y en 🎛 CONTROLES como «P1 · Cámara: exposición / tiempo de exposición / foco / temperatura / zoom».
-- **En el teléfono**: ⚙ → 🔒 FIJAR EXPOSICIÓN Y FOCO.
+- **En el teléfono**: ⚙ → 📌 FIJAR EXPOSICIÓN Y FOCO y 🔒 BLOQUEAR LA IMAGEN.
 
-**🔒 FIJAR** deja exposición, foco y balance de blancos en manual con los valores de ese momento, para que no cambien solos; **↺ AUTO** los devuelve a automático; **◎ ENFOCAR** enfoca una vez y se queda ahí. Mover un control manual (tiempo de exposición, distancia de foco, temperatura) pone ese modo en manual. El teléfono recuerda lo elegido y lo vuelve a aplicar si la cámara se reabre, y se puede ajustar mientras graba.
+**📌 FIJAR** deja exposición, foco y balance de blancos en manual con los valores de ese momento, para que no cambien solos; **↺ AUTO** los devuelve a automático; **◎ ENFOCAR** enfoca una vez y se queda ahí. Mover un control manual (tiempo de exposición, distancia de foco, temperatura) pone ese modo en manual. El teléfono recuerda lo elegido y lo vuelve a aplicar si la cámara se reabre, y se puede ajustar mientras graba.
+
+**🔒 BLOQUEAR** es para cuando ya quedó bien: la cámara se queda exactamente así (exposición, foco y balance en manual con los valores de ese momento, y el zoom, la compensación y la linterna como están). Mientras está bloqueada no cambia sola con las luces ni desde ningún lado (faders y perillas mapeados, el hub, otro visor, el propio teléfono): sus controles aparecen apagados. Cada 2 segundos se comprueba que la cámara siga igual y, si se movió sola, vuelve a lo bloqueado. El teléfono lo guarda: sigue bloqueada si se recarga la página o se reabre la cámara. **🔓 DESBLOQUEAR** la suelta para volver a ajustarla. Las cámaras USB de la PC también se bloquean (mientras estén en la pista).
 
 Sólo aparece lo que la cámara de cada teléfono le declara al navegador, y eso cambia mucho: Chrome en Android suele dar exposición y foco (y a veces ISO, balance, zoom y linterna); **Safari en iPhone casi nada**. Cuando una cámara no da ningún control, MIDIVJ lo dice y queda el PROCESADOR DE VIDEO (brillo, contraste, color) como alternativa. Las cámaras USB de la PC ofrecen estos mismos controles en el hub, el visor y los faders.
 
@@ -300,6 +302,8 @@ Notas: sólo video, sin audio (igual que HDMI/PANTALLA/CAPTURA/cámara). `/salid
   - **ESCENAS**: arreglos guardados (van en la sesión `.vjp`). Tocar una la carga en la previa; **▶** la manda directo a la salida; 💾 la sobrescribe, ✎ la renombra, ✕ la borra.
 - **DIRECTO A SALIDA**: cada toque de la barra actúa al aire, sin pasar por la previa.
 - **⊞ CUADRÍCULA**: varias pistas a la vez, para comparar cámaras. Se elige cuántas columnas y filas (hasta 6 × 4) y qué pistas entran (con fuente, sólo cámaras y en vivo, o todas). Cada celda es la señal limpia de la pista, más grande y a todos los cuadros. Tocar una celda la elige y el panel edita su **COLOR** (el PROCESADOR DE VIDEO: ganancia, brillo, contraste, gamma, balance de blancos, contraluz, matiz, saturación, nitidez; **ON/OFF** para comparar antes y después, **↺** para volver a neutro) y su **TRANSFORMACIÓN** (posición, escala, rotación, profundidad). Los sliders de MIDIVJ se mueven solos, y la mini **SALIDA** del panel muestra el resultado en la mezcla. Doble toque en un slider lo devuelve a su valor.
+  - **Más fuentes que celdas**: aparece una barra **◂ 1–4 de 6 ▸** debajo de la rejilla; también se pasa a las siguientes **deslizando** con el dedo (izquierda o arriba = las siguientes) o con la **rueda** del ratón (de a una fila).
+  - **⛶ PANTALLA COMPLETA** (en el editor de la pista elegida): la fuente en grande, la **salida** al lado y el editor (color, transformación y **CÁMARA**: exposición, foco, 🔒 bloquear) a la derecha. MIDIVJ manda esa pista sola a 1920×1080, así se ve nítida. **FUENTE / LAS DOS / SALIDA** elige qué se ve (lo que no se ve no se manda); **◂ ▸** (o ← →) cambian de fuente sin salir; **○ AL AIRE** pone la pista en la salida o la quita, con la transición elegida; **✕ SALIR** o **Esc** vuelve a la cuadrícula. En una tableta ocupa toda la pantalla (en iPhone, toda la ventana del navegador).
 
 En MIDIVJ, una pista apagada desde el visor se marca tachada en su pestaña con **⦸** (clic para volver a mostrarla). La previa usa las mismas fuentes que la salida: muestra el arreglo (posición, recorte, color, capas), no los efectos globales, y una pista de video enseña el cuadro que tiene en ese momento.
 
