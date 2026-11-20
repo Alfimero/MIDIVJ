@@ -323,9 +323,9 @@ Está en **📡 RELAY → 7 · OTROS MIDIVJ EN LA RED**:
 - Dos sesiones en la misma PC (dos relays, en los puertos 9191 y 9192) también se ven entre sí.
 - Red: usa el mismo puerto que los teléfonos (TCP 9191), así que funciona donde funciona el mando. Los avisos automáticos van por UDP 9189; si el firewall los bloquea, BUSCAR hace lo mismo. Hay que actualizar y reiniciar el relay en los equipos; un equipo con la versión anterior sirve de origen si se escribe su IP a mano.
 
-## Grabar la salida y las pistas
+## Grabar la salida
 
-**⏺ GRABAR** (en el encabezado) abre el panel GRABACIÓN. Marca qué grabar: la **salida** (tal como se ve en HDMI y OBS) y, si quieres, **cada pista por separado** (su señal limpia: el video o la cámara con su corrección de color, sin mezcla ni efectos, se vea o no en la salida). Todas las tomas van a una misma carpeta, que eliges en **CARPETA DE LAS GRABACIONES** (📁 ELEGIR… o escribiendo la ruta; por defecto `Grabaciones/` del proyecto, fuera de Git):
+**⏺ GRABAR** (en el encabezado) abre el panel GRABACIÓN. Se graba la **salida**, tal como se ve en HDMI y OBS. Las pistas ya no se graban por separado: el original de cada cámara lo graba su propio teléfono (ver *Grabar el original en los teléfonos*). Todas las tomas van a una misma carpeta, que eliges en **CARPETA DE LAS GRABACIONES** (📁 ELEGIR… o escribiendo la ruta; por defecto `Grabaciones/` del proyecto, fuera de Git):
 
 1. Elige **formato** (MP4 · H.264, recomendado: lo abre cualquier editor), **calidad** (Normal / Alta / Máxima ≈ 5 / 9 / 19 Mbps a 1080p30) y **FPS**. **NOMBRE DE LA CARPETA** (opcional) y la casilla **FECHA Y HORA** deciden cómo se llama la carpeta de la toma: `Jupiter - 2026-11-15 20-30-05`, sólo `Jupiter`, sólo la fecha, o `Toma` si no hay ni nombre ni fecha. El panel muestra el nombre antes de grabar; una carpeta que ya existe no se pisa (`Jupiter (2)`).
 2. **⏺ GRABAR** empieza; el botón del encabezado se pone rojo con el tiempo. **⏹ DETENER** termina de guardar.
@@ -333,13 +333,12 @@ Está en **📡 RELAY → 7 · OTROS MIDIVJ EN LA RED**:
 
 **Grabar desde un botón.** En el mismo panel, **GRABAR DESDE UN BOTÓN** tiene tres funciones: **GRABAR / DETENER** (un toque empieza y otro detiene), **GRABAR** y **DETENER** por separado. Pulsa **MAPEAR** y toca el botón que quieras usar: un botón de un mando (teléfono), una tecla o pad de un controlador MIDI, o el mando de otro equipo de la red (📡 RELAY → 7). Desde entonces ese botón graba con lo que esté marcado en el panel, sin abrirlo; el botón ⏺ del encabezado se pone rojo y los mandos de esta sala muestran «Grabando» y «Grabación guardada». Sólo cuenta cuando el botón se aprieta, así que un botón «mantener» también sirve. **✕** le quita el botón a la función. Lo mapeado se guarda en la sesión y en este navegador.
 
-Cada toma es una carpeta (`nombre - 2026-10-30 21-15-03/`) con todos sus archivos juntos (`salida.mp4`, `pista-1.mp4`, `pista-3.mp4`, `audio-entrada.m4a`…) y `toma.json`, que dice el formato, el tamaño y cuándo empezó y terminó cada archivo, con un mismo reloj para alinearlos al editar.
+Cada toma es una carpeta (`nombre - 2026-10-30 21-15-03/`) con todos sus archivos juntos (`salida.mp4` y, si elegiste una entrada de audio, `audio-entrada.m4a`) y `toma.json`, que dice el formato, el tamaño y cuándo empezó y terminó cada archivo, con un mismo reloj para alinearlos al editar.
 
 - **Fluidez**: cada cuadro de la cámara o del video entra una sola vez al archivo. La captura sigue el ritmo de la fuente (no un reloj aparte de 30 por segundo, que cada tanto repetía un cuadro y saltaba otro), así lo grabado queda tan fluido como lo que llega. Si la cámara va más rápido que los FPS elegidos se toma 1 de cada N (una cámara a 60 en una grabación a 30).
 - Cada segundo grabado va directo a disco a través del relay: si la pestaña se cierra o algo se cae a media función, lo grabado hasta ese segundo ya está guardado. Si el relay se reinicia, la grabación sigue en el mismo archivo.
 - Mientras grabas, la salida no cambia sola de tamaño con el video de la pista 1. Si cambias la resolución tú (⛶ SALIDA), la grabación sigue en `salida (2).mp4` de la misma toma.
-- Cada pista conserva el tamaño con el que empezó la toma; si cambia de fuente, la nueva entra encajada. Cada archivo es un codificador más: en equipos modestos graba sólo las pistas que necesites.
-- **Audio** (sección AUDIO del panel): con **GRABAR AUDIO** marcado, la **salida** lleva la mezcla de los canales con REC, cada **pista** lleva su propio sonido limpio (el del video o el micrófono de la cámara) y la **ENTRADA** de audio que elijas (la interfaz, un micrófono, la salida de la consola) queda además en un archivo aparte, `audio-entrada.m4a`. Con **PONER LA ENTRADA EN LAS PISTAS SIN SONIDO PROPIO**, una cámara sin micrófono o un video mudo llevan el de la entrada como referencia: así el editor puede sincronizar todos los archivos por la forma de onda.
+- **Audio** (sección AUDIO del panel): con **GRABAR AUDIO** marcado, la **salida** lleva la mezcla de los canales con REC y la **ENTRADA** de audio que elijas (la interfaz, un micrófono, la salida de la consola) queda además en un archivo aparte, `audio-entrada.m4a`.
 - Deja la ventana de MIDIVJ a la vista: minimizada, el navegador frena el dibujo (igual que para HDMI y OBS).
 - Sólo se graba desde la PC donde corre el relay, como el guardado de sesiones. Después de actualizar, cierra y vuelve a abrir `INICIAR_RELAY` para que el relay conozca la grabación.
 

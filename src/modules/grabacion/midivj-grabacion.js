@@ -3,10 +3,11 @@
    ══════════════════════════════════════════════════════════════════════
 
    Graba con MediaRecorder la salida (lo mismo que ven HDMI y OBS) y, si se
-   eligen, las pistas por separado (la señal limpia de cada una, para
-   reeditar después). Sigue el contrato de `src/modules/midivj-module.js`:
-   no conoce `S` ni el lienzo; pide cada señal a `host.capturas` ('salida',
-   'pista-1'…) y recibe un MediaStream propio, que detiene al terminar sin
+   elige, la entrada de audio en un archivo aparte. Las pistas por separado
+   ya no se graban: el original de cada cámara lo graba su teléfono. Sigue
+   el contrato de `src/modules/midivj-module.js`: no conoce `S` ni el
+   lienzo; pide cada señal a `host.capturas` ('salida', 'audio-entrada') y
+   recibe un MediaStream propio, que detiene al terminar sin
    afectar a HDMI ni a OBS.
 
    Camino de los datos, por cada fuente elegida:
@@ -21,7 +22,7 @@
    hace que un reintento nunca escriba dos veces lo mismo).
 
    Audio: cada señal puede traer su sonido (`cap.audio()`: la mezcla para
-   la salida, el sonido propio de cada pista) y entra en el mismo archivo.
+   la salida) y entra en el mismo archivo.
    Una captura `soloAudio` (la entrada de audio elegida) se graba en un
    archivo de audio aparte (`audio-entrada.m4a`).
 
@@ -32,13 +33,13 @@
    este equipo, que llegan después).
 
    Una toma es una carpeta con todos sus archivos juntos: `salida.mp4`,
-   `pista-1.mp4`, `pista-3.mp4`… Todas las tomas van a una misma carpeta,
+   `audio-entrada.m4a`… Todas las tomas van a una misma carpeta,
    que se elige en el panel (por defecto, Grabaciones/ del proyecto). Si una
    señal cambia de resolución mientras se graba, sigue en un archivo nuevo
    de la misma toma ("salida (2).mp4"): cada archivo queda con un solo
    tamaño, que es lo que mejor abren los editores. `toma.json` dice qué hay
    en cada archivo y cuándo empezó, con un mismo reloj para todos (para
-   alinear las pistas con la salida al editar).
+   alinear los archivos al editar).
 
    API pública (window.MIDIVJGrabacion):
        crear(opciones) → grabador
@@ -133,7 +134,7 @@
       /* fuentes: ids de `host.capturas` que entran en la toma */
       /* titulo + conFecha: nombre de la carpeta de la toma ("Jupiter - 2026-11-15 20-30-05",
          "Jupiter" sin fecha). audio: los archivos llevan sonido si la señal lo tiene. */
-      config: { formato: 'auto', calidad: 'alta', fps: 30, titulo: '', conFecha: true, audio: true, audioRef: true, fuentes: ['salida'] },
+      config: { formato: 'auto', calidad: 'alta', fps: 30, titulo: '', conFecha: true, audio: true, fuentes: ['salida'] },
       fase: 'lista',        // 'lista' | 'abriendo' | 'grabando' | 'cerrando'
       toma: null,           // { nombre, carpeta, inicio: Date, t0: ms, fin: Date|null }
       canales: [],          // una fuente que se está grabando: { cap, actual }
@@ -245,7 +246,7 @@
        en la cola. */
     function abrirSegmento(canal, archivo) {
       const cap = canal.cap;
-      /* Primero el stream: una pista fija su tamaño al empezar a capturarse */
+      /* Primero el stream */
       const flujo = cap.capturar(g.config.fps);
       if (!flujo || !(cap.soloAudio ? flujo.getAudioTracks() : flujo.getVideoTracks()).length) {
         if (flujo) flujo.getTracks().forEach(t => t.stop());
@@ -401,7 +402,7 @@
         toma: g.toma.nombre,
         inicio: g.toma.inicio.toISOString(),
         fin: g.toma.fin ? g.toma.fin.toISOString() : null,
-        nota: 'desdeMs/hastaMs: milisegundos desde el inicio de la toma, con el mismo reloj para todos los archivos (salida y pistas).',
+        nota: 'desdeMs/hastaMs: milisegundos desde el inicio de la toma, con el mismo reloj para todos los archivos.',
         ...((externos() && externos().manifiesto && externos().manifiesto(g.toma)) || {}),
         archivos: g.segmentos.filter(s => s.archivo).map(s => ({
           archivo: s.archivo, fuente: s.fuente, nombre: s.nombre, contenido: s.detalle || undefined, formato: s.mime,
@@ -476,7 +477,7 @@
         if (!caps.length && !nExt) {
           throw new Error(g.config.fuentes.length
             ? 'Ninguna de las fuentes elegidas tiene señal ahora.'
-            : 'Elige al menos una fuente para grabar (la salida, una pista o los teléfonos).');
+            : 'Elige al menos una fuente para grabar (la salida o los teléfonos).');
         }
         g.toma = { nombre: null, carpeta: null, inicio: new Date(), t0: ahoraMs(), fin: null };
         g.segmentos = [];

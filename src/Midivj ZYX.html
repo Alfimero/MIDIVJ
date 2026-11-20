@@ -6573,13 +6573,6 @@ function retenerCuadro(t) {
   t._retCtx.drawImage(lv, 0, 0, w, h);
   t._ret._nf = lv._nf;
   t._retT = performance.now();
-  /* La señal de la pista (lo que se graba) sale con este mismo cuadro, sin esperar a la pantalla */
-  const s = SEN[t.i];
-  if (s.cvs && s.flujos.length && !document.hidden) {   // oculta, la captura va por reloj (dibujarSenales)
-    dibujarSenal(t.i);
-    s.nf = t._ret._nf; s.dibujado = t._retT;
-    pedirCuadros(s.cvs, true, t._retT);
-  }
 }
 /* La fuente en vivo de la pista para dibujar: su cuadro retenido si está al día; si no, el <video> */
 function fuenteViva(t) {
@@ -6616,10 +6609,8 @@ function pedirCuadrosSalida() {
 
 /* Tamaño al que se procesa: el de la fuente, pero no más grande de lo que
    la salida puede mostrar (un video 4K en una salida 1080p se procesa a
-   1080p). Si la pista está agrandada (TRANSFORM) se respeta ese aumento, y
-   si se está grabando su señal limpia se procesa al tamaño original. */
+   1080p). Si la pista está agrandada (TRANSFORM) se respeta ese aumento. */
 function vprocTamano(t, w, h) {
-  if (typeof SEN !== 'undefined' && SEN[t.i] && SEN[t.i].cvs && senalEnUso(SEN[t.i])) return [w, h];
   const x = t.xform || {};
   const z = Math.max(1, Math.abs(x.scaleX || 1), Math.abs(x.scaleY || 1));
   const k = Math.max(cvs.width * z / w, cvs.height * z / h);
@@ -7283,7 +7274,7 @@ function cuadro() {
   _outBlanked = false;
 
   /* Señales aparte de la salida: pistas que se graban y lo que ven los visores */
-  dibujarSenales();
+  dibujarVisor();
 
   /* Strobe: black-out every other frame group */
   const strobe = gfx('strobe');
@@ -9963,18 +9954,8 @@ function grabacionInicializar() {
     /* la mezcla de los canales con REC */
     audio: () => (mezcla ? mezcla.pistaDeMezcla() : null),
   });
-  /* Cada pista por separado: su señal limpia (ver SEÑALES POR PISTA) */
-  S.tracks.forEach((t, i) => MIDIVJ.capturas.registrar({
-    id: 'pista-' + (i + 1),
-    nombre: 'Pista ' + (i + 1),
-    capturar: fps => capturarPista(i, fps),
-    tamano: () => tamanoSenal(i),
-    detalle: () => (S.tracks[i].loaded ? S.tracks[i].loadedName : ''),
-    disponible: () => !!S.tracks[i].loaded,
-    /* su sonido limpio; si no tiene, la entrada de referencia (para sincronizar) */
-    audio: () => (mezcla ? (mezcla.pistaDeCanal('pista-' + (i + 1)) ||
-      (grabador.config.audioRef !== false ? mezcla.pistaDeCanal('entrada') : null)) : null),
-  }));
+  /* Sólo se graba la salida: las pistas por separado ya no (pedido del usuario,
+     2026-11-20). El original de cada cámara lo graba su teléfono. */
   /* La entrada de audio elegida, en un archivo aparte */
   if (mezcla) MIDIVJ.capturas.registrar({
     id: 'audio-entrada', nombre: 'Audio de entrada', soloAudio: true,
@@ -10696,19 +10677,12 @@ window.addEventListener('beforeunload', e => {
 });
 
 /* ═══════════════════════════════════════════════════════
-   SEÑALES POR PISTA
+   FUENTE DE CADA PISTA
 
-   La "señal" de una pista es su fuente limpia: el video o la cámara que
-   tiene, con su corrección de color, encajada en un lienzo propio — sin
-   mezcla, posición, opacidad ni efectos, y se vea o no en la salida. La
-   usan la grabación por pista y el mosaico del visor de control.
-
-   Mientras alguien la captura, el lienzo conserva el tamaño con el que
-   empezó (un MP4 no admite cuadros de dos tamaños): si la pista cambia de
-   fuente, la nueva entra encajada con bandas.
+   La fuente limpia de una pista: el video o la cámara que tiene, con su
+   corrección de color — sin mezcla, posición, opacidad ni efectos, y se
+   vea o no en la salida. La usan la previa y el mosaico del visor.
 ═══════════════════════════════════════════════════════ */
-const SEN = Array.from({ length: N_TRACKS }, () => ({ cvs: null, ctx: null, flujos: [] }));
-const SEN_LADO_MAX = 1920;
 
 /* Lo que la pista tiene para dibujar ahora, o null */
 function fuentePista(t) {
@@ -10718,22 +10692,6 @@ function fuentePista(t) {
   const v = t.vid;
   return v && v.readyState >= 2 ? v : null;
 }
-function senalEnUso(s) {
-  if (s.flujos.length) s.flujos = s.flujos.filter(f => f.getVideoTracks().some(k => k.readyState === 'live'));
-  return s.flujos.length > 0;
-}
-function tamanoNaturalPista(i) {
-  const src = fuentePista(S.tracks[i]);
-  let [w, h] = src ? vprocSrcDims(src) : [0, 0];
-  if (!w || !h) { w = cvs.width || 1280; h = cvs.height || 720; }
-  const k = Math.min(1, SEN_LADO_MAX / Math.max(w, h));
-  const par = n => Math.max(2, Math.round(n * k / 2) * 2);   // los codificadores piden lados pares
-  return { ancho: par(w), alto: par(h) };
-}
-function tamanoSenal(i) {
-  const s = SEN[i];
-  return s.cvs && senalEnUso(s) ? { ancho: s.cvs.width, alto: s.cvs.height } : tamanoNaturalPista(i);
-}
 /* Dibuja `src` entero dentro de (x,y,w,h) de `c`, con bandas si no coincide la proporción */
 function dibujarEncajado(c, src, x, y, w, h) {
   const [sw, sh] = vprocSrcDims(src);
@@ -10742,49 +10700,8 @@ function dibujarEncajado(c, src, x, y, w, h) {
   const dw = sw * k, dh = sh * k;
   try { c.drawImage(src, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); } catch (_) { /* cuadro aún no listo */ }
 }
-function dibujarSenal(i) {
-  const s = SEN[i];
-  const c = s.ctx, W = s.cvs.width, H = s.cvs.height;
-  c.fillStyle = '#000';
-  c.fillRect(0, 0, W, H);
-  const t = S.tracks[i], src = fuentePista(t);
-  if (src) dibujarEncajado(c, vprocApply(t, src), 0, 0, W, H);
-}
-/** MediaStream nuevo con la señal de la pista (quien lo pide lo detiene). */
-function capturarPista(i, fps) {
-  const s = SEN[i];
-  if (!s.cvs) {
-    s.cvs = document.createElement('canvas');
-    s.ctx = s.cvs.getContext('2d', { alpha: false });
-  }
-  if (!s.cvs.captureStream) return null;
-  if (!senalEnUso(s)) {
-    const tam = tamanoNaturalPista(i);
-    s.cvs.width = tam.ancho; s.cvs.height = tam.alto;
-  }
-  dibujarSenal(i);
-  const flujo = capturarLienzo(s.cvs, fps);
-  s.flujos.push(flujo);
-  return flujo;
-}
-/* Una vez por cuadro, desde loop(): sólo lo que alguien está mirando o grabando */
-function dibujarSenales() {
-  const ahora = performance.now();
-  for (let i = 0; i < N_TRACKS; i++) {
-    const s = SEN[i];
-    if (!s.flujos.length) continue;
-    if (S.frame % 30 === 0 && !senalEnUso(s)) continue;
-    /* Se dibuja y se captura cuando la fuente trae un cuadro nuevo: cada
-       cuadro de la cámara entra una vez al archivo (ver CAPTURA AL RITMO DE
-       LA FUENTE). Sin cuadros nuevos se redibuja cada tanto, por si cambió
-       la corrección de color. */
-    const src = fuentePista(S.tracks[i]);
-    const marca = !document.hidden && !!src && (src._nf !== undefined || (src instanceof HTMLVideoElement && vprocVigilar(src)));
-    const nuevo = marca ? src._nf !== s.nf : null;
-    if (marca) s.nf = src._nf;
-    if (nuevo !== false || ahora - (s.dibujado || 0) > 200) { dibujarSenal(i); s.dibujado = ahora; }
-    pedirCuadros(s.cvs, nuevo, ahora);
-  }
+/* Una vez por cuadro, desde loop(): la previa y el mosaico, sólo si algún visor los mira */
+function dibujarVisor() {
   if (VIS.sesiones.size) {
     if (visNecesita('previa')) dibujarPrevia();
     const grande = visMosaicoGrande();
