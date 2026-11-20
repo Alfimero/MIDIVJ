@@ -215,7 +215,8 @@ body.limpio #volver-ver{display:block;}
   <div class="fila"><label for="cfg-lente">LENTE</label><select id="cfg-lente"></select></div>
   <div class="fila"><label for="cfg-audio">AUDIO</label><select id="cfg-audio"></select></div>
   <div class="fila"><label for="cfg-prioridad">PRIORIDAD</label><select id="cfg-prioridad"></select></div>
-  <div class="fila"><label>IMAGEN</label><button class="tbtn" id="img-fijar" style="flex:1;padding:9px 6px;" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos">🔒 FIJAR EXPOSICIÓN Y FOCO</button><button class="tbtn" id="img-auto" style="padding:9px 10px;" title="Que vuelvan a ajustarse solos">AUTO</button></div>
+  <div class="fila"><label>IMAGEN</label><button class="tbtn" id="img-fijar" style="flex:1;padding:9px 6px;" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos">📌 FIJAR EXPOSICIÓN Y FOCO</button><button class="tbtn" id="img-auto" style="padding:9px 10px;" title="Que vuelvan a ajustarse solos">AUTO</button></div>
+  <div class="fila"><label></label><button class="tbtn" id="img-bloq" style="flex:1;padding:9px 6px;" title="La cámara se queda como está: no cambia sola ni desde MIDIVJ hasta desbloquearla">🔒 BLOQUEAR LA IMAGEN</button></div>
   <div id="cfg-envia"></div>
   <div class="nota">También se cambia desde MIDIVJ (CONFIG. DE CÁMARA de la pista). FORMATO recorta el centro de la toma: lo que ves aquí es lo que llega.</div>
 </div>
@@ -1025,8 +1026,10 @@ async function leerCaps(raw) {
    puede ajustar mientras graba. */
 const IMG_CLAVES = ['exposureMode', 'exposureCompensation', 'exposureTime', 'iso', 'focusMode', 'focusDistance', 'whiteBalanceMode', 'colorTemperature', 'zoom', 'torch'];
 const IMG_MODO_DE = { exposureTime: ['exposureMode', 'manual'], iso: ['exposureMode', 'manual'], focusDistance: ['focusMode', 'manual'], colorTemperature: ['whiteBalanceMode', 'manual'] };
-const IMG = { pendiente: null, aplicando: false, guardado: {}, error: null };
+const IMG = { pendiente: null, aplicando: false, guardado: {}, error: null, bloqueo: null, corregida: 0 };
 try { IMG.guardado = JSON.parse(localStorage.getItem('midivj-camara-imagen') || '{}') || {}; } catch (_) {}
+/* BLOQUEO: la foto de exposición, foco, balance y zoom que la cámara debe mantener */
+try { const b = JSON.parse(localStorage.getItem('midivj-camara-imagen-bloqueo') || 'null'); if (b && typeof b === 'object' && Object.keys(b).length) IMG.bloqueo = b; } catch (_) {}
 const pistaCamara = () => { const t = C.raw && C.raw.getVideoTracks()[0]; return t && t.readyState === 'live' ? t : null; };
 function leerImagen() {
   const t = pistaCamara();
@@ -1041,7 +1044,7 @@ function leerImagen() {
     else if (x && typeof x === 'object' && Number.isFinite(x.min) && x.max > x.min) c[k] = { min: x.min, max: x.max, step: x.step || 0 };
     if (k in c && st[k] !== undefined) v[k] = st[k];
   }
-  return { caps: c, valores: v };
+  return { caps: c, valores: v, bloqueada: !!IMG.bloqueo, corregida: IMG.corregida };
 }
 /* Sólo lo que la cámara admite, dentro de su rango, y con el modo manual que haga falta */
 function limpiarAjustes(aj, caps) {
@@ -1110,11 +1113,86 @@ function autoImagen() {
   for (const mk of ['exposureMode', 'focusMode', 'whiteBalanceMode']) if (Array.isArray(info.caps[mk]) && info.caps[mk].includes('continuous')) aj[mk] = 'continuous';
   return ajustarImagen(aj);
 }
-function reaplicarImagen() { if (Object.keys(IMG.guardado).length) ajustarImagen(IMG.guardado, false); }
+function reaplicarImagen() {
+  if (IMG.bloqueo) ajustarImagen(IMG.bloqueo, false);
+  else if (Object.keys(IMG.guardado).length) ajustarImagen(IMG.guardado, false);
+}
+/* BLOQUEAR: la cámara se queda como está ahora. Exposición, foco y balance
+   pasan a manual con los valores de este momento (y el zoom, la
+   compensación y la linterna, como están). Mientras dure, se ignoran los
+   cambios que lleguen (faders, hub, visor, otro control) y cada 2 s se
+   comprueba que la cámara no se haya movido sola: si se movió, se vuelve a
+   aplicar. Se guarda en el teléfono y sobrevive a reabrir la cámara. */
+function fotoImagen(caps, st) {
+  const aj = {};
+  for (const k of IMG_CLAVES) {
+    if (!caps[k] || st[k] === undefined || Array.isArray(caps[k])) continue;
+    aj[k] = k === 'torch' ? !!st[k] : st[k];
+  }
+  for (const mk of ['exposureMode', 'focusMode', 'whiteBalanceMode']) {
+    const c = caps[mk];
+    if (!Array.isArray(c)) continue;
+    if (c.includes('manual')) aj[mk] = 'manual';
+    else if (st[mk] && st[mk] !== 'single-shot') aj[mk] = st[mk];
+  }
+  /* un valor manual sin su modo en manual no se puede mantener */
+  for (const [k, [mk, mv]] of Object.entries(IMG_MODO_DE)) if (k in aj && aj[mk] !== mv) delete aj[k];
+  return aj;
+}
+function bloquearImagen() {
+  const info = leerImagen(), t = pistaCamara();
+  if (!info || !t || !Object.keys(info.caps).length) return false;
+  let st = {};
+  try { st = t.getSettings() || {}; } catch (_) {}
+  const foto = fotoImagen(info.caps, st);
+  if (!Object.keys(foto).length) return false;
+  IMG.bloqueo = foto; IMG.corregida = 0;
+  try { localStorage.setItem('midivj-camara-imagen-bloqueo', JSON.stringify(foto)); } catch (_) {}
+  ajustarImagen(foto);
+  _log('🔒 imagen bloqueada', foto);
+  return true;
+}
+function desbloquearImagen() {
+  IMG.bloqueo = null;
+  try { localStorage.removeItem('midivj-camara-imagen-bloqueo'); } catch (_) {}
+  informarPronto();
+  if ($('ajustes').classList.contains('vis')) pintarConfig();
+  return true;
+}
+/* ¿Qué ajuste se movió de lo bloqueado? */
+function desvioImagen(foto, caps, st) {
+  for (const [k, v] of Object.entries(foto)) {
+    if (st[k] === undefined) continue;
+    if (typeof v === 'number') {
+      const c = caps[k] || {};
+      const tol = Math.max(c.step || 0, Number.isFinite(c.max - c.min) ? (c.max - c.min) * 0.01 : 0);
+      if (Math.abs(st[k] - v) > tol + 1e-9) return k;
+    } else if (st[k] !== v) return k;
+  }
+  return null;
+}
+setInterval(() => {
+  if (!IMG.bloqueo || IMG.aplicando) return;
+  const t = pistaCamara(), info = leerImagen();
+  if (!t || !info) return;
+  let st = {};
+  try { st = t.getSettings() || {}; } catch (_) { return; }
+  const k = desvioImagen(IMG.bloqueo, info.caps, st);
+  if (!k) return;
+  IMG.corregida++;
+  _log('🔒 la cámara cambió ' + k + ' sola: se vuelve a lo bloqueado', { era: IMG.bloqueo[k], quedo: st[k] });
+  ajustarImagen(IMG.bloqueo, false);
+}, 2000);
 function atenderImagen(msg) {
+  if (msg.bloquear === false) desbloquearImagen();
+  if (IMG.bloqueo && msg.bloquear !== true) {
+    if (msg.auto || msg.fijar || msg.ajustes) { _log('🔒 imagen bloqueada: se ignora el cambio', msg.ajustes || (msg.auto ? 'auto' : 'fijar')); informarPronto(); }
+    return;
+  }
   if (msg.auto) autoImagen();
   if (msg.fijar) fijarImagen();
   if (msg.ajustes && typeof msg.ajustes === 'object') ajustarImagen(msg.ajustes);
+  if (msg.bloquear === true) { if (!bloquearImagen()) { IMG.error = 'esta cámara no deja bloquear la imagen'; informarPronto(); } }
   if (!pistaCamara()) { IMG.error = 'la cámara está cerrada'; informarPronto(); }
 }
 
@@ -1309,6 +1387,8 @@ function opcionesDe(campo) {
   return [];
 }
 function pintarConfig() {
+  $('img-bloq').textContent = IMG.bloqueo ? '🔓 DESBLOQUEAR LA IMAGEN' : '🔒 BLOQUEAR LA IMAGEN';
+  $('img-bloq').classList.toggle('act', !!IMG.bloqueo);
   ['res', 'fps', 'formato', 'calidad', 'lente', 'audio', 'prioridad'].forEach(campo => {
     const sel = $('cfg-' + campo);
     const vals = opcionesDe(campo);
@@ -1328,8 +1408,13 @@ function pintarConfig() {
   $('cfg-' + campo).addEventListener('change', ev => cambiarConfig({ [campo]: ev.target.value }, 'teléfono'));
 });
 $('btn-cfg').onclick = ev => { ev.stopPropagation(); pintarConfig(); $('ajustes').classList.toggle('vis'); $('btn-cfg').classList.toggle('act', $('ajustes').classList.contains('vis')); };
-$('img-fijar').onclick = () => { toast(fijarImagen() ? 'Exposición y foco fijados' : 'Esta cámara no deja fijar la exposición ni el foco'); };
-$('img-auto').onclick = () => { toast(autoImagen() ? 'Exposición y foco automáticos' : 'Esta cámara no los ajusta sola'); };
+$('img-fijar').onclick = () => { if (IMG.bloqueo) return toast('La imagen está bloqueada: desbloquéala primero'); toast(fijarImagen() ? 'Exposición y foco fijados' : 'Esta cámara no deja fijar la exposición ni el foco'); };
+$('img-auto').onclick = () => { if (IMG.bloqueo) return toast('La imagen está bloqueada: desbloquéala primero'); toast(autoImagen() ? 'Exposición y foco automáticos' : 'Esta cámara no los ajusta sola'); };
+$('img-bloq').onclick = () => {
+  if (IMG.bloqueo) { desbloquearImagen(); toast('Imagen desbloqueada'); }
+  else toast(bloquearImagen() ? 'Imagen bloqueada: no cambia sola' : 'Esta cámara no deja bloquear la imagen');
+  pintarConfig();
+};
 $('cfg-cerrar').onclick = () => { $('ajustes').classList.remove('vis'); $('btn-cfg').classList.remove('act'); };
 
 /* ── Conexión ─────────────────────────────────────────── */

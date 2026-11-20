@@ -135,7 +135,37 @@ body[data-modo="directo"] #inferior{border-top-color:var(--aire);}
 #cuadricula{display:none;flex:1;min-height:0;gap:8px;padding:8px 10px;}
 body[data-vista="cuadricula"] #cuadricula{display:flex;}
 body[data-vista="cuadricula"] #monitores,body[data-vista="cuadricula"] #transporte,body[data-vista="cuadricula"] #inferior{display:none;}
-#cq-rejilla{flex:1;min-width:0;min-height:0;display:grid;gap:6px;}
+#cq-izq{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:6px;}
+#cq-rejilla{flex:1;min-width:0;min-height:0;display:grid;gap:6px;touch-action:none;}
+#cq-nav{display:none;align-items:center;justify-content:center;gap:10px;font-size:10px;color:var(--text2);flex:none;}
+#cq-nav.vis{display:flex;}
+#cq-nav button{padding:6px 16px;font-size:12px;}
+#cq-nav button:disabled{opacity:.3;}
+#cq-pos{min-width:96px;text-align:center;font-variant-numeric:tabular-nums;}
+/* PANTALLA COMPLETA: la fuente elegida en grande, la salida al lado y el editor */
+#cq-grande{display:none;flex:1;min-width:0;min-height:0;flex-direction:column;gap:6px;}
+body[data-cq-full="1"] #cq-izq,body[data-cq-full="1"] #cq-tam,body[data-cq-full="1"] #cq-mini{display:none;}
+body[data-cq-full="1"] #cq-grande{display:flex;}
+#cq-g-barra{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:none;}
+#cq-g-barra button{padding:6px 10px;font-size:10px;}
+#cq-g-barra button.on{border-color:var(--accent2);color:var(--accent2);background:rgba(0,194,255,.12);}
+#cq-g-barra button.aire{border-color:var(--aire);background:var(--aire);color:#fff;}
+#cq-g-tit{flex:1;min-width:80px;font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#cq-g-ver{display:flex;gap:0;}
+#cq-g-ver button{border-radius:0;}
+#cq-g-ver button:first-child{border-radius:4px 0 0 4px;}
+#cq-g-ver button:last-child{border-radius:0 4px 4px 0;}
+#cq-g-vistas{flex:1;min-height:0;display:flex;gap:6px;}
+.cq-g{position:relative;flex:1;min-width:0;min-height:0;background:#000;border:2px solid var(--accent2);border-radius:6px;overflow:hidden;}
+.cq-g canvas,.cq-g video{width:100%;height:100%;object-fit:contain;display:block;}
+.cq-g span{position:absolute;top:6px;left:6px;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:var(--accent2);color:#000;}
+#cq-g-sal{border-color:var(--aire);}
+#cq-g-sal span{background:var(--aire);color:#fff;}
+body[data-cq-ver="fuente"] #cq-g-sal,body[data-cq-ver="salida"] #cq-g-fte{display:none;}
+#cq-g-vistas.apiladas{flex-direction:column;}
+#cq-cab{display:flex;align-items:center;gap:6px;}
+#cq-cab #cq-titulo{flex:1;min-width:0;}
+.cam-bloq{margin-top:6px;padding:6px 8px;border-radius:5px;border:1px solid var(--accent2);color:var(--accent2);font-size:9.5px;line-height:1.5;}
 .celda{position:relative;background:#000;border:2px solid var(--border2);border-radius:6px;overflow:hidden;min-width:0;min-height:0;cursor:pointer;}
 .celda canvas{width:100%;height:100%;object-fit:contain;display:block;}
 .celda.sel{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2);}
@@ -204,9 +234,30 @@ body[data-vista="cuadricula"] #monitores,body[data-vista="cuadricula"] #transpor
   </div>
 </div>
 <div id="cuadricula">
-  <div id="cq-rejilla"></div>
+  <div id="cq-izq">
+    <div id="cq-rejilla"></div>
+    <div id="cq-nav">
+      <button id="cq-ant" title="Las fuentes anteriores (también: deslizar o la rueda del ratón)">◂</button>
+      <span id="cq-pos"></span>
+      <button id="cq-sig" title="Las fuentes siguientes (también: deslizar o la rueda del ratón)">▸</button>
+    </div>
+  </div>
+  <div id="cq-grande">
+    <div id="cq-g-barra">
+      <button id="cq-g-ant" title="Fuente anterior (←)">◂</button>
+      <button id="cq-g-sig" title="Fuente siguiente (→)">▸</button>
+      <span id="cq-g-tit"></span>
+      <span id="cq-g-ver"><button data-ver="fuente" title="Sólo la fuente">FUENTE</button><button data-ver="dos" title="La fuente y la salida, lado a lado">LAS DOS</button><button data-ver="salida" title="Sólo la salida">SALIDA</button></span>
+      <button id="cq-g-aire" title="Pone esta pista en la salida o la quita (con la transición elegida)">○ AL AIRE</button>
+      <button id="cq-g-salir" title="Volver a la cuadrícula (Esc)">✕ SALIR</button>
+    </div>
+    <div id="cq-g-vistas">
+      <div class="cq-g" id="cq-g-fte"><canvas id="cq-g-lienzo" width="1920" height="1080"></canvas><span id="cq-g-eti">FUENTE</span></div>
+      <div class="cq-g" id="cq-g-sal"><video id="v-salida3" autoplay muted playsinline></video><span>SALIDA</span></div>
+    </div>
+  </div>
   <div id="cq-panel">
-    <div class="caja fila" title="Cuántas pistas se ven a la vez y cuáles">
+    <div class="caja fila" id="cq-tam" title="Cuántas pistas se ven a la vez y cuáles">
       <select id="cq-cols" title="Columnas"></select><span>×</span><select id="cq-filas" title="Filas"></select>
       <select id="cq-ver" title="Qué pistas entran en la cuadrícula">
         <option value="cargadas">con fuente</option>
@@ -290,7 +341,7 @@ const V = {
   arrastrando: false,   // un deslizador en uso: no se repinta la tira debajo del dedo
   firmaTira: '',
   ultimo: {},           // pista → último clip puesto desde el visor (para volver a él al tocar la pista)
-  cq: { cols: 2, filas: 2, ver: 'cargadas', sel: null },   // vista CUADRÍCULA: tamaño, qué pistas y la elegida
+  cq: { cols: 2, filas: 2, ver: 'cargadas', sel: null, desde: 0, full: false, verG: 'dos' },   // vista CUADRÍCULA: tamaño, qué pistas, la elegida, desde cuál se ve, pantalla completa y qué muestra
   borrar: null,         // escena esperando el segundo toque de ✕
   trans: 'disolver',    // transición elegida para ▶ A SALIDA ('corte', 'azar' o un id de la app)
   firmaTrans: '',
@@ -302,6 +353,7 @@ try {
     if (g.cq.cols >= 1 && g.cq.cols <= 6) V.cq.cols = g.cq.cols | 0;
     if (g.cq.filas >= 1 && g.cq.filas <= 4) V.cq.filas = g.cq.filas | 0;
     if (['cargadas', 'vivo', 'todas'].includes(g.cq.ver)) V.cq.ver = g.cq.ver;
+    if (['fuente', 'dos', 'salida'].includes(g.cq.verG)) V.cq.verG = g.cq.verG;
   }
   if (['materiales', 'escenas', 'pistas', 'audio'].includes(g.tab)) V.tab = g.tab;
   /* la lista completa llega con el estado: hasta entonces se recuerda el id */
@@ -314,7 +366,7 @@ function recordar() {
   try {
     localStorage.setItem('midivj-visor', JSON.stringify({
       vista: document.body.dataset.vista, tab: V.tab, trans: V.trans, dur: $('dur').value, todas: V.todas,
-      cq: { cols: V.cq.cols, filas: V.cq.filas, ver: V.cq.ver }
+      cq: { cols: V.cq.cols, filas: V.cq.filas, ver: V.cq.ver, verG: V.cq.verG }
     }));
   } catch (_) {}
 }
@@ -447,7 +499,7 @@ async function recibirOferta(sdp) {
     try { ev.receiver.playoutDelayHint = 0; } catch (e) {}
     el.srcObject = new MediaStream([ev.track]);
     el.play().catch(() => {});
-    if (nombre === 'salida') { $('v-salida2').srcObject = el.srcObject; $('v-salida2').play().catch(() => {}); }
+    if (nombre === 'salida') ['v-salida2', 'v-salida3'].forEach(id => { $(id).srcObject = el.srcObject; $(id).play().catch(() => {}); });
     if (nombre !== 'pistas') el.parentElement.classList.add('con');
   };
   pc.onicecandidate = ev => { if (ev.candidate) enviar({ type: 'visor-candidato', candidato: ev.candidate }); };
@@ -490,8 +542,11 @@ async function recibirCandidato(candidato) {
 function avisarVer() {
   if (!V.pc || V.pc.connectionState !== 'connected' || !V.ws || V.ws.readyState !== 1) return;
   const vista = document.body.dataset.vista, oculto = document.hidden;
+  const full = vista === 'cuadricula' && V.cq.full && V.cq.sel !== null;
   const ver = vista === 'cuadricula'
-    ? { salida: !oculto, previa: false, pistas: oculto ? false : 'grande' }   // mini salida + mosaico grande
+    /* mini salida + mosaico grande; en PANTALLA COMPLETA, la pista elegida sola y a todo el tamaño (foco) */
+    ? { salida: !oculto && !(full && V.cq.verG === 'fuente'), previa: false,
+        pistas: oculto || (full && V.cq.verG === 'salida') ? false : 'grande', ...(full ? { foco: V.cq.sel } : {}) }
     : { salida: !oculto && vista !== 'previa', previa: !oculto && vista !== 'salida', pistas: !oculto && V.tab === 'pistas', audio: !oculto && V.tab === 'audio' };
   const firma = JSON.stringify(ver);
   if (firma === V.verFirma) return;
@@ -541,7 +596,7 @@ setInterval(medirRetardo, 2000);
 function cerrarVideo() {
   LAT.prev.clear();
   if (V.pc) { V.pc.onconnectionstatechange = null; V.pc.close(); V.pc = null; }
-  ['v-salida', 'v-previa', 'v-pistas', 'v-salida2'].forEach(id => { $(id).srcObject = null; });
+  ['v-salida', 'v-previa', 'v-pistas', 'v-salida2', 'v-salida3'].forEach(id => { $(id).srcObject = null; });
   $('mon-salida').classList.remove('con');
   $('mon-previa').classList.remove('con');
 }
@@ -835,6 +890,7 @@ document.body.dataset.trans = V.trans;
 $('seg-vista').addEventListener('click', ev => {
   const b = ev.target.closest('button[data-vista]');
   if (!b) return;
+  if (V.cq.full && b.dataset.vista !== 'cuadricula') cqPantalla(false);
   document.body.dataset.vista = b.dataset.vista;
   pintarControles();
   recordar();
@@ -878,7 +934,7 @@ function pintarControles() {
 document.addEventListener('visibilitychange', () => {
   avisarVer();
   if (document.visibilityState !== 'visible') return;
-  ['v-salida', 'v-previa', 'v-pistas', 'v-salida2'].forEach(id => { const v = $(id); if (v.srcObject) v.play().catch(() => {}); });
+  ['v-salida', 'v-previa', 'v-pistas', 'v-salida2', 'v-salida3'].forEach(id => { const v = $(id); if (v.srcObject) v.play().catch(() => {}); });
   if (V.ws && V.ws.readyState === 1) orden('estado');
 });
 
@@ -974,8 +1030,16 @@ function pintarCuadricula() {
   if (!e || !enCuadricula()) return;
   const lista = pistasDeCuadricula(e), n = V.cq.cols * V.cq.filas;
   if (V.cq.sel === null || !lista.includes(V.cq.sel)) V.cq.sel = lista.length ? lista[0] : null;
-  const celdas = Array.from({ length: n }, (_, k) => (k < lista.length ? lista[k] : -1));
-  const firma = JSON.stringify([V.cq.cols, V.cq.filas, V.cq.sel, celdas.map(i => i < 0 ? 0 : [i, e.pistas[i].fuente, e.pistas[i].tipo, e.pistas[i].on, e.pistas[i].cargada, e.pistas[i].color.on]), e.mosaico.cw]);
+  /* Más fuentes que celdas: se desplaza de a filas (◂ ▸, deslizar, rueda) */
+  const tope = lista.length > n ? Math.ceil((lista.length - n) / V.cq.cols) * V.cq.cols : 0;
+  V.cq.desde = Math.max(0, Math.min(tope, Math.round(V.cq.desde / V.cq.cols) * V.cq.cols));
+  const desde = V.cq.desde;
+  $('cq-nav').classList.toggle('vis', tope > 0);
+  $('cq-pos').textContent = (desde + 1) + '–' + Math.min(desde + n, lista.length) + ' de ' + lista.length;
+  $('cq-ant').disabled = desde <= 0;
+  $('cq-sig').disabled = desde >= tope;
+  const celdas = Array.from({ length: n }, (_, k) => (desde + k < lista.length ? lista[desde + k] : -1));
+  const firma = JSON.stringify([V.cq.cols, V.cq.filas, V.cq.sel, desde, celdas.map(i => i < 0 ? 0 : [i, e.pistas[i].fuente, e.pistas[i].tipo, e.pistas[i].on, e.pistas[i].cargada, e.pistas[i].color.on]), e.mosaico.cw]);
   if (firma !== CQ.firma) {
     CQ.firma = firma;
     const r = $('cq-rejilla');
@@ -991,21 +1055,158 @@ function pintarCuadricula() {
     }).join('');
     CQ.lienzos = [...r.querySelectorAll('canvas')];
   }
+  pintarGrande();
   pintarEditor();
 }
+function cqMover(paso) {
+  V.cq.desde += paso;
+  pintarCuadricula();
+}
+$('cq-ant').onclick = () => cqMover(-V.cq.cols * V.cq.filas);
+$('cq-sig').onclick = () => cqMover(V.cq.cols * V.cq.filas);
+/* Rueda del ratón: una fila por vez */
+$('cq-rejilla').addEventListener('wheel', ev => {
+  if (!$('cq-nav').classList.contains('vis')) return;
+  ev.preventDefault();
+  const ahora = performance.now();
+  if (ahora - (CQ.rueda || 0) < 180) return;
+  CQ.rueda = ahora;
+  const d = Math.abs(ev.deltaY) >= Math.abs(ev.deltaX) ? ev.deltaY : ev.deltaX;
+  if (d) cqMover(Math.sign(d) * V.cq.cols);
+}, { passive: false });
+/* Deslizar con el dedo: una página por vez (hacia la izquierda o hacia arriba = las siguientes) */
+$('cq-rejilla').addEventListener('pointerdown', ev => { CQ.toque = { x: ev.clientX, y: ev.clientY }; CQ.deslizo = false; });
+$('cq-rejilla').addEventListener('pointerup', ev => {
+  const t = CQ.toque;
+  CQ.toque = null;
+  if (!t || !$('cq-nav').classList.contains('vis')) return;
+  const dx = ev.clientX - t.x, dy = ev.clientY - t.y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 50) return;
+  CQ.deslizo = true;
+  const d = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+  cqMover((d < 0 ? 1 : -1) * V.cq.cols * V.cq.filas);
+});
 $('cq-rejilla').addEventListener('click', ev => {
+  if (CQ.deslizo) { CQ.deslizo = false; return; }   // fue un deslizamiento, no un toque
   const c = ev.target.closest('.celda[data-i]');
   if (!c) return;
   V.cq.sel = +c.dataset.i;
   CQ.firmaEd = '';
   pintarCuadricula();
 });
+
+/* ── PANTALLA COMPLETA: la fuente elegida en grande (MIDIVJ la manda sola y a
+   todo el tamaño), la salida al lado y el editor de color, transformación y
+   cámara. ◂ ▸ cambian de fuente sin salir; AL AIRE la pone en la salida. ── */
+function cqPantalla(on) {
+  V.cq.full = !!on && V.cq.sel !== null && enCuadricula();
+  document.body.dataset.cqFull = V.cq.full ? '1' : '';
+  document.body.dataset.cqVer = V.cq.verG;
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  try {
+    if (V.cq.full && !fsEl) {
+      const el = document.documentElement, rq = el.requestFullscreen || el.webkitRequestFullscreen;
+      const p = rq && rq.call(el);
+      if (p && p.catch) p.catch(() => {});   // un navegador que no deja (iPhone): igual se ve a toda la ventana
+    } else if (!V.cq.full && fsEl) {
+      const ex = document.exitFullscreen || document.webkitExitFullscreen;
+      const p = ex && ex.call(document);
+      if (p && p.catch) p.catch(() => {});
+    }
+  } catch (_) {}
+  CQ.firmaEd = ''; CQ.firmaG = '';
+  avisarVer();
+  pintarCuadricula();
+}
+['fullscreenchange', 'webkitfullscreenchange'].forEach(n => document.addEventListener(n, () => {
+  /* salir de la pantalla completa del navegador (Esc) también sale de la del editor */
+  if (!(document.fullscreenElement || document.webkitFullscreenElement) && V.cq.full) cqPantalla(false);
+}));
+function cqOtraFuente(paso) {
+  const e = V.est;
+  if (!e) return;
+  const lista = pistasDeCuadricula(e);
+  if (lista.length < 2) return;
+  const k = (lista.indexOf(V.cq.sel) + paso + lista.length) % lista.length;
+  V.cq.sel = lista[k];
+  /* la cuadrícula queda mostrando la elegida al volver */
+  const n = V.cq.cols * V.cq.filas;
+  if (k < V.cq.desde || k >= V.cq.desde + n) V.cq.desde = Math.floor(k / V.cq.cols) * V.cq.cols;
+  CQ.firmaEd = ''; CQ.firmaG = '';
+  avisarVer();
+  pintarCuadricula();
+}
+$('cq-g-ant').onclick = () => cqOtraFuente(-1);
+$('cq-g-sig').onclick = () => cqOtraFuente(1);
+$('cq-g-salir').onclick = () => cqPantalla(false);
+$('cq-g-ver').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-ver]');
+  if (!b) return;
+  V.cq.verG = b.dataset.ver;
+  document.body.dataset.cqVer = V.cq.verG;
+  recordar();
+  CQ.firmaG = '';
+  avisarVer();
+  pintarGrande();
+});
+$('cq-g-aire').onclick = () => {
+  const e = V.est, i = V.cq.sel;
+  if (!e || i === null || !e.pistas[i]) return;
+  const p = e.pistas[i];
+  if (!p.cargada) { toast(nPista(i) + ' no tiene fuente'); return; }
+  if (p.on) { orden('salida-pista', { pista: i, on: false, ...entrada() }); return; }
+  /* como tocar la pista en DIRECTO: si no tiene un clip corriendo, dispara el suyo */
+  const cl = e.clips.filter(c => c.pista === i);
+  const cual = p.clip ? null : (cl.find(c => c.id === V.ultimo[i]) || cl[0] || null);
+  if (cual) V.ultimo[i] = cual.id;
+  orden('salida-pista', { pista: i, on: true, ...(cual ? { clip: cual.id } : {}), ...entrada() });
+};
+document.addEventListener('keydown', ev => {
+  if (!V.cq.full || ev.target.closest('input, select, textarea')) return;
+  if (ev.key === 'Escape') cqPantalla(false);
+  else if (ev.key === 'ArrowLeft') cqOtraFuente(-1);
+  else if (ev.key === 'ArrowRight') cqOtraFuente(1);
+});
+/* LAS DOS: lado a lado o una arriba de la otra, lo que deje cada imagen (16:9) más grande */
+new ResizeObserver(() => {
+  const el = $('cq-g-vistas'), w = el.clientWidth, h = el.clientHeight;
+  if (!w || !h) return;
+  el.classList.toggle('apiladas', Math.min(w / 16, h / 2 / 9) > Math.min(w / 2 / 16, h / 9));
+}).observe($('cq-g-vistas'));
+function pintarGrande() {
+  if (!V.cq.full) return;
+  const e = V.est, i = V.cq.sel;
+  if (!e || i === null || !e.pistas[i]) { cqPantalla(false); return; }
+  const p = e.pistas[i];
+  const firma = JSON.stringify([i, p.fuente, p.tipo, p.on, p.cargada, V.cq.verG]);
+  if (firma === CQ.firmaG) return;
+  CQ.firmaG = firma;
+  $('cq-g-tit').textContent = nPista(i) + ' · ' + (p.cargada ? (ICONO[p.tipo] || '') + ' ' + p.fuente : 'sin fuente');
+  $('cq-g-eti').textContent = 'FUENTE · ' + nPista(i);
+  const aire = $('cq-g-aire');
+  aire.classList.toggle('aire', !!p.on);
+  aire.textContent = p.on ? '⦿ AL AIRE' : '○ AL AIRE';
+  aire.title = p.on ? 'Está en la salida: tocar la quita (con la transición elegida)' : 'Ponerla en la salida (con la transición elegida)';
+  $('cq-g-ver').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.ver === V.cq.verG));
+}
 function dibujarCuadricula() {
   requestAnimationFrame(dibujarCuadricula);
   const e = V.est, v = $('v-pistas');
-  if (!e || !enCuadricula() || !CQ.lienzos.length || v.readyState < 2 || !v.videoWidth) return;
+  if (!e || !enCuadricula() || v.readyState < 2 || !v.videoWidth) return;
   const m = e.mosaico;
   const kx = v.videoWidth / (m.cols * m.cw), ky = v.videoHeight / (m.filas * m.ch);
+  if (V.cq.full) {
+    /* la pista sola a todo el tamaño; mientras MIDIVJ cambia el mosaico, su celda */
+    const c = $('cq-g-lienzo'), i = V.cq.sel;
+    const solo = m.foco === i;
+    if (!solo && (m.foco !== null && m.foco !== undefined)) return;   // todavía llega otra pista: se espera
+    const w = solo ? v.videoWidth : Math.round(m.cw * kx), h = solo ? v.videoHeight : Math.round(m.ch * ky);
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    if (solo) c.getContext('2d').drawImage(v, 0, 0, w, h);
+    else c.getContext('2d').drawImage(v, (i % m.cols) * m.cw * kx, Math.floor(i / m.cols) * m.ch * ky, m.cw * kx, m.ch * ky, 0, 0, w, h);
+    return;
+  }
+  if (!CQ.lienzos.length || (m.foco !== null && m.foco !== undefined)) return;
   for (const c of CQ.lienzos) {
     const i = +c.dataset.i;
     c.getContext('2d').drawImage(v, (i % m.cols) * m.cw * kx, Math.floor(i / m.cols) * m.ch * ky, m.cw * kx, m.ch * ky, 0, 0, c.width, c.height);
@@ -1024,19 +1225,23 @@ function camaraHTML(cam) {
   const cab = '<div class="fila" style="margin-top:12px"><h3>CÁMARA</h3></div>';
   const caps = cam.caps || {}, val = cam.valores || {};
   if (!Object.keys(caps).length) return cab + '<div id="cq-vacio">Esta cámara no deja ajustar exposición ni foco desde el navegador (pasa con iPhone y con muchos teléfonos): usa el COLOR de arriba.</div>';
+  const bloq = !!cam.bloqueada, dis = bloq ? ' disabled' : '';
   const filas = CAM_ORDEN.filter(k => caps[k]).map(k => {
     const c = caps[k], v = val[k];
-    if (k === 'torch') return '<div class="aj chk"><span>' + CAM_LBL[k] + '</span><label><input type="checkbox" data-cam-clave="torch"' + (v ? ' checked' : '') + '> ' + (v ? 'encendida' : 'apagada') + '</label></div>';
-    if (Array.isArray(c)) return '<div class="aj chk"><span>' + CAM_LBL[k] + '</span><select data-cam-clave="' + k + '">' +
+    if (k === 'torch') return '<div class="aj chk"><span>' + CAM_LBL[k] + '</span><label><input type="checkbox" data-cam-clave="torch"' + (v ? ' checked' : '') + dis + '> ' + (v ? 'encendida' : 'apagada') + '</label></div>';
+    if (Array.isArray(c)) return '<div class="aj chk"><span>' + CAM_LBL[k] + '</span><select data-cam-clave="' + k + '"' + dis + '>' +
       c.map(m => '<option value="' + esc(m) + '"' + (m === v ? ' selected' : '') + '>' + esc(CAM_MODO[m] || m) + '</option>').join('') + '</select></div>';
     const a = { key: k, lbl: CAM_LBL[k], min: c.min, max: c.max, step: c.step || (c.max - c.min) / 100, def: (c.min + c.max) / 2 };
-    return '<div class="aj"><span>' + esc(a.lbl) + '</span><input type="range" data-grupo="camara" data-key="' + k + '" min="' + a.min + '" max="' + a.max + '" step="' + a.step + '" value="' + (v !== undefined ? v : a.def) + '" data-def="' + a.def + '">' +
+    return '<div class="aj"><span>' + esc(a.lbl) + '</span><input type="range" data-grupo="camara" data-key="' + k + '" min="' + a.min + '" max="' + a.max + '" step="' + a.step + '" value="' + (v !== undefined ? v : a.def) + '" data-def="' + a.def + '"' + dis + '>' +
       '<b>' + (v === undefined ? '—' : cifra(a, v)) + '</b></div>';
   }).join('');
+  if (bloq) return cab + filas + '<div class="cam-bloq">🔒 <b>BLOQUEADA</b>: la cámara se queda así. No cambia sola con las luces ni desde faders, el hub u otro visor; si se mueve, vuelve sola.</div>' +
+    '<div class="cam-bot"><button data-acc="cam-desbloquear" class="on" title="Volver a ajustarla">🔓 DESBLOQUEAR</button></div>';
   const enfocar = (caps.focusMode || []).includes('single-shot');
   return cab + filas + '<div class="cam-bot">' + (enfocar ? '<button data-acc="cam-enfocar" title="Enfoca una vez y se queda ahí">◎ ENFOCAR</button>' : '') +
-    '<button data-acc="cam-fijar" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos con las luces">🔒 FIJAR</button>' +
-    '<button data-acc="cam-auto" title="Exposición, foco y balance automáticos">↺ AUTO</button></div>';
+    '<button data-acc="cam-fijar" title="Exposición, foco y balance en manual con los valores de ahora: dejan de cambiar solos con las luces">📌 FIJAR</button>' +
+    '<button data-acc="cam-auto" title="Exposición, foco y balance automáticos">↺ AUTO</button>' +
+    '<button data-acc="cam-bloquear" title="Ajusta y después bloquea: la cámara se queda como está (exposición, foco, balance, zoom) hasta desbloquearla">🔒 BLOQUEAR</button></div>';
 }
 function pintarEditor() {
   const e = V.est, ed = $('cq-editor');
@@ -1047,14 +1252,15 @@ function pintarEditor() {
     return;
   }
   const p = e.pistas[i];
-  const firma = JSON.stringify([i, p.fuente, p.color, p.forma, p.on, p.camara]);
+  const firma = JSON.stringify([i, p.fuente, p.color, p.forma, p.on, p.camara, V.cq.full]);
   if (firma === CQ.firmaEd) return;
   CQ.firmaEd = firma;
   const fila = (grupo, a, v) => '<div class="aj' + (Math.abs(v - a.def) > 1e-6 ? ' mov' : '') + '" title="Doble toque: vuelve a ' + cifra(a, a.def) + '"><span>' + esc(a.lbl) + '</span>' +
     '<input type="range" data-grupo="' + grupo + '" data-key="' + esc(a.key) + '" min="' + a.min + '" max="' + a.max + '" step="' + a.step + '" value="' + v + '" data-def="' + a.def + '">' +
     '<b>' + cifra(a, v) + '</b></div>';
   ed.innerHTML =
-    '<div id="cq-titulo">' + nPista(i) + ' · ' + (p.cargada ? (ICONO[p.tipo] || '') + ' ' + esc(p.fuente) : 'sin fuente') + '</div>' +
+    '<div id="cq-cab"><div id="cq-titulo">' + nPista(i) + ' · ' + (p.cargada ? (ICONO[p.tipo] || '') + ' ' + esc(p.fuente) : 'sin fuente') + '</div>' +
+      (V.cq.full ? '' : '<button data-acc="pantalla" title="Ver esta fuente en grande, junto a la salida, con este editor al lado">⛶ PANTALLA COMPLETA</button>') + '</div>' +
     '<div class="fila" style="margin-top:8px"><h3>COLOR</h3>' +
       '<button data-acc="color-on" class="' + (p.color.on ? 'on' : '') + '" title="Enciende o apaga la corrección: sirve para comparar antes y después">' + (p.color.on ? 'ON' : 'OFF') + '</button>' +
       '<button data-acc="color-reset" title="Vuelve todos los valores de color a neutro">↺</button></div>' +
@@ -1106,6 +1312,9 @@ $('cq-editor').addEventListener('click', ev => {
   if (b.dataset.acc === 'forma-reset') orden('pista-forma', { pista: i, reset: true });
   if (b.dataset.acc === 'cam-fijar') orden('camara-imagen', { pista: i, fijar: true });
   if (b.dataset.acc === 'cam-auto') orden('camara-imagen', { pista: i, auto: true });
+  if (b.dataset.acc === 'cam-bloquear') orden('camara-imagen', { pista: i, bloquear: true });
+  if (b.dataset.acc === 'cam-desbloquear') orden('camara-imagen', { pista: i, bloquear: false });
+  if (b.dataset.acc === 'pantalla') cqPantalla(true);
   if (b.dataset.acc === 'cam-enfocar') orden('camara-imagen', { pista: i, ajustes: { focusMode: 'single-shot' } });
 });
 

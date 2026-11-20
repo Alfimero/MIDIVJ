@@ -96,9 +96,7 @@
           '<button class="gr-btn" id="gr-cerrar">✕ CERRAR</button>' +
         '</header>' +
         '<div class="gr-cuerpo">' +
-          '<div class="gr-sec"><h3>GRABAR<span class="gr-sp"></span>' +
-              '<button class="gr-btn" id="gr-todas" title="Marca la salida y todas las pistas con señal">TODAS</button>' +
-              '<button class="gr-btn" id="gr-solo-salida" title="Sólo la salida">SÓLO SALIDA</button></h3>' +
+          '<div class="gr-sec"><h3>GRABAR LA SALIDA</h3>' +
             '<div class="gr-lista">' +
               '<div class="gr-fila"><button class="gr-btn" id="gr-rec">⏺ GRABAR</button>' +
                 '<span class="gr-reloj" id="gr-reloj">00:00:00</span></div>' +
@@ -114,12 +112,10 @@
                 '<label title="Agrega la fecha y la hora al nombre de la carpeta de la toma"><input type="checkbox" id="gr-fecha"> FECHA Y HORA</label></div>' +
               '<div class="gr-dato" id="gr-carpeta-toma"></div>' +
             '</div>' +
-            '<p class="gr-ayuda"><b>Salida</b>: lo que se ve en HDMI y OBS. <b>Pistas</b>: la señal limpia de cada una (su video o su cámara, con su corrección de color), ' +
-              'sin mezcla, sin posición ni efectos, se vea o no en la salida: sirve para reeditar después.<br>' +
-              'Cada toma es una carpeta con todos sus archivos (<b>salida.mp4</b>, <b>pista-1.mp4</b>…) y un <b>toma.json</b> con los tiempos para alinearlos.<br>' +
+            '<p class="gr-ayuda">Se graba la <b>salida</b>: lo que se ve en HDMI y OBS. El original de cada cámara lo graba su teléfono (abajo).<br>' +
+              'Cada toma es una carpeta con sus archivos (<b>salida.mp4</b>, <b>audio-entrada.m4a</b> si eliges una entrada de audio) y un <b>toma.json</b> con los tiempos para alinearlos.<br>' +
               'Cada segundo grabado va directo a disco: si algo se cierra a media función, lo grabado ya está guardado.<br>' +
-              'Mientras grabas, la salida no cambia sola de tamaño con el video de la pista 1, y cada pista conserva el tamaño con el que empezó (otra fuente entra encajada). ' +
-              'Cada archivo es un codificador más: en equipos modestos, graba sólo las pistas que necesites.<br>' +
+              'Mientras grabas, la salida no cambia sola de tamaño con el video de la pista 1.<br>' +
               'Deja la ventana de MIDIVJ a la vista: minimizada, el navegador frena el dibujo.</p>' +
           '</div>' +
           '<div class="gr-sec" id="gr-sec-tel"><h3>ORIGINAL EN LOS TELÉFONOS<span class="gr-sp"></span>' +
@@ -145,17 +141,14 @@
           '<div class="gr-sec" id="gr-sec-audio"><h3>AUDIO<span class="gr-sp"></span>' +
               '<button class="gr-btn" id="gr-mezcla" title="Volumen, silencio y REC de cada pista y de la entrada">🎚 MEZCLA…</button></h3>' +
             '<div class="gr-lista">' +
-              '<div class="gr-fila"><label title="Los archivos llevan sonido: la salida la mezcla, cada pista el suyo"><input type="checkbox" id="gr-audio"> GRABAR AUDIO</label>' +
+              '<div class="gr-fila"><label title="La salida lleva el sonido de la mezcla (los canales con REC)"><input type="checkbox" id="gr-audio"> GRABAR AUDIO</label>' +
                 '<label>ENTRADA <select id="gr-entrada"></select></label>' +
                 '<button class="gr-btn" id="gr-entrada-ref" title="Volver a leer las entradas de audio del equipo">↻</button>' +
                 '<div class="gr-nivel" title="Nivel de la entrada"><i id="gr-nivel"></i></div></div>' +
-              '<div class="gr-fila"><label title="Las pistas que no tienen sonido propio (una cámara sin micrófono, un video mudo) llevan el de la entrada, para poder sincronizarlas al editar">' +
-                '<input type="checkbox" id="gr-audio-ref"> PONER LA ENTRADA EN LAS PISTAS SIN SONIDO PROPIO</label></div>' +
               '<div class="gr-dato" id="gr-audio-dato"></div>' +
             '</div>' +
             '<p class="gr-ayuda">Elige la <b>entrada</b> de este equipo que quieres dejar grabada (la interfaz de audio, un micrófono, la salida de la consola). ' +
-              'Queda en su propio archivo (<b>audio-entrada.m4a</b>) y dentro de la <b>salida</b>, junto con el sonido de las pistas con REC en la mezcla. ' +
-              'Cada <b>pista</b> lleva su sonido limpio (el del video o el micrófono de la cámara). Como todos los archivos llevan el mismo reloj y el mismo sonido de referencia, el editor los puede sincronizar por la forma de onda.</p>' +
+              'Queda en su propio archivo (<b>audio-entrada.m4a</b>) y dentro de la <b>salida</b>, junto con el sonido de las pistas con REC en la mezcla.</p>' +
           '</div>' +
           '<div class="gr-sec"><h3>CARPETA DE LAS GRABACIONES</h3>' +
             '<div class="gr-lista">' +
@@ -167,7 +160,7 @@
               '</div>' +
               '<div class="gr-dato" id="gr-ruta-dato"></div>' +
             '</div>' +
-            '<p class="gr-ayuda">Todas las tomas (salida y pistas) se guardan aquí. Puede ser otro disco o una carpeta del show; el relay la recuerda.</p>' +
+            '<p class="gr-ayuda">Todas las tomas se guardan aquí. Puede ser otro disco o una carpeta del show; el relay la recuerda.</p>' +
           '</div>' +
           '<div class="gr-sec" id="gr-sec-avisos" hidden><h3>AVISOS</h3><div class="gr-lista" id="gr-avisos"></div></div>' +
           '<div class="gr-sec"><h3>ÚLTIMAS TOMAS<span class="gr-sp"></span>' +
@@ -194,14 +187,14 @@
     try {
       const g = JSON.parse(localStorage.getItem(CLAVE) || 'null') || {};
       if (typeof g.titulo === 'string') cfg.titulo = g.titulo.slice(0, 60);
-      ['conFecha', 'audio', 'audioRef'].forEach(k => { if (typeof g[k] === 'boolean') cfg[k] = g[k]; });
+      ['conFecha', 'audio'].forEach(k => { if (typeof g[k] === 'boolean') cfg[k] = g[k]; });
       if (g.telefonos && typeof g.telefonos === 'object') cfg.telefonos = { ...cfg.telefonos, ...g.telefonos };
       if (typeof g.calidad === 'string' && grabador.calidades().some(c => c.id === g.calidad)) cfg.calidad = g.calidad;
       if (g.fps === 30 || g.fps === 60) cfg.fps = g.fps;
       if (typeof g.formato === 'string' && fmts.some(f => f.id === g.formato)) cfg.formato = g.formato;
     } catch (e) {}
     function recordar() {
-      try { localStorage.setItem(CLAVE, JSON.stringify({ titulo: cfg.titulo, conFecha: cfg.conFecha, audio: cfg.audio, audioRef: cfg.audioRef, calidad: cfg.calidad, fps: cfg.fps, formato: cfg.formato, telefonos: cfg.telefonos })); } catch (e) {}
+      try { localStorage.setItem(CLAVE, JSON.stringify({ titulo: cfg.titulo, conFecha: cfg.conFecha, audio: cfg.audio, calidad: cfg.calidad, fps: cfg.fps, formato: cfg.formato, telefonos: cfg.telefonos })); } catch (e) {}
     }
     if (cfg.formato === 'auto' && fmts.length) cfg.formato = fmts[0].id;
     $('gr-formato').value = cfg.formato;
@@ -269,9 +262,7 @@
     const au = op.audio || null;
     if (!au) $('gr-sec-audio').hidden = true;
     $('gr-audio').checked = cfg.audio !== false;
-    $('gr-audio-ref').checked = cfg.audioRef !== false;
     $('gr-audio').onchange = e => { cfg.audio = e.target.checked; recordar(); ui.refrescar(); };
-    $('gr-audio-ref').onchange = e => { cfg.audioRef = e.target.checked; recordar(); ui.refrescar(); };
     async function cargarEntradas(pedirPermiso) {
       if (!au) return;
       let lista = [];
@@ -296,7 +287,7 @@
     $('gr-mezcla').onclick = () => { if (au && au.abrirMezcla) au.abrirMezcla(); };
     function pintarAudio(bloqueado) {
       if (!au) return;
-      ['gr-audio', 'gr-entrada', 'gr-entrada-ref', 'gr-audio-ref'].forEach(id => { $(id).disabled = bloqueado; });
+      ['gr-audio', 'gr-entrada', 'gr-entrada-ref'].forEach(id => { $(id).disabled = bloqueado; });
       const a = au.actual();
       if (document.activeElement !== $('gr-entrada') && $('gr-entrada').value !== (a.deviceId || '')) cargarEntradas(false);
       const conSonido = au.canalesConSonido ? au.canalesConSonido() : [];
@@ -334,14 +325,12 @@
       if (op.alCambiarConfig) op.alCambiarConfig();
       ui.refrescar();
     }
-    $('gr-todas').onclick = () => elegir(grabador.fuentes().filter(f => f.disponible).map(f => f.id));
-    $('gr-solo-salida').onclick = () => elegir(['salida']);
     $('gr-fuentes').addEventListener('change', e => {
       const id = e.target && e.target.dataset ? e.target.dataset.fuente : null;
       if (!id) return;
       const set = new Set(cfg.fuentes);
       if (e.target.checked) set.add(id); else set.delete(id);
-      /* en el orden del registro: la salida primero, luego las pistas */
+      /* en el orden del registro: la salida primero, luego el audio de entrada */
       elegir(grabador.fuentes().map(f => f.id).filter(x => set.has(x)));
     });
     let firmaFuentes = '';
@@ -435,7 +424,7 @@
       rel.textContent = reloj(st.transcurridoMs);
       rel.classList.toggle('on', grabando);
       const bloqueado = grabando || ocupado;
-      ['gr-formato', 'gr-calidad', 'gr-fps', 'gr-titulo', 'gr-fecha', 'gr-todas', 'gr-solo-salida', 'gr-ruta', 'gr-ruta-ok', 'gr-elegir'].forEach(id => { $(id).disabled = bloqueado; });
+      ['gr-formato', 'gr-calidad', 'gr-fps', 'gr-titulo', 'gr-fecha', 'gr-ruta', 'gr-ruta-ok', 'gr-elegir'].forEach(id => { $(id).disabled = bloqueado; });
       pintarAudio(bloqueado);
       pintarTel(bloqueado);
       pintarControl();
